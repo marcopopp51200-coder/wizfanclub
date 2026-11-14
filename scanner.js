@@ -3021,7 +3021,79 @@ window.RokApp = () => {
   const migRow = (pw) => pw == null ? null : MIG.find(r => pw < r[0] * 1e6) || MIG[MIG.length - 1];
   const migSelRow = () => { const i = migSt().sel; return i != null && MIG[i] ? MIG[i] : null; };
   const migNeed = () => { const r = migSelRow() || migRow(migPower()); if (!r) return null; const s = migSt().mode === 'same'; return { passports: s ? r[2] : r[1], credits: (s ? r[2] : r[1]) * PP_CR, row: r }; };
-  const creditsNow = () => { const c = +migSt().credits; return c >= 0 && migSt().credits !== '' && migSt().credits != null ? c : null; };
+  const creditsRaw = () => { const c = +migSt().credits; return c >= 0 && migSt().credits !== '' && migSt().credits != null ? c : null; };
+  // Credits = eingetragener Stand + was du im Inventar verkaufen willst (Tabelle „Für Credits verkaufen“)
+  const creditsNow = () => { const c = creditsRaw(), v = sellTotal(); return c == null && !v ? null : (c || 0) + v; };
+  // ---------- Für Allianz-Credits verkaufen ----------
+  const SELL_GROUPS = [
+    { k: 'bp_epic', sec: 'bp', label: 'Blaupausen lila (ganz)', val: 45000, n: 20, c: '#c084fc' },
+    { k: 'bp_blue', sec: 'bp', label: 'Blaupausen blau (ganz)', val: 8000, n: 20, c: '#60a5fa' },
+    { k: 'bp_green', sec: 'bp', label: 'Blaupausen grün (ganz)', val: 2200, alt: 8000, altLabel: '8k-Teil', altFirst: 2, n: 15, c: '#4ade80' },
+    { k: 'bp_grey', sec: 'bp', label: 'Blaupausen grau (ganz)', val: 400, n: 6, c: '#cbd5e1' },
+    { k: 'fr_epic', sec: 'fr', label: 'Fragmente lila', val: 1500, n: 20, c: '#c084fc' },
+    { k: 'fr_blue', sec: 'fr', label: 'Fragmente blau', val: 260, n: 20, c: '#60a5fa' },
+    { k: 'fr_green', sec: 'fr', label: 'Fragmente grün', val: 70, alt: 260, altLabel: 'Kav', altFirst: 2, n: 15, c: '#4ade80' }
+  ];
+  const SELL_ITEMS = [
+    { k: 'st_g1', sec: 'star', label: 'Stern grün ★', val: 40 }, { k: 'st_g2', sec: 'star', label: 'Stern grün ★★', val: 160 }, { k: 'st_g3', sec: 'star', label: 'Stern grün ★★★', val: 160 },
+    { k: 'st_b1', sec: 'star', label: 'Stern blau ★', val: 100 }, { k: 'st_b2', sec: 'star', label: 'Stern blau ★★', val: 400 }, { k: 'st_b3', sec: 'star', label: 'Stern blau ★★★', val: 400 },
+    { k: 'st_p1', sec: 'star', label: 'Stern lila ★', val: 300 }, { k: 'st_p2', sec: 'star', label: 'Stern lila ★★', val: 1200 }, { k: 'st_p3', sec: 'star', label: 'Stern lila ★★★', val: 1200 },
+    { k: 'o_book', sec: 'other', label: 'Buch', val: 40 }, { k: 'o_arrow', sec: 'other', label: 'Pfeil', val: 40 },
+    { k: 'o_atk12', sec: 'other', label: 'Angriffs-Boost 12 Std.', val: 500 }, { k: 'o_atk24', sec: 'other', label: 'Angriffs-Boost 24 Std.', val: 800 },
+    { k: 'o_def12', sec: 'other', label: 'Verteidigungs-Boost 12 Std.', val: 500 }, { k: 'o_def24', sec: 'other', label: 'Verteidigungs-Boost 24 Std.', val: 800 },
+    { k: 'o_scout', sec: 'other', label: 'Anti-Scout', val: 1000 }, { k: 'o_apple', sec: 'other', label: 'Goldener Apfel', val: 600 }
+  ];
+  const SELL_SECS = [['bp', '📜 Ausrüstungs-Blaupausen'], ['fr', '🧩 Blaupausen-Fragmente'], ['star', '⭐ Sterne'], ['other', '🎒 Sonstiges']];
+  const sellSt = () => { const x = (passive.sell = passive.sell || {}); x.cnt = x.cnt || {}; x.extra = x.extra || {}; x.hide = x.hide || {}; x.alt = x.alt || {}; return x; };
+  const sellFields = (g) => g.n + (+sellSt().extra[g.k] || 0);
+  const sellAlt = (g, i) => { const a = sellSt().alt[g.k + '_' + i]; return a == null ? i < (g.altFirst || 0) : !!a; };
+  const sellGroupSum = (g) => { const st = sellSt(); let n = 0, v = 0; for (let i = 0; i < sellFields(g); i++) { const c = +st.cnt[g.k + '_' + i] || 0; n += c; v += c * (g.alt && sellAlt(g, i) ? g.alt : g.val); } return { n, v }; };
+  function sellTotal() {
+    if (typeof passiveReady === 'undefined' || !passiveReady) return 0;
+    const st = sellSt(); let t = 0;
+    SELL_GROUPS.forEach(g => { if (!st.hide[g.k]) t += sellGroupSum(g).v; });
+    SELL_ITEMS.forEach(it => { if (!st.hide[it.k]) t += (+st.cnt[it.k] || 0) * it.val; });
+    return t;
+  }
+  var sellOpen = new Set(['bp']);
+  function sellHtml() {
+    const st = sellSt(), c = 'bg-ink-950 border border-ink-600 rounded-lg px-1.5 py-1 text-xs tabular-nums focus:outline-none focus:border-gold-500';
+    const eye = (k) => `<button type="button" data-sellhide="${k}" class="text-slate-500 hover:text-amber-300 text-xs px-1" title="Ausblenden – will ich nicht verkaufen">👁</button>`;
+    const grp = (g) => { const S = sellGroupSum(g);
+      return `<div class="rounded-lg border border-ink-700 bg-ink-950/40 p-2">
+        <div class="flex items-center justify-between gap-2 mb-1.5"><span class="text-xs font-semibold" style="color:${g.c}">${g.label} <span class="text-slate-500 font-normal">· ${fmt(g.val)}${g.alt ? ` / ${fmt(g.alt)} (${g.altLabel})` : ''} je Stück</span></span>
+          <span class="text-xs tabular-nums text-slate-300">${fmt(S.n)} Stk · <b class="text-gold-300">${short(S.v)}</b> ${eye(g.k)}</span></div>
+        <div class="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-10 gap-1">${Array.from({ length: sellFields(g) }, (_, i) => `<div class="min-w-0">
+          <input data-sellcnt="${g.k}_${i}" type="number" min="0" step="1" value="${st.cnt[g.k + '_' + i] || ''}" placeholder="${i + 1}" class="w-full text-right ${c}">
+          ${g.alt ? `<label class="mt-0.5 flex items-center gap-0.5 text-[9px] text-slate-400"><input type="checkbox" data-sellalt="${g.k}_${i}" ${sellAlt(g, i) ? 'checked' : ''} class="accent-emerald-500 w-3 h-3">${g.altLabel}</label>` : ''}</div>`).join('')}</div>
+        <div class="mt-1.5 flex gap-2"><button type="button" data-selladd="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-gold-500/60">+ 5 Felder</button>
+          ${+st.extra[g.k] > 0 ? `<button type="button" data-sellrem="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-red-500/60 text-slate-400">− 5 Felder</button>` : ''}</div></div>`; };
+    const item = (it) => `<tr class="border-b border-ink-800 last:border-b-0"><td class="py-1 px-2 text-slate-300">${it.label}</td><td class="py-1 px-2 text-right tabular-nums text-slate-400">${fmt(it.val)}</td>
+      <td class="py-1 px-2"><input data-sellcnt="${it.k}" type="number" min="0" step="1" value="${st.cnt[it.k] || ''}" placeholder="0" class="w-20 text-right ${c}"></td>
+      <td class="py-1 px-2 text-right tabular-nums text-gold-300">${(+st.cnt[it.k] || 0) ? short((+st.cnt[it.k] || 0) * it.val) : '–'}</td><td class="text-right">${eye(it.k)}</td></tr>`;
+    const hidden = [...SELL_GROUPS, ...SELL_ITEMS].filter(x => st.hide[x.k]);
+    const secTotal = (sec) => SELL_GROUPS.filter(g => g.sec === sec && !st.hide[g.k]).reduce((a, g) => a + sellGroupSum(g).v, 0) + SELL_ITEMS.filter(it => it.sec === sec && !st.hide[it.k]).reduce((a, it) => a + (+st.cnt[it.k] || 0) * it.val, 0);
+    return `<section id="sellBox" class="panel rounded-2xl p-5">
+      <h2 class="font-display text-lg text-gold-300">Für Credits verkaufen</h2>
+      <p class="text-xs text-slate-400 mb-3">Trag ein, was du im Inventar hast und verkaufen würdest – jedes Feld ist ein Teil, gerechnet wird mit dem festen Wert. Alles zählt oben bei „Credits jetzt“ und in der Passive mit. 👁 blendet aus, was du nicht verkaufen willst.</p>
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">${SELL_SECS.map(([k, l]) => `<div class="rounded-lg border border-ink-700 bg-ink-950/50 px-2.5 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">${l}</div><div class="text-base font-bold tabular-nums text-white">${short(secTotal(k))}</div></div>`).join('')}
+        <div class="rounded-lg border border-gold-500/40 bg-gold-500/10 px-2.5 py-2 col-span-2 sm:col-span-1"><div class="text-[10px] uppercase tracking-widest text-gold-300">Gesamt</div><div class="text-base font-bold tabular-nums text-gold-200">${short(sellTotal())}</div><div class="text-[10px] text-slate-400">= ${pmFmt('passports', sellTotal() / PP_CR)} Passseiten</div></div></div>
+      ${SELL_SECS.map(([sec, l]) => { const gs = SELL_GROUPS.filter(g => g.sec === sec && !st.hide[g.k]), its = SELL_ITEMS.filter(it => it.sec === sec && !st.hide[it.k]); if (!gs.length && !its.length) return '';
+        return `<details data-sellsec="${sec}" class="mt-2" ${sellOpen.has(sec) ? 'open' : ''}><summary class="text-sm font-semibold text-slate-200 cursor-pointer hover:text-gold-300">${l} <span class="text-xs text-slate-500 font-normal">· ${short(secTotal(sec))}</span></summary>
+          <div class="mt-2 space-y-2">${gs.map(grp).join('')}${its.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-1.5 px-2 text-left font-medium">Item</th><th class="py-1.5 px-2 text-right font-medium">Credits je Stück</th><th class="py-1.5 px-2 text-left font-medium">Anzahl</th><th class="py-1.5 px-2 text-right font-medium">Summe</th><th></th></tr></thead><tbody>${its.map(item).join('')}</tbody></table></div>` : ''}</div></details>`; }).join('')}
+      ${hidden.length ? `<div class="mt-3 text-[11px] text-slate-500">Ausgeblendet (zählt nicht mit): ${hidden.map(x => `<button type="button" data-sellshow="${x.k}" class="ml-1 px-1.5 py-0.5 rounded border border-ink-700 hover:border-gold-500/60 hover:text-gold-300">↺ ${x.label}</button>`).join('')}</div>` : ''}
+    </section>`;
+  }
+  function bindSell(root, upd) {
+    const st = sellSt();
+    root.querySelectorAll('[data-sellsec]').forEach(d => d.addEventListener('toggle', () => { if (d.open) sellOpen.add(d.dataset.sellsec); else sellOpen.delete(d.dataset.sellsec); }));
+    root.querySelectorAll('[data-sellcnt]').forEach(i => i.addEventListener('change', () => { const v = Math.max(0, Math.round(+i.value || 0)); if (v) st.cnt[i.dataset.sellcnt] = v; else delete st.cnt[i.dataset.sellcnt]; upd(); }));
+    root.querySelectorAll('[data-sellalt]').forEach(i => i.addEventListener('change', () => { st.alt[i.dataset.sellalt] = i.checked; upd(); }));
+    root.querySelectorAll('[data-selladd]').forEach(b => b.onclick = () => { st.extra[b.dataset.selladd] = (+st.extra[b.dataset.selladd] || 0) + 5; upd(); });
+    root.querySelectorAll('[data-sellrem]').forEach(b => b.onclick = () => { const k = b.dataset.sellrem, g = SELL_GROUPS.find(x => x.k === k); st.extra[k] = Math.max(0, (+st.extra[k] || 0) - 5); for (let i = sellFields(g); i < sellFields(g) + 5; i++) delete st.cnt[k + '_' + i]; upd(); });
+    root.querySelectorAll('[data-sellhide]').forEach(b => b.onclick = () => { st.hide[b.dataset.sellhide] = true; upd(); });
+    root.querySelectorAll('[data-sellshow]').forEach(b => b.onclick = () => { delete st.hide[b.dataset.sellshow]; upd(); });
+  }
   function renderMigStats() {
     const top = $('statsTop'), st = migSt(), need = migNeed(), pw = migPower(), pages = ppPages(), cr = creditsNow(), sel = migSelRow();
     const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-sm tabular-nums focus:outline-none focus:border-gold-500';
@@ -3036,17 +3108,25 @@ window.RokApp = () => {
       <div class="grid sm:grid-cols-3 gap-3 mb-4">
         <label class="text-xs text-slate-400">Power (Mio.)<input id="migPower" type="text" inputmode="decimal" value="${st.power ? String(st.power / 1e6).replace('.', ',') : ''}" placeholder="${profPower() ? (profPower() / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' (Profil)' : 'z. B. 85'}" class="mt-1 w-full text-right ${inp}"></label>
         <div class="text-xs text-slate-400">Art<div class="mt-1 grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[['normal', 'Normal'], ['same', 'Same-KvK']].map(([k, l]) => `<button type="button" data-migmode="${k}" aria-pressed="${st.mode === k}" class="seg-btn rounded-lg py-1.5 text-xs font-semibold transition">${l}</button>`).join('')}</div></div>
-        <label class="text-xs text-slate-400">Credits jetzt<input id="migCredits" type="text" inputmode="numeric" value="${cr != null ? cr : ''}" placeholder="z. B. 12.500.000" class="mt-1 w-full text-right ${inp}"></label>
+        <label class="text-xs text-slate-400">Credits jetzt<input id="migCredits" type="text" inputmode="numeric" value="${creditsRaw() != null ? creditsRaw() : ''}" placeholder="z. B. 12.500.000" class="mt-1 w-full text-right ${inp}"></label>
       </div>
+      <label class="text-xs text-slate-400 flex flex-wrap items-center gap-2 mb-3">📅 Wann willst du migrieren?<input id="migDate" type="date" value="${st.date || ''}" class="${inp} !py-1 text-xs">${st.date ? '<button type="button" id="migDateClr" class="text-slate-500 hover:text-red-400">✕</button>' : ''}</label>
       <div class="text-[11px] text-slate-500 mb-3">${sel ? `Ausgewählt in der Tabelle: <b class="text-gold-300">${rng(MIG.indexOf(sel))}</b> · ${st.mode === 'same' ? 'Same-KvK' : 'Normal'} <button type="button" id="migAuto" class="ml-1 underline hover:text-gold-300">zurück zu meiner Power</button>`
         : pw == null ? 'Keine Power im Profil – oben eintragen oder in der Tabelle eine Zeile anklicken.' : `Gerechnet mit ${(pw / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 })} Mio. Power${st.power ? '' : ' aus deinem Profil'} · oder in der Tabelle anklicken, was du willst.`} 1 Passseite = 600.000 Credits.</div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${card('Passseiten nötig', need ? fmt(need.passports) : '–', 'text-indigo-300', need ? `= ${short(need.credits)} Credits` : '')}
         ${card('Passseiten jetzt', pages != null ? fmt(pages) : '–', 'text-white', pages == null ? 'noch nicht eingetragen' : '')}
-        ${card('Credits jetzt', cr != null ? short(cr) : '–', 'text-white', cr == null ? 'oben eintragen' : `= ${pmFmt('passports', cr / PP_CR)} Passseiten`)}
+        ${card('Credits jetzt', cr != null ? short(cr) : '–', 'text-white', cr == null ? 'oben eintragen' : `= ${pmFmt('passports', cr / PP_CR)} Passseiten${sellTotal() ? ` · inkl. ${short(sellTotal())} aus Verkauf` : ''}`)}
         ${card(miss != null && miss > 0 ? 'Fehlen noch' : 'Stand', miss == null ? '–' : miss > 0 ? `${pmFmt('passports', miss)} Seiten` : 'reicht ✓', miss > 0 ? 'text-red-400' : 'text-emerald-400',
           miss > 0 ? `= ${short(miss * PP_CR)} Credits · ${days == null ? 'Passive aktivieren' : `ca. ${fmt(days)} Tage (${dayPlus(days).toLocaleDateString('de-DE')})`}` : '')}
       </div>
+ ${(() => { if (!st.date || !need) return ''; const dd = dOff(st.date); if (dd == null) return '';
+        if (dd < 0) return '<div class="mt-3 text-xs text-slate-500">Der Migrations-Termin liegt in der Vergangenheit.</div>';
+        const atD = haveEq + (dd ? (pmIncome('passports', dd).credits || 0) / PP_CR : 0), gap = need.passports - atD, ok = gap <= 1e-9;
+        return `<div class="mt-3 rounded-xl border ${ok ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-red-500/40 bg-red-500/10'} p-3 text-sm">
+          📅 Migration am <b>${new Date(st.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</b> (in ${fmt(dd)} Tagen):
+          du hast dann ≈ <b class="tabular-nums">${pmFmt('passports', atD)}</b> von ${fmt(need.passports)} Passseiten –
+          ${ok ? '<b class="text-emerald-300">reicht ✓</b>' : `<b class="text-red-300">es fehlen ${pmFmt('passports', gap)} Seiten (${short(gap * PP_CR)} Credits)</b> · dafür bräuchtest du zusätzlich ≈ ${short(dd ? gap * PP_CR / dd * 7 : gap * PP_CR)} Credits ${dd ? 'pro Woche' : 'heute'}`}</div>`; })()}
       ${need ? `<button type="button" id="migGoal" class="mt-3 text-xs px-3 py-2 rounded-lg border border-ink-600 hover:border-gold-500/60 hover:text-gold-300">🎯 ${fmt(need.passports)} Passseiten als Migrations-Ziel übernehmen</button>` : ''}
       <div class="mt-4 overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs">
         <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-3 text-left font-medium">Power</th><th class="py-2 px-3 text-right font-medium">Passseiten normal</th><th class="py-2 px-3 text-right font-medium">Same-KvK</th><th class="py-2 px-3 text-right font-medium">Credits normal</th><th class="py-2 px-3 text-right font-medium">Same-KvK</th></tr></thead>
@@ -3055,8 +3135,11 @@ window.RokApp = () => {
             ${cell(i, 'normal', r[1], on && !sm ? 'text-indigo-300 font-bold ring-1 ring-inset ring-gold-400/60' : '')}${cell(i, 'same', r[2], on && sm ? 'text-indigo-300 font-bold ring-1 ring-inset ring-gold-400/60' : '')}
             ${cell(i, 'normal', fmt(r[1] * PP_CR), on && !sm ? 'text-slate-100 font-bold' : 'text-slate-400')}${cell(i, 'same', fmt(r[2] * PP_CR), on && sm ? 'text-slate-100 font-bold' : 'text-slate-400')}</tr>`; }).join('')}</tbody></table></div>
       <div class="mt-1 text-[11px] text-slate-500">Zeile oder Zahl anklicken → wird oben ausgerechnet.</div>
-    </section>`;
-    makeFold($('migBox'), 'mig');
+    </section>
+    ${sellHtml()}`;
+    makeFold($('migBox'), 'mig'); makeFold($('sellBox'), 'sell'); bindSell(top, () => { savePassive(); renderMigStats(); if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); });
+    $('migDate').onchange = (e) => { st.date = pDate(e.target.value) ? e.target.value : ''; upd(); };
+    $('migDateClr')?.addEventListener('click', () => { st.date = ''; upd(); });
     const upd = () => { savePassive(); renderMigStats(); if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); };
     top.querySelectorAll('[data-migmode]').forEach(b => b.onclick = () => { st.mode = b.dataset.migmode; upd(); });
     top.querySelectorAll('[data-migpick]').forEach(c => c.onclick = () => { st.sel = +c.dataset.migpick; if (c.dataset.mode) st.mode = c.dataset.mode; upd(); });
