@@ -1393,8 +1393,8 @@ window.RokApp = () => {
       <div class="mt-1 text-lg font-bold ${miss ? 'text-white' : 'text-emerald-400'}">${miss ? `Noch <span class="text-indigo-300 tabular-nums">${fmt(miss)}</span> Passseiten fehlen` : 'Genug Passseiten für die Migration ✓'}</div>
       <div class="mt-3 h-2 rounded-full bg-ink-950 overflow-hidden"><div class="h-full rounded-full" style="width:${pct}%;background:linear-gradient(90deg,#818cf8,#6366f1)"></div></div>
       ${(() => { if (typeof pmReady === 'undefined' || !pmReady || !miss) return ''; const d = pmDayTotal('passports').passports || 0;
-        return `<div class="mt-3 grid grid-cols-2 gap-3 text-sm"><div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Pro Tag</div><b class="tabular-nums text-emerald-300">${d > 0 ? '+' + fmtLeg(d) : '–'}</b></div>
-          <div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Tage bis zum Ziel</div><b class="tabular-nums text-indigo-300">${d > 0 ? fmt(Math.ceil(miss / d)) + ' Tage' : 'Passive aktivieren'}</b></div></div>`; })()}`;
+        return `<div class="mt-3 grid grid-cols-2 gap-3 text-sm"><div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Pro Woche</div><b class="tabular-nums text-emerald-300">${d > 0 ? '+' + fmtLeg(d * 7) : '–'}</b></div>
+          <div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Bis zum Ziel</div><b class="tabular-nums text-indigo-300">${d > 0 ? `${fmt(Math.ceil(miss / d / 7))} Wochen` : 'Passive aktivieren'}</b>${d > 0 ? `<div class="text-[10px] text-slate-500">${fmt(Math.ceil(miss / d))} Tage · ${dayPlus(Math.ceil(miss / d)).toLocaleDateString('de-DE')}</div>` : ''}</div></div>`; })()}`;
   }
   $('passGoal').addEventListener('input', () => {
     const g = passGoalNum(); LS.set(PASS_GOAL, g ? String(g) : '');
@@ -2264,7 +2264,9 @@ window.RokApp = () => {
         { k: 'vipd', label: 'VIP täglich', desc: 'VIP 10–11: 1 · VIP 12–13: 2 · VIP 14–19 & SVIP: 3 pro Tag (aus deinem VIP-Stand)', perDay: () => ({ goldheads: ghVipDaily() }) },
         { k: 'olympia', label: 'Champions of Olympia', desc: '2 Goldheads jedes Wochenende', perDay: () => ({ goldheads: 2 / 7 }), inc: (s, days) => ({ goldheads: 2 * weekdaysIn(days, 6) }) },
         { k: 'aoo', label: 'Ark of Osiris', desc: 'alle 2 Wochen · Sieg 10, Niederlage 5', inputs: [{ key: 'w', label: 'Gewinnquote (%)', def: 50 }], perDay: (s) => ({ goldheads: (nv(s.w, 50) / 100 * 10 + (1 - nv(s.w, 50) / 100) * 5) / 14 }) },
-        { k: 'karuak', label: 'Karuak (monatlich)', desc: 'einmal im Monat', inputs: [{ key: 'n', label: 'Goldheads pro Monat', ph: 'z. B. 20' }], perDay: (s) => ({ goldheads: nv(s.n, 0) / 30 }) }
+        { k: 'karuak', label: 'Karuak (monatlich)', desc: 'einmal im Monat', inputs: [{ key: 'n', label: 'Goldheads pro Monat', ph: 'z. B. 20' }], perDay: (s) => ({ goldheads: nv(s.n, 0) / 30 }) },
+        { k: 'chests', label: 'Kisten (12 pro Tag)', desc: 'Getestet: 3× 100 Kisten = 32 · 31 · 40 Skulpturen → Ø 34,3 pro 100 Kisten',
+          inputs: [{ key: 'n', label: 'Kisten pro Tag', def: 12 }, { key: 'r', label: 'Skulpturen pro 100 Kisten', def: 34.33 }], perDay: (s) => ({ goldheads: nv(s.n, 12) * nv(s.r, 34.33) / 100 }) }
       ] }
   };
   const PM_COL = ['#38bdf8', '#a78bfa', '#f97316', '#f472b6', '#e2e8f0', '#ef4444', '#2dd4bf'];
@@ -3711,7 +3713,15 @@ window.RokApp = () => {
     const names = (R.COMMANDERS || []).filter(x => x.r === 'legendary' || !x.r).map(x => x.name);
     top.innerHTML = `<section id="ghBox" class="panel rounded-2xl p-5">
       <h2 class="font-display text-lg text-gold-300">Kommandanten-Expertise</h2>
-      <p class="text-xs text-slate-400 mb-3">Trag alle Kommandanten ein, die du skillen willst – mit Datum, bis wann du sie brauchst. Gerechnet wird in der Reihenfolge der Daten.</p>
+      <p class="text-xs text-slate-400 mb-3">Bis zu 5 Kommandanten in deiner Reihenfolge (mit Datum zuerst nach Datum). Er zieht die Kosten nacheinander von deinen Goldheads ab und zeigt, ab wann du jeden kaufen kannst.</p>
+      ${P.rows.length ? `<div class="mb-4 overflow-x-auto rounded-lg border border-gold-500/30 bg-gold-500/5"><table class="w-full text-xs">
+        <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">#</th><th class="py-2 px-2 text-left font-medium">Kommandant</th><th class="py-2 px-2 text-right font-medium">Kosten</th><th class="py-2 px-2 text-right font-medium">Kaufbar ab</th><th class="py-2 px-2 text-right font-medium">Danach übrig</th></tr></thead>
+        <tbody><tr class="border-b border-ink-800 text-slate-400"><td></td><td class="py-1.5 px-2">Goldheads jetzt</td><td></td><td></td><td class="py-1.5 px-2 text-right tabular-nums text-white">${fmt(P.stock)}</td></tr>
+        ${P.rows.map((r, k) => { const at = r.reach == null ? null : P.stock + (r.reach ? pmIncome('goldheads', r.reach).goldheads || 0 : 0), left = at == null ? null : at - r.cum;
+          return `<tr class="border-b border-ink-800 last:border-b-0"><td class="py-1.5 px-2 text-gold-300 font-bold">${k + 1}.</td><td class="py-1.5 px-2 text-slate-200">${esc(r.c.name || 'Kommandant')} <span class="text-slate-500">${r.c.cur.join('-')} → ${r.c.tgt.join('-')}</span></td>
+            <td class="py-1.5 px-2 text-right tabular-nums text-gold-300">−${fmt(r.need)}</td>
+            <td class="py-1.5 px-2 text-right tabular-nums ${r.reach === 0 ? 'text-emerald-400 font-bold' : r.reach ? 'text-indigo-300 font-semibold' : 'text-slate-500'}">${r.reach === 0 ? 'jetzt ✓' : r.reach ? `${dayPlus(r.reach).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })} <span class="text-slate-500 font-normal">(${fmt(r.reach)} T.)</span>` : 'Passive aktivieren'}</td>
+            <td class="py-1.5 px-2 text-right tabular-nums text-slate-300">${left == null ? '–' : fmt(Math.floor(left))}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
       ${names.length ? `<datalist id="ghNames">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>` : ''}
       <div class="space-y-2">${P.rows.map((r, k) => { const c = r.c; return `<div class="rounded-xl border ${r.ok === false ? 'border-red-500/40 bg-red-500/5' : r.ok ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-ink-700 bg-ink-950/40'} p-3">
         <div class="flex flex-wrap items-center gap-2">
@@ -3728,7 +3738,7 @@ window.RokApp = () => {
           <span>erreicht ${r.reach === 0 ? '<b class="text-emerald-400">jetzt ✓</b>' : r.reach ? `<b class="text-indigo-300">${dayPlus(r.reach).toLocaleDateString('de-DE')}</b> (in ${fmt(r.reach)} Tagen)` : '<b class="text-slate-500">–</b>'}</span>
           ${r.dd != null ? (r.ok ? '<span class="text-emerald-400">pünktlich ✓</span>' : r.dd < 0 ? '<span class="text-slate-500">Datum liegt in der Vergangenheit</span>' : `<span class="text-red-400">am ${dLabel(c.date)} fehlen ${fmt(r.cum - (r.atDate || 0))} – dafür bräuchtest du ${r.dd > 0 ? fmt(Math.ceil((r.cum - P.stock) / r.dd)) : '–'} pro Tag</span>`) : ''}
         </div></div>`; }).join('')}</div>
-      <button type="button" id="ghAdd" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">+ Kommandant</button>
+      ${st.list.length < 5 ? '<button type="button" id="ghAdd" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">+ Kommandant</button>' : '<div class="mt-3 text-[11px] text-slate-500">Maximal 5 Kommandanten.</div>'}
       <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${card('Goldheads nötig (alle)', fmt(P.total), 'text-gold-300', `${fmt(P.rows.length)} Kommandanten`)}
         ${card('Goldheads jetzt', fmt(P.stock), 'text-white', PMOD.goldheads.now().goldheads == null ? 'noch nicht eingetragen' : '')}
@@ -3745,7 +3755,7 @@ window.RokApp = () => {
     top.querySelectorAll('[data-ghname]').forEach(i => i.onchange = () => { const c = find(i.dataset.ghname); if (c) { c.name = i.value.trim().slice(0, 40); savePassive(); } });
     top.querySelectorAll('[data-ghdate]').forEach(i => i.onchange = () => { const c = find(i.dataset.ghdate); if (c) { c.date = pDate(i.value) ? i.value : ''; upd(); } });
     top.querySelectorAll('[data-ghdel]').forEach(b => b.onclick = () => { st.list = st.list.filter(x => x.id !== b.dataset.ghdel); upd(); });
-    $('ghAdd').onclick = () => { st.list.push({ id: 'c' + Date.now().toString(36), name: '', cur: [1, 1, 1, 1], tgt: [5, 5, 5, 5], date: '' }); upd(); };
+    if ($('ghAdd')) $('ghAdd').onclick = () => { st.list.push({ id: 'c' + Date.now().toString(36), name: '', cur: [1, 1, 1, 1], tgt: [5, 5, 5, 5], date: '' }); upd(); };
     const wrap = $('ghChartWrap'); if (ghChart) { try { ghChart.destroy(); } catch {} ghChart = null; }
     if (!window.Chart) { wrap.innerHTML = '<div class="h-full grid place-items-center text-xs text-slate-500">Diagramm konnte nicht geladen werden.</div>'; return; }
     const far = Math.max(30, ...P.rows.map(r => r.reach || 0), ...P.rows.map(r => r.dd || 0));
@@ -3838,6 +3848,10 @@ window.RokApp = () => {
         ${[7, 14, 30, 60, 90].map(d => `<button type="button" data-resdays="${d}" aria-pressed="${days === d}" class="seg-btn rounded-lg px-3 py-1 border border-ink-700 font-semibold">${d} Tage</button>`).join('')}
         ${kOff > 0 ? `<button type="button" data-resdays="${kOff}" aria-pressed="${days === kOff}" class="seg-btn rounded-lg px-3 py-1 border border-ink-700 font-semibold">bis KvK (${kOff})</button>` : ''}
         <label class="inline-flex items-center gap-1">eigene <input id="resDaysIn" type="number" min="1" step="1" value="${[7, 14, 30, 60, 90, kOff].includes(days) ? '' : days}" placeholder="Tage" class="w-20 text-right ${inp} !py-1"></label></div>
+      <div class="overflow-x-auto rounded-lg border border-emerald-500/30 bg-emerald-500/5 mb-3"><table class="w-full text-xs">
+        <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">Nur Farmen</th><th class="py-2 px-2 text-right font-medium">pro Tag</th><th class="py-2 px-2 text-right font-medium">7 Tage</th><th class="py-2 px-2 text-right font-medium">14 Tage</th><th class="py-2 px-2 text-right font-medium">30 Tage</th></tr></thead>
+        <tbody>${RES.map(r => `<tr class="border-b border-ink-800"><td class="py-1.5 px-2 text-slate-200">${ico(r, 'w-3.5 h-3.5')} ${r.label}</td>${[1, 7, 14, 30].map(n => `<td class="py-1.5 px-2 text-right tabular-nums ${tot[r.k] ? 'text-emerald-300' : 'text-slate-600'}">${tot[r.k] ? '+' + short(tot[r.k] * n) : '–'}</td>`).join('')}</tr>`).join('')}
+          <tr class="font-semibold"><td class="py-1.5 px-2 text-white">Gesamt</td>${[1, 7, 14, 30].map(n => `<td class="py-1.5 px-2 text-right tabular-nums text-emerald-200">${rssSum(tot) ? '+' + short(rssSum(tot) * n) : '–'}</td>`).join('')}</tr></tbody></table></div>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">${RES.map(r => card(r.label, tot[r.k] ? short(tot[r.k] * days) : '–', 'text-emerald-300', tot[r.k] ? `+${short(tot[r.k])} / Tag · +${short(tot[r.k] * 7)} / Woche` : 'keine Farm', ico(r, 'w-4 h-4'))).join('')}</div>
       <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs">
         <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">Farm</th><th class="py-2 px-2 text-left font-medium">Sammelt</th><th class="py-2 px-2 text-left font-medium">Märsche (Lv)</th><th class="py-2 px-2 text-right font-medium">+6 %</th><th class="py-2 px-2 text-right font-medium">pro Sendung</th><th class="py-2 px-2 text-right font-medium">Sendungen</th><th class="py-2 px-2 text-right font-medium">pro Tag</th><th class="py-2 px-2 text-right font-medium">${fmt(days)} Tage</th></tr></thead>
@@ -3881,6 +3895,40 @@ window.RokApp = () => {
       kvkRssSt().push(e); savePassive(); renderResStats(); };
     top.querySelectorAll('[data-krdel]').forEach(b => b.onclick = async () => { if (!(await UI.confirm('Diesen KvK löschen?'))) return; passive.kvkRss = kvkRssSt().filter(x => x.id !== b.dataset.krdel); savePassive(); renderResStats(); });
   }
+  // ---------- Keys: Kisten-Chancen (offizielle Werte aus dem Spiel) ----------
+  const KEY_CHESTS = [
+    { k: 'gold', key: 'key_gold', label: 'Goldene Kiste', keyLabel: 'Goldene Schlüssel', img: 'sonstiges/goldkey.png', icon: '🔑', odds: [
+      ['Legendärer Kommandant', 0.80566, true], ['Epischer Kommandant', 2.34762, true], ['Elite-Kommandant', 3.41472], ['Legendäre Kommandanten-Skulptur', 3.07422, true], ['Epische Kommandanten-Skulptur', 8.45411],
+      ['Elite-Kommandanten-Skulptur', 15.97166], ['Dazzling Starlight Sculpture', 4.88385], ['Brand-new Starlight Sculpture', 9.7677], ['Ressourcen-Item', 17.09348], ['Speedup', 12.82011], ['Tome of Knowledge', 21.36685]] },
+    { k: 'silver', key: 'key_silver', label: 'Silberne Kiste', keyLabel: 'Silberne Schlüssel', img: 'sonstiges/silverkey.png', icon: '🗝️', odds: [
+      ['Elite-Kommandant', 0.707, true], ['Fortgeschrittener Kommandant', 2.122], ['Epische Kommandanten-Skulptur', 1.0089, true], ['Elite-Kommandanten-Skulptur', 4.03559], ['Fortgeschrittene Kommandanten-Skulptur', 8.45552],
+      ['Brand-new Starlight Sculpture', 3.364], ['Ordinary Starlight Sculpture', 6.727], ['Obsolete Starlight Sculpture', 16.818], ['Ressourcen-Item', 21.023], ['Speedup', 12.614], ['Tome of Knowledge', 23.125]] },
+    { k: 'equip', key: 'key_material', label: 'Ausrüstungs-Kiste', keyLabel: 'Material-Schlüssel', img: 'sonstiges/materialkey.png', icon: '🧰', odds: [
+      ['Legendäre Blaupause', 0.052, true], ['Epische Blaupause', 0.676, true], ['Elite-Blaupausen', 4.929], ['Fortgeschrittene Blaupausen', 10.427], ['Normale Blaupausen', 4.175],
+      ['Ausrüstungs-Materialien (grau bis legendär)', 40.596], ['Ressourcen-Item', 22.334], ['Speedup', 16.811]] }
+  ];
+  const keyOddsSt = () => (passive.keyOdds = passive.keyOdds || {});
+  function renderKeyStats() {
+    const top = $('statsTop'), st = keyOddsSt(), last = R.history.filter(e => e.type === 'keys').sort((a, b) => b.ts - a.ts)[0] || {};
+    const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-gold-500';
+    const pc = (x) => x >= 0.9995 ? '≈ 100 %' : (x * 100).toLocaleString('de-DE', { maximumFractionDigits: x < 0.1 ? 2 : 1 }) + ' %';
+    top.innerHTML = `<section id="keyOddsBox" class="panel rounded-2xl p-5">
+      <h2 class="font-display text-lg text-gold-300">Kisten-Chancen</h2>
+      <p class="text-xs text-slate-400 mb-3">Offizielle Chancen pro geöffneter Kiste. Anzahl Schlüssel kommt aus deinem letzten Keys-Eintrag – oder trag selbst ein, wie viele du öffnen willst.</p>
+      <div class="grid lg:grid-cols-3 gap-3">${KEY_CHESTS.map(ch => { const n = st[ch.k] != null && st[ch.k] !== '' ? +st[ch.k] : (+last[ch.key] || 0);
+        return `<div class="rounded-xl border border-ink-700 bg-ink-950/40 p-3">
+          <div class="flex items-center justify-between gap-2 mb-2"><b class="text-white">${ico(ch, 'w-5 h-5')} ${ch.label}</b>
+            <label class="text-[11px] text-slate-400 flex items-center gap-1">Kisten<input data-keyn="${ch.k}" type="number" min="0" step="1" value="${n || ''}" placeholder="${+last[ch.key] || 0}" class="w-20 text-right ${inp}"></label></div>
+          <div class="text-[10px] text-slate-500 mb-1">${ch.keyLabel}${last[ch.key] != null ? ` · im Inventar ${fmt(last[ch.key])}` : ''}</div>
+          <table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-1 text-left font-medium">Belohnung</th><th class="py-1 text-right font-medium">Chance</th><th class="py-1 text-right font-medium">Ø bei ${fmt(n)}</th><th class="py-1 text-right font-medium">mind. 1×</th></tr></thead>
+          <tbody>${ch.odds.map(([l, p, rare]) => { const q = p / 100; return `<tr class="border-b border-ink-800 last:border-b-0 ${rare ? 'text-gold-200' : 'text-slate-300'}"><td class="py-1 pr-1">${rare ? '⭐ ' : ''}${l}</td><td class="py-1 text-right tabular-nums">${dec(p, p < 1 ? 3 : 2)} %</td>
+            <td class="py-1 text-right tabular-nums">${n ? dec(n * q, n * q < 10 ? 1 : 0) : '–'}</td><td class="py-1 text-right tabular-nums">${n ? pc(1 - Math.pow(1 - q, n)) : '–'}</td></tr>`; }).join('')}</tbody></table>
+          ${ch.k === 'equip' ? '<div class="mt-2 text-[10px] text-slate-500">Bei den Ausrüstungs-Materialien sagt das Spiel nicht, wie sie sich auf grau bis legendär verteilen – legendäre sind sicher seltener als graue.</div>' : ''}</div>`; }).join('')}</div>
+      <div class="mt-2 text-[11px] text-slate-500">⭐ = seltene Belohnung. „mind. 1×“ = Chance, sie bei dieser Anzahl Kisten mindestens einmal zu bekommen.</div>
+    </section>`;
+    makeFold($('keyOddsBox'), 'keyodds');
+    top.querySelectorAll('[data-keyn]').forEach(i => i.addEventListener('change', () => { const v = i.value.trim(); st[i.dataset.keyn] = v === '' ? null : Math.max(0, Math.round(+v || 0)); savePassive(); renderKeyStats(); }));
+  }
   function renderStats(m) {
     const top = $('statsTop'), sec = $('passiveInputs');
     if (m === 'ap') { sec.classList.add('hidden'); if (!top.querySelector('#apCanDo')) renderApStats(); else renderApStatsOut(); renderCredits(); return; }
@@ -3893,6 +3941,7 @@ window.RokApp = () => {
     else if (m === 'armaments') renderArmStats();
     else if (m === 'mats') renderMatStats();
     else if (m === 'resources') renderResStats();
+    else if (m === 'keys') renderKeyStats();
     else if (false) top.innerHTML = `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">Power → benötigte Passseiten</h2>
         <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-3 text-left font-medium">Power</th><th class="py-2 px-3 text-right font-medium">Passseiten</th></tr></thead>
         <tbody><tr><td colspan="2" class="py-6 text-center text-slate-500">Tabelle folgt – sobald die Daten da sind, steht hier, wie viele Passseiten du für deine Power brauchst.</td></tr></tbody></table></div></section>`;
