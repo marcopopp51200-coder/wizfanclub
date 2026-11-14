@@ -3058,43 +3058,68 @@ window.RokApp = () => {
   var sellOpen = new Set(['bp']);
   function sellHtml() {
     const st = sellSt(), c = 'bg-ink-950 border border-ink-600 rounded-lg px-1.5 py-1 text-xs tabular-nums focus:outline-none focus:border-gold-500';
-    const eye = (k) => `<button type="button" data-sellhide="${k}" class="text-slate-500 hover:text-amber-300 text-xs px-1" title="Ausblenden – will ich nicht verkaufen">👁</button>`;
-    const grp = (g) => { const S = sellGroupSum(g);
-      return `<div class="rounded-lg border border-ink-700 bg-ink-950/40 p-2">
-        <div class="flex items-center justify-between gap-2 mb-1.5"><span class="text-xs font-semibold" style="color:${g.c}">${g.label} <span class="text-slate-500 font-normal">· ${fmt(g.val)}${g.alt ? ` / ${fmt(g.alt)} (${g.altLabel})` : ''} je Stück</span></span>
-          <span class="text-xs tabular-nums text-slate-300">${fmt(S.n)} Stk · <b class="text-gold-300">${short(S.v)}</b> ${eye(g.k)}</span></div>
+    const eye = (k) => `<button type="button" data-sellhide="${k}" tabindex="-1" class="text-xs px-1 ${st.hide[k] ? 'text-amber-300' : 'text-slate-500 hover:text-amber-300'}" title="${st.hide[k] ? 'Wieder mitzählen' : 'Ausgrauen – will ich nicht verkaufen'}">${st.hide[k] ? '🚫' : '👁'}</button>`;
+    const grp = (g) => { const S = sellGroupSum(g), off = st.hide[g.k];
+      return `<div class="rounded-lg border border-ink-700 bg-ink-950/40 p-2 ${off ? 'opacity-40' : ''}">
+        <div class="flex items-center justify-between gap-2 mb-1.5"><span class="text-xs font-semibold" style="color:${g.c}">${g.label} <span class="text-slate-500 font-normal">· ${fmt(g.val)}${g.alt ? ` / ${fmt(g.alt)} (${g.altLabel})` : ''} je Stück</span>${off ? ' <span class="text-amber-300 font-normal">· zählt nicht</span>' : ''}</span>
+          <span class="text-xs tabular-nums text-slate-300"><span data-sellgsum="${g.k}">${fmt(S.n)} Stk · <b class="text-gold-300">${short(S.v)}</b></span> ${eye(g.k)}</span></div>
         <div class="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-10 gap-1">${Array.from({ length: sellFields(g) }, (_, i) => `<div class="min-w-0">
           <input data-sellcnt="${g.k}_${i}" type="number" min="0" step="1" value="${st.cnt[g.k + '_' + i] || ''}" placeholder="${i + 1}" class="w-full text-right ${c}">
-          ${g.alt ? `<label class="mt-0.5 flex items-center gap-0.5 text-[9px] text-slate-400"><input type="checkbox" data-sellalt="${g.k}_${i}" ${sellAlt(g, i) ? 'checked' : ''} class="accent-emerald-500 w-3 h-3">${g.altLabel}</label>` : ''}</div>`).join('')}</div>
-        <div class="mt-1.5 flex gap-2"><button type="button" data-selladd="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-gold-500/60">+ 5 Felder</button>
-          ${+st.extra[g.k] > 0 ? `<button type="button" data-sellrem="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-red-500/60 text-slate-400">− 5 Felder</button>` : ''}</div></div>`; };
-    const item = (it) => `<tr class="border-b border-ink-800 last:border-b-0"><td class="py-1 px-2 text-slate-300">${it.label}</td><td class="py-1 px-2 text-right tabular-nums text-slate-400">${fmt(it.val)}</td>
+          ${g.alt ? `<label class="mt-0.5 flex items-center gap-0.5 text-[9px] text-slate-400"><input type="checkbox" tabindex="-1" data-sellalt="${g.k}_${i}" ${sellAlt(g, i) ? 'checked' : ''} class="accent-emerald-500 w-3 h-3">${g.altLabel}</label>` : ''}</div>`).join('')}</div>
+        <div class="mt-1.5 flex gap-2"><button type="button" tabindex="-1" data-selladd="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-gold-500/60">+ 5 Felder</button>
+          ${+st.extra[g.k] > 0 ? `<button type="button" tabindex="-1" data-sellrem="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-red-500/60 text-slate-400">− 5 Felder</button>` : ''}</div></div>`; };
+    const item = (it) => `<tr class="border-b border-ink-800 last:border-b-0 ${st.hide[it.k] ? 'opacity-40' : ''}"><td class="py-1 px-2 text-slate-300">${it.label}${st.hide[it.k] ? ' <span class="text-amber-300 text-[10px]">· zählt nicht</span>' : ''}</td><td class="py-1 px-2 text-right tabular-nums text-slate-400">${fmt(it.val)}</td>
       <td class="py-1 px-2"><input data-sellcnt="${it.k}" type="number" min="0" step="1" value="${st.cnt[it.k] || ''}" placeholder="0" class="w-20 text-right ${c}"></td>
-      <td class="py-1 px-2 text-right tabular-nums text-gold-300">${(+st.cnt[it.k] || 0) ? short((+st.cnt[it.k] || 0) * it.val) : '–'}</td><td class="text-right">${eye(it.k)}</td></tr>`;
-    const hidden = [...SELL_GROUPS, ...SELL_ITEMS].filter(x => st.hide[x.k]);
-    const secTotal = (sec) => SELL_GROUPS.filter(g => g.sec === sec && !st.hide[g.k]).reduce((a, g) => a + sellGroupSum(g).v, 0) + SELL_ITEMS.filter(it => it.sec === sec && !st.hide[it.k]).reduce((a, it) => a + (+st.cnt[it.k] || 0) * it.val, 0);
+      <td class="py-1 px-2 text-right tabular-nums text-gold-300" data-sellisum="${it.k}">${(+st.cnt[it.k] || 0) ? short((+st.cnt[it.k] || 0) * it.val) : '–'}</td><td class="text-right">${eye(it.k)}</td></tr>`;
     return `<section id="sellBox" class="panel rounded-2xl p-5">
       <h2 class="font-display text-lg text-gold-300">Für Credits verkaufen</h2>
-      <p class="text-xs text-slate-400 mb-3">Trag ein, was du im Inventar hast und verkaufen würdest – jedes Feld ist ein Teil, gerechnet wird mit dem festen Wert. Alles zählt oben bei „Credits jetzt“ und in der Passive mit. 👁 blendet aus, was du nicht verkaufen willst.</p>
-      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-3">${SELL_SECS.map(([k, l]) => `<div class="rounded-lg border border-ink-700 bg-ink-950/50 px-2.5 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">${l}</div><div class="text-base font-bold tabular-nums text-white">${short(secTotal(k))}</div></div>`).join('')}
-        <div class="rounded-lg border border-gold-500/40 bg-gold-500/10 px-2.5 py-2 col-span-2 sm:col-span-1"><div class="text-[10px] uppercase tracking-widest text-gold-300">Gesamt</div><div class="text-base font-bold tabular-nums text-gold-200">${short(sellTotal())}</div><div class="text-[10px] text-slate-400">= ${pmFmt('passports', sellTotal() / PP_CR)} Passseiten</div></div></div>
-      ${SELL_SECS.map(([sec, l]) => { const gs = SELL_GROUPS.filter(g => g.sec === sec && !st.hide[g.k]), its = SELL_ITEMS.filter(it => it.sec === sec && !st.hide[it.k]); if (!gs.length && !its.length) return '';
-        return `<details data-sellsec="${sec}" class="mt-2" ${sellOpen.has(sec) ? 'open' : ''}><summary class="text-sm font-semibold text-slate-200 cursor-pointer hover:text-gold-300">${l} <span class="text-xs text-slate-500 font-normal">· ${short(secTotal(sec))}</span></summary>
+      <p class="text-xs text-slate-400 mb-3">Trag ein, was du im Inventar hast – jedes Feld ist ein Teil, gerechnet wird mit dem festen Wert. Mit <b>Tab</b> springst du zum nächsten Feld. 👁 graut aus, was du nicht verkaufen willst (zählt dann nicht mit).</p>
+      <div id="sellPlan">${sellPlanHtml()}</div>
+      ${SELL_SECS.map(([sec, l]) => { const gs = SELL_GROUPS.filter(g => g.sec === sec), its = SELL_ITEMS.filter(it => it.sec === sec);
+        return `<details data-sellsec="${sec}" class="mt-2" ${sellOpen.has(sec) ? 'open' : ''}><summary class="text-sm font-semibold text-slate-200 cursor-pointer hover:text-gold-300">${l} <span class="text-xs text-slate-500 font-normal" data-sellsecsum="${sec}">· ${short(sellSecTotal(sec))}</span></summary>
           <div class="mt-2 space-y-2">${gs.map(grp).join('')}${its.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-1.5 px-2 text-left font-medium">Item</th><th class="py-1.5 px-2 text-right font-medium">Credits je Stück</th><th class="py-1.5 px-2 text-left font-medium">Anzahl</th><th class="py-1.5 px-2 text-right font-medium">Summe</th><th></th></tr></thead><tbody>${its.map(item).join('')}</tbody></table></div>` : ''}</div></details>`; }).join('')}
-      ${hidden.length ? `<div class="mt-3 text-[11px] text-slate-500">Ausgeblendet (zählt nicht mit): ${hidden.map(x => `<button type="button" data-sellshow="${x.k}" class="ml-1 px-1.5 py-0.5 rounded border border-ink-700 hover:border-gold-500/60 hover:text-gold-300">↺ ${x.label}</button>`).join('')}</div>` : ''}
     </section>`;
+  }
+  const sellSecTotal = (sec) => { const st = sellSt(); return SELL_GROUPS.filter(g => g.sec === sec && !st.hide[g.k]).reduce((a, g) => a + sellGroupSum(g).v, 0) + SELL_ITEMS.filter(it => it.sec === sec && !st.hide[it.k]).reduce((a, it) => a + (+st.cnt[it.k] || 0) * it.val, 0); };
+  // Oben im Verkaufs-Kasten: was der Verkauf bringt und was noch fehlt (zum Migrations-Termin oder jetzt)
+  function sellPlanHtml() {
+    const st = migSt(), need = migNeed(), sold = sellTotal(), pagesCr = (ppPages() || 0) * PP_CR, raw = creditsRaw() || 0;
+    const dd = st.date ? dOff(st.date) : null, passive = dd != null && dd > 0 ? (pmIncome('passports', dd).credits || 0) : 0;
+    const box = (l, v, cl, sub) => `<div class="rounded-lg border border-ink-700 bg-ink-950/50 px-2.5 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">${l}</div><div class="text-base font-bold tabular-nums ${cl}">${v}</div>${sub ? `<div class="text-[10px] text-slate-500">${sub}</div>` : ''}</div>`;
+    const secBoxes = SELL_SECS.map(([k, l]) => box(l, short(sellSecTotal(k)), 'text-white')).join('');
+    if (!need) return `<div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">${secBoxes}${box('Verkauf gesamt', short(sold), 'text-gold-200', `= ${pmFmt('passports', sold / PP_CR)} Passseiten`)}</div><div class="text-[11px] text-slate-500 mb-2">Power bzw. Migrations-Zeile oben wählen, dann rechnet er aus, wie viel du verkaufen musst.</div>`;
+    const needCr = need.passports * PP_CR, have = pagesCr + raw + passive, missNo = Math.max(0, needCr - have), missAfter = needCr - have - sold;
+    const when = dd != null && dd > 0 ? `zum ${new Date(st.date + 'T00:00:00').toLocaleDateString('de-DE')} (inkl. ${short(passive)} Passive)` : 'jetzt';
+    const sug = missAfter > 0 ? [['lila Blaupausen', 45000], ['blaue Blaupausen', 8000], ['lila Fragmente', 1500], ['lila Sterne ★★', 1200]].map(([l, v]) => `${fmt(Math.ceil(missAfter / v))} ${l}`).join(' · ') : '';
+    return `<div class="rounded-xl border ${missAfter <= 0 ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-gold-500/40 bg-gold-500/5'} p-3 mb-3">
+      <div class="text-xs text-slate-300 mb-2">Migration: <b>${fmt(need.passports)} Passseiten</b> = ${short(needCr)} Credits · gerechnet ${when}</div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        ${box('Ohne Verkauf fehlen', missNo ? short(missNo) : 'nichts ✓', missNo ? 'text-red-300' : 'text-emerald-300', missNo ? `= ${pmFmt('passports', missNo / PP_CR)} Seiten` : '')}
+        ${box('Verkauf bringt', short(sold), 'text-gold-200', `= ${pmFmt('passports', sold / PP_CR)} Seiten${missNo ? ` · deckt ${dec(Math.min(100, sold / missNo * 100), 0)} %` : ''}`)}
+        ${box(missAfter > 0 ? 'Nach Verkauf fehlen' : 'Überschuss', short(Math.abs(missAfter)), missAfter > 0 ? 'text-red-300' : 'text-emerald-300', `= ${pmFmt('passports', Math.abs(missAfter) / PP_CR)} Seiten`)}
+        ${box('Noch verkaufen', missAfter > 0 ? short(missAfter) : '–', missAfter > 0 ? 'text-amber-200' : 'text-slate-500', missAfter > 0 ? 'Credits zusätzlich' : 'reicht ✓')}
+      </div>
+      ${sug ? `<div class="mt-2 text-[11px] text-slate-400">Das wären z. B. ≈ ${sug}</div>` : ''}
+      <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">${secBoxes}</div></div>`;
+  }
+  function updSellSums() {   // Summen aktualisieren, ohne die Felder neu zu zeichnen (Tab springt weiter)
+    const box = $('sellBox'); if (!box) return; const st = sellSt();
+    SELL_GROUPS.forEach(g => { const S = sellGroupSum(g), el = box.querySelector(`[data-sellgsum="${g.k}"]`); if (el) el.innerHTML = `${fmt(S.n)} Stk · <b class="text-gold-300">${short(S.v)}</b>`; });
+    SELL_ITEMS.forEach(it => { const el = box.querySelector(`[data-sellisum="${it.k}"]`); if (el) el.textContent = (+st.cnt[it.k] || 0) ? short((+st.cnt[it.k] || 0) * it.val) : '–'; });
+    SELL_SECS.forEach(([k]) => { const el = box.querySelector(`[data-sellsecsum="${k}"]`); if (el) el.textContent = '· ' + short(sellSecTotal(k)); });
+    const p = $('sellPlan'); if (p) p.innerHTML = sellPlanHtml();
   }
   function bindSell(root, upd) {
     const st = sellSt();
     root.querySelectorAll('[data-sellsec]').forEach(d => d.addEventListener('toggle', () => { if (d.open) sellOpen.add(d.dataset.sellsec); else sellOpen.delete(d.dataset.sellsec); }));
-    root.querySelectorAll('[data-sellcnt]').forEach(i => i.addEventListener('change', () => { const v = Math.max(0, Math.round(+i.value || 0)); if (v) st.cnt[i.dataset.sellcnt] = v; else delete st.cnt[i.dataset.sellcnt]; upd(); }));
-    root.querySelectorAll('[data-sellalt]').forEach(i => i.addEventListener('change', () => { st.alt[i.dataset.sellalt] = i.checked; upd(); }));
-    root.querySelectorAll('[data-selladd]').forEach(b => b.onclick = () => { st.extra[b.dataset.selladd] = (+st.extra[b.dataset.selladd] || 0) + 5; upd(); });
-    root.querySelectorAll('[data-sellrem]').forEach(b => b.onclick = () => { const k = b.dataset.sellrem, g = SELL_GROUPS.find(x => x.k === k); st.extra[k] = Math.max(0, (+st.extra[k] || 0) - 5); for (let i = sellFields(g); i < sellFields(g) + 5; i++) delete st.cnt[k + '_' + i]; upd(); });
-    root.querySelectorAll('[data-sellhide]').forEach(b => b.onclick = () => { st.hide[b.dataset.sellhide] = true; upd(); });
-    root.querySelectorAll('[data-sellshow]').forEach(b => b.onclick = () => { delete st.hide[b.dataset.sellshow]; upd(); });
+    root.querySelectorAll('[data-sellcnt]').forEach(i => i.addEventListener('input', () => { const v = Math.max(0, Math.round(+i.value || 0)); if (v) st.cnt[i.dataset.sellcnt] = v; else delete st.cnt[i.dataset.sellcnt];
+      clearTimeout(bindSell._t); bindSell._t = setTimeout(() => upd(false), 300); }));
+    root.querySelectorAll('[data-sellalt]').forEach(i => i.addEventListener('change', () => { st.alt[i.dataset.sellalt] = i.checked; upd(false); }));
+    root.querySelectorAll('[data-selladd]').forEach(b => b.onclick = () => { st.extra[b.dataset.selladd] = (+st.extra[b.dataset.selladd] || 0) + 5; upd(true); });
+    root.querySelectorAll('[data-sellrem]').forEach(b => b.onclick = () => { const k = b.dataset.sellrem, g = SELL_GROUPS.find(x => x.k === k); st.extra[k] = Math.max(0, (+st.extra[k] || 0) - 5); for (let i = sellFields(g); i < sellFields(g) + 5; i++) delete st.cnt[k + '_' + i]; upd(true); });
+    root.querySelectorAll('[data-sellhide]').forEach(b => b.onclick = () => { if (st.hide[b.dataset.sellhide]) delete st.hide[b.dataset.sellhide]; else st.hide[b.dataset.sellhide] = true; upd(true); });
   }
-  function renderMigStats() {
+  function renderMigStats(onlyMig) {
     const top = $('statsTop'), st = migSt(), need = migNeed(), pw = migPower(), pages = ppPages(), cr = creditsNow(), sel = migSelRow();
     const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-sm tabular-nums focus:outline-none focus:border-gold-500';
     const card = (l, v, c, sub) => `<div class="rounded-xl border border-ink-700 bg-ink-950/50 p-3"><div class="text-[10px] uppercase tracking-widest text-slate-400">${l}</div><div class="text-xl font-bold tabular-nums ${c}">${v}</div>${sub ? `<div class="text-[11px] text-slate-500">${sub}</div>` : ''}</div>`;
@@ -3103,7 +3128,7 @@ window.RokApp = () => {
     const rng = (i) => { const r = MIG[i]; return r[0] === Infinity ? '> 100 Mio.' : `${i ? MIG[i - 1][0] : 0}–${r[0]} Mio.`; };
     const order = MIG.map((r, i) => i).reverse();   // Power absteigend
     const cell = (i, mode, txt, cls) => `<td data-migpick="${i}" data-mode="${mode}" class="py-1.5 px-3 text-right tabular-nums cursor-pointer hover:bg-gold-500/10 ${cls}">${txt}</td>`;
-    top.innerHTML = `<section id="migBox" class="panel rounded-2xl p-5">
+    const migSec = `<section id="migBox" class="panel rounded-2xl p-5">
       <h2 class="font-display text-lg text-gold-300">Migration</h2>
       <div class="grid sm:grid-cols-3 gap-3 mb-4">
         <label class="text-xs text-slate-400">Power (Mio.)<input id="migPower" type="text" inputmode="decimal" value="${st.power ? String(st.power / 1e6).replace('.', ',') : ''}" placeholder="${profPower() ? (profPower() / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' (Profil)' : 'z. B. 85'}" class="mt-1 w-full text-right ${inp}"></label>
@@ -3135,9 +3160,11 @@ window.RokApp = () => {
             ${cell(i, 'normal', r[1], on && !sm ? 'text-indigo-300 font-bold ring-1 ring-inset ring-gold-400/60' : '')}${cell(i, 'same', r[2], on && sm ? 'text-indigo-300 font-bold ring-1 ring-inset ring-gold-400/60' : '')}
             ${cell(i, 'normal', fmt(r[1] * PP_CR), on && !sm ? 'text-slate-100 font-bold' : 'text-slate-400')}${cell(i, 'same', fmt(r[2] * PP_CR), on && sm ? 'text-slate-100 font-bold' : 'text-slate-400')}</tr>`; }).join('')}</tbody></table></div>
       <div class="mt-1 text-[11px] text-slate-500">Zeile oder Zahl anklicken → wird oben ausgerechnet.</div>
-    </section>
-    ${sellHtml()}`;
-    makeFold($('migBox'), 'mig'); makeFold($('sellBox'), 'sell'); bindSell(top, () => { savePassive(); renderMigStats(); if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); });
+    </section>`;
+    if (onlyMig && $('migBox') && $('sellBox')) $('migBox').outerHTML = migSec;
+    else { top.innerHTML = migSec + sellHtml(); makeFold($('sellBox'), 'sell');
+      bindSell($('sellBox'), (full) => { savePassive(); if (full) renderMigStats(); else { updSellSums(); renderMigStats(true); } if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); }); }
+    makeFold($('migBox'), 'mig');
     $('migDate').onchange = (e) => { st.date = pDate(e.target.value) ? e.target.value : ''; upd(); };
     $('migDateClr')?.addEventListener('click', () => { st.date = ''; upd(); });
     const upd = () => { savePassive(); renderMigStats(); if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); };
