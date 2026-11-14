@@ -3934,7 +3934,7 @@ window.RokApp = () => {
     top.querySelectorAll('[data-keyn]').forEach(i => i.addEventListener('change', () => { const v = i.value.trim(); st[i.dataset.keyn] = v === '' ? null : Math.max(0, Math.round(+v || 0)); savePassive(); renderKeyStats(); }));
   }
   // ---------- Kampf: Kampfberichte aus dem Mailcache (Supabase: rok_battles, gefüllt vom PC-Uploader) ----------
-  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 30;
+  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50;
   var KB_COLS = 'mail_id,opponent_id,account,player_id,battle_start,is_pvp,self_name,self_alliance,self_hero1,self_hero2,self_troops_start,self_wounded,self_severe,self_dead,self_healing,self_power_lost,enemy_name,enemy_alliance,enemy_hero1,enemy_hero2,enemy_troops_start,enemy_wounded,enemy_severe,enemy_dead,enemy_power_lost,kill_points';
   async function loadBattles(force) {
     if (kbLoading || (kbRows && !force)) return; kbLoading = true; kbProg = 0; kbErr = '';
@@ -3969,106 +3969,115 @@ window.RokApp = () => {
       if (from != null && !(t >= from)) return false; if (to != null && !(t <= to)) return false; return true; });
   }
   function kbHeroes(a, b) { return [a, b].filter(Boolean).map(esc).join(' / ') || '–'; }
+  // Trade = Gegner-Verluste (Tote + schwer verwundet) pro eigene Verluste
+  function kbTrade(a) { const own = a.sDead + a.sSev, en = a.eDead + a.eSev; return own > 0 ? en / own : (en > 0 ? Infinity : null); }
+  function kbRatioTxt(v) { return v == null ? '–' : v === Infinity ? '∞' : dec(v, v < 10 ? 2 : 0); }
+  // Sortierbare Tabelle: cols = [{k, l, v(row), f(row), left, c}]
+  function kbTable(tab, cols, rows, defSort, limit) {
+    const st = kbSt(), so = (st.sort = st.sort || {})[tab] || defSort, col = cols.find(c => c.k === so.k) || cols.find(c => c.k === defSort.k);
+    const val = (r) => { const v = col.v(r); return v === Infinity ? 1e18 : v == null ? -1e18 : v; };
+    const sorted = rows.slice().sort((a, b) => { const x = val(a), y = val(b); const r = typeof x === 'string' ? String(x).localeCompare(String(y)) : x - y; return so.dir === 'asc' ? r : -r; });
+    const shown = limit ? sorted.slice(0, limit) : sorted;
+    const th = (c) => `<th class="py-2 px-2 font-medium ${c.left ? 'text-left' : 'text-right'} whitespace-nowrap"><button type="button" data-kbsort="${tab}|${c.k}" class="hover:text-gold-300 ${c.k === col.k ? 'text-gold-300' : ''}">${c.l}${c.k === col.k ? `<span> ${so.dir === 'asc' ? '▲' : '▼'}</span>` : ''}</button></th>`;
+    return { n: sorted.length, html: `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">${cols.map(th).join('')}</tr></thead>
+      <tbody>${shown.map(r => `<tr class="border-b border-ink-800/60 hover:bg-ink-800/40">${cols.map(c => `<td class="py-1.5 px-2 ${c.left ? 'text-left' : 'text-right tabular-nums'} whitespace-nowrap ${c.c || ''}">${c.f ? c.f(r) : esc(c.v(r))}</td>`).join('')}</tr>`).join('') || `<tr><td colspan="${cols.length}" class="py-6 text-center text-slate-500">Keine Kämpfe in diesem Filter.</td></tr>`}</tbody></table></div>` };
+  }
   function renderKampf() {
     const el = $('kampfSection'); if (!el) return;
     if (!kbRows && !kbLoading) loadBattles();
-    const st = kbSt();
+    const st = kbSt(), tab = st.tab || 'march';
     const segBtn = (attr, k, l, on) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${l}</button>`;
     const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-gold-500';
-    let body = '';
-    if (kbLoading && !kbRows) body = `<div class="py-8 text-center text-sm text-slate-400">Lade Kampfberichte … <span id="kbProg" class="tabular-nums">${fmt(kbProg)}</span></div>`;
-    else if (kbErr === 'missing') body = `<div class="py-6 text-sm text-amber-300">Die Tabelle „rok_battles“ fehlt noch in Supabase. Bitte zuerst das SQL vom Kampf-Uploader ausführen.</div>`;
-    else if (kbErr) body = `<div class="py-6 text-sm text-red-400">Laden hat nicht geklappt: ${esc(kbErr)}</div>`;
-    else if (!kbRows.length) body = `<div class="py-6 text-sm text-slate-400">Noch keine Kampfberichte da. Starte den Kampf-Uploader auf deinem PC – er liest den Mailcache des Spiels und lädt die Berichte hoch.</div>`;
-    else {
-      const accs = [...new Map(kbRows.filter(r => r.player_id != null).map(r => [String(r.player_id), `${r.self_name || 'Spieler'}${r.account ? ` (${r.account})` : ''}`])).entries()];
-      if (st.acc && !accs.some(([k]) => k === st.acc)) st.acc = '';
-      const rows = kbFiltered(), A = kbAgg(rows);
-      const ratio = (a, b) => b > 0 ? dec(a / b, a / b < 10 ? 2 : 0) : '–';
-      const card = (l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[10px] uppercase tracking-wider text-slate-400">${l}</div><div class="font-display text-xl tabular-nums ${c || 'text-white'}">${v}</div>${sub ? `<div class="text-[10px] text-slate-500 tabular-nums">${sub}</div>` : ''}</div>`;
-      const filters = `<div class="flex flex-wrap items-center gap-2 mb-4">
-          ${accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
-          <div class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[['all', 'Alle'], ['pvp', '⚔️ PvP'], ['pve', '🪓 PvE']].map(([k, l]) => segBtn('data-kbtype', k, l, st.type === k)).join('')}</div>
-          <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[[1, '24 h'], [7, '7 Tage'], [30, '30 Tage'], [90, '90 Tage'], [0, 'Alles'], ['custom', 'Zeitraum']].map(([k, l]) => segBtn('data-kbdays', k, l, String(st.days) === String(k))).join('')}</div>
-          ${st.days === 'custom' ? `<input type="date" data-kbdate="from" value="${esc(st.from)}" class="${inp}"><span class="text-xs text-slate-500">bis</span><input type="date" data-kbdate="to" value="${esc(st.to)}" class="${inp}">` : ''}
-          <button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>
-        </div>`;
-      const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
-      const info = `<div class="text-[11px] text-slate-500 mb-3">${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
-      const cards = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-          ${card('Kämpfe', fmt(A.battles), A.rows !== A.battles ? `${fmt(A.rows)} Gegner-Einträge` : '')}
-          ${card('Kill Points', short(A.kp), fmt(A.kp), 'text-gold-300')}
-          ${card('Gegner getötet', short(A.eDead), fmt(A.eDead), 'text-emerald-300')}
-          ${card('Gegner schwer verwundet', short(A.eSev), fmt(A.eSev), 'text-emerald-300')}
-          ${card('Eigene Tote', short(A.sDead), fmt(A.sDead), 'text-red-300')}
-          ${card('Eigene schwer verwundet', short(A.sSev), fmt(A.sSev), 'text-red-300')}
-          ${card('Eigene verwundet', short(A.sWound), fmt(A.sWound))}
-          ${card('Heilung', short(A.sHeal), fmt(A.sHeal), 'text-sky-300')}
-          ${card('Power verloren', short(A.sPow), `Gegner: ${short(A.ePow)}`)}
-          ${card('KP pro eigenem Toten', ratio(A.kp, A.sDead))}
-          ${card('Gegner-Verluste pro eigenen', ratio(A.eDead + A.eSev, A.sDead + A.sSev), 'Tote + schwer verwundet')}
-          ${card('Ø KP pro Kampf', A.battles ? short(A.kp / A.battles) : '–')}
-        </div>`;
-      // pro Tag
-      const byDay = new Map(); rows.forEach(r => { if (!r.battle_start) return; const d = isoDay(new Date(r.battle_start)); if (!byDay.has(d)) byDay.set(d, []); byDay.get(d).push(r); });
-      const days = [...byDay.entries()].sort((a, b) => b[0].localeCompare(a[0])).slice(0, 60).map(([d, rs]) => [d, kbAgg(rs)]);
-      const maxKp = Math.max(1, ...days.map(([, a]) => a.kp));
-      const th = 'py-2 px-2 font-medium', td = 'py-1 px-2 text-right tabular-nums';
-      const dayTbl = days.length ? `<section id="kbDayBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">Verlauf pro Tag</h2>
-          <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
-            <th class="${th} text-left">Tag</th><th class="${th} text-right">Kämpfe</th><th class="${th} text-left min-w-[8rem]">Kill Points</th><th class="${th} text-right">Gegner Tote</th><th class="${th} text-right">Gegner SV</th><th class="${th} text-right">Eigene Tote</th><th class="${th} text-right">Eigene SV</th><th class="${th} text-right">Heilung</th></tr></thead>
-          <tbody>${days.map(([d, a]) => `<tr class="border-b border-ink-800/60"><td class="py-1 px-2 whitespace-nowrap">${new Date(d + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })}</td><td class="${td}">${fmt(a.battles)}</td>
-            <td class="py-1 px-2"><div class="flex items-center gap-2"><div class="h-2 rounded bg-gold-500/70" style="width:${Math.max(2, Math.round(a.kp / maxKp * 100))}%"></div><span class="tabular-nums whitespace-nowrap">${short(a.kp)}</span></div></td>
-            <td class="${td} text-emerald-300">${short(a.eDead)}</td><td class="${td} text-emerald-300">${short(a.eSev)}</td><td class="${td} text-red-300">${short(a.sDead)}</td><td class="${td} text-red-300">${short(a.sSev)}</td><td class="${td} text-sky-300">${short(a.sHeal)}</td></tr>`).join('')}</tbody></table></div>
-          ${byDay.size > 60 ? '<div class="mt-2 text-[11px] text-slate-500">Nur die letzten 60 Tage mit Kämpfen.</div>' : ''}</section>` : '';
-      // Kommandanten-Paare
-      const byHero = new Map(); rows.forEach(r => { const k = [r.self_hero1, r.self_hero2].filter(Boolean).join(' / ') || '–'; if (!byHero.has(k)) byHero.set(k, []); byHero.get(k).push(r); });
-      const heroes = [...byHero.entries()].map(([k, rs]) => [k, kbAgg(rs)]).sort((a, b) => b[1].kp - a[1].kp || b[1].battles - a[1].battles).slice(0, 15);
-      const heroTbl = heroes.length ? `<section id="kbHeroBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">Deine Kommandanten</h2>
-          <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
-            <th class="${th} text-left">Paar</th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">Kill Points</th><th class="${th} text-right">Ø KP</th><th class="${th} text-right">Gegner T + SV</th><th class="${th} text-right">Eigene Tote</th><th class="${th} text-right">Heilung</th></tr></thead>
-          <tbody>${heroes.map(([k, a]) => `<tr class="border-b border-ink-800/60"><td class="py-1 px-2">${esc(k)}</td><td class="${td}">${fmt(a.battles)}</td><td class="${td} text-gold-300">${short(a.kp)}</td><td class="${td}">${a.battles ? short(a.kp / a.battles) : '–'}</td><td class="${td} text-emerald-300">${short(a.eDead + a.eSev)}</td><td class="${td} text-red-300">${short(a.sDead)}</td><td class="${td} text-sky-300">${short(a.sHeal)}</td></tr>`).join('')}</tbody></table></div></section>` : '';
-      // Gegner (nur PvP)
-      const byEn = new Map(); rows.filter(r => r.is_pvp && r.enemy_name).forEach(r => { const k = (r.enemy_alliance ? `[${r.enemy_alliance}] ` : '') + r.enemy_name; if (!byEn.has(k)) byEn.set(k, []); byEn.get(k).push(r); });
-      const ens = [...byEn.entries()].map(([k, rs]) => [k, kbAgg(rs)]).sort((a, b) => b[1].rows - a[1].rows || b[1].kp - a[1].kp).slice(0, 15);
-      const enTbl = ens.length ? `<section id="kbEnBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">Häufigste Gegner (PvP)</h2>
-          <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
-            <th class="${th} text-left">Gegner</th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">Kill Points</th><th class="${th} text-right">Seine Tote</th><th class="${th} text-right">Seine SV</th><th class="${th} text-right">Eigene Tote</th><th class="${th} text-right">Eigene SV</th></tr></thead>
-          <tbody>${ens.map(([k, a]) => `<tr class="border-b border-ink-800/60"><td class="py-1 px-2">${esc(k)}</td><td class="${td}">${fmt(a.rows)}</td><td class="${td} text-gold-300">${short(a.kp)}</td><td class="${td} text-emerald-300">${short(a.eDead)}</td><td class="${td} text-emerald-300">${short(a.eSev)}</td><td class="${td} text-red-300">${short(a.sDead)}</td><td class="${td} text-red-300">${short(a.sSev)}</td></tr>`).join('')}</tbody></table></div></section>` : '';
-      // einzelne Kämpfe
-      const list = rows.slice(0, kbShow);
-      const listBox = `<section id="kbListBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">Einzelne Kämpfe</h2>
-          <div class="space-y-2">${list.map(r => { const t = r.battle_start ? new Date(r.battle_start) : null;
-            return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 text-xs">
-              <div class="flex flex-wrap items-center gap-2 mb-1"><span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${r.is_pvp ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'}">${r.is_pvp ? 'PvP' : 'PvE'}</span>
-                <span class="text-slate-400 tabular-nums">${t ? t.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–'}</span>
-                <span class="ml-auto font-semibold text-gold-300 tabular-nums">${kbN(r.kill_points) ? fmt(r.kill_points) + ' KP' : ''}</span></div>
-              <div class="grid sm:grid-cols-2 gap-2">
-                <div><div class="text-slate-300">${kbHeroes(r.self_hero1, r.self_hero2)}</div>
-                  <div class="text-slate-500 tabular-nums">Truppen ${short(r.self_troops_start)} · <span class="text-red-300">Tote ${short(r.self_dead)}</span> · <span class="text-red-300">SV ${short(r.self_severe)}</span> · Verw. ${short(r.self_wounded)} · <span class="text-sky-300">Heil. ${short(r.self_healing)}</span></div></div>
-                <div><div class="text-slate-300">vs ${r.enemy_alliance ? `[${esc(r.enemy_alliance)}] ` : ''}${esc(r.enemy_name || '–')} <span class="text-slate-500">· ${kbHeroes(r.enemy_hero1, r.enemy_hero2)}</span></div>
-                  <div class="text-slate-500 tabular-nums">Truppen ${short(r.enemy_troops_start)} · <span class="text-emerald-300">Tote ${short(r.enemy_dead)}</span> · <span class="text-emerald-300">SV ${short(r.enemy_severe)}</span> · Verw. ${short(r.enemy_wounded)}</div></div>
-              </div></div>`; }).join('') || '<div class="text-sm text-slate-500">Keine Kämpfe in diesem Filter.</div>'}</div>
-          ${rows.length > kbShow ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(rows.length - kbShow)} weitere)</button>` : ''}</section>`;
-      body = filters + info + cards;
-      el.innerHTML = `<section id="kampfBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">⚔️ Kampf</h2>
-        <p class="text-xs text-slate-400 mb-3">Deine Kampfberichte aus dem Mailcache des Spiels – der Uploader auf deinem PC lädt sie automatisch hoch. Nur Berichte, die noch im Postfach sind, kommen an.</p>${body}</section>${dayTbl}${heroTbl}${enTbl}${listBox}`;
-      ['kbDayBox', 'kbHeroBox', 'kbEnBox', 'kbListBox'].forEach(id => $(id) && makeFold($(id), id));
-      kbBind(el); return;
+    const head = (txt) => `<section id="kampfBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">⚔️ Kampf</h2>
+      <p class="text-xs text-slate-400 mb-3">Deine Kampfberichte aus dem Mailcache des Spiels – der Uploader auf deinem PC lädt sie automatisch hoch. Nur Berichte, die noch im Postfach sind, kommen an.</p>${txt}`;
+    let msg = '';
+    if (kbLoading && !kbRows) msg = `<div class="py-8 text-center text-sm text-slate-400">Lade Kampfberichte … <span id="kbProg" class="tabular-nums">${fmt(kbProg)}</span></div>`;
+    else if (kbErr === 'missing') msg = `<div class="py-6 text-sm text-amber-300">Die Tabelle „rok_battles“ fehlt noch in Supabase. Bitte zuerst das SQL vom Kampf-Uploader ausführen.</div>`;
+    else if (kbErr) msg = `<div class="py-6 text-sm text-red-400">Laden hat nicht geklappt: ${esc(kbErr)}</div>`;
+    else if (!kbRows.length) msg = `<div class="py-6 text-sm text-slate-400">Noch keine Kampfberichte da. Starte den Kampf-Uploader auf deinem PC – er liest den Mailcache des Spiels und lädt die Berichte hoch.</div>`;
+    if (msg) { el.innerHTML = head(msg + (!kbLoading ? '<button type="button" id="kbReload" class="mt-2 px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">↻ Neu laden</button>' : '')) + '</section>'; kbBind(el); return; }
+
+    const accs = [...new Map(kbRows.filter(r => r.player_id != null).map(r => [String(r.player_id), `${r.self_name || 'Spieler'}${r.account ? ` (${r.account})` : ''}`])).entries()];
+    if (st.acc && !accs.some(([k]) => k === st.acc)) st.acc = '';
+    const rows = kbFiltered(), A = kbAgg(rows);
+    const filters = `<div class="flex flex-wrap items-center gap-2 mb-2">
+        ${accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
+        <div class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[['all', 'Alle'], ['pvp', '⚔️ PvP'], ['pve', '🪓 PvE']].map(([k, l]) => segBtn('data-kbtype', k, l, st.type === k)).join('')}</div>
+        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[[1, '24 h'], [7, '7 Tage'], [30, '30 Tage'], [90, '90 Tage'], [0, 'Alles'], ['custom', 'Zeitraum']].map(([k, l]) => segBtn('data-kbdays', k, l, String(st.days) === String(k))).join('')}</div>
+        ${st.days === 'custom' ? `<input type="date" data-kbdate="from" value="${esc(st.from)}" class="${inp}"><span class="text-xs text-slate-500">bis</span><input type="date" data-kbdate="to" value="${esc(st.to)}" class="${inp}">` : ''}
+        <button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>
+      </div>`;
+    const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
+    const info = `<div class="text-[11px] text-slate-500 mb-4">${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
+    // oben: 4 Kennzahlen + Verluste Du | Gegner
+    const big = (l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[10px] uppercase tracking-wider text-slate-400">${l}</div><div class="font-display text-2xl tabular-nums ${c || 'text-white'}">${v}</div><div class="text-[10px] text-slate-500 tabular-nums">${sub || '&nbsp;'}</div></div>`;
+    const tr = kbTrade(A);
+    const kpis = `<div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+        ${big('Kämpfe', fmt(A.battles), A.rows !== A.battles ? `${fmt(A.rows)} Gegner-Einträge` : '')}
+        ${big('Kill Points', short(A.kp), A.battles ? `Ø ${short(A.kp / A.battles)} pro Kampf` : '', 'text-gold-300')}
+        ${big('Trade', kbRatioTxt(tr), 'Gegner T+SV pro eigene T+SV', tr == null ? '' : tr >= 1 ? 'text-emerald-300' : 'text-red-300')}
+        ${big('KP pro Toten', kbRatioTxt(A.sDead > 0 ? A.kp / A.sDead : (A.kp > 0 ? Infinity : null)), 'Kill Points pro eigenem Toten')}
+      </div>`;
+    const lr = (l, s, e, c) => `<tr class="border-b border-ink-800/60"><td class="py-1.5 px-3 text-slate-300">${l}</td><td class="py-1.5 px-3 text-right tabular-nums ${c ? 'text-red-300' : ''}">${s}</td><td class="py-1.5 px-3 text-right tabular-nums ${c ? 'text-emerald-300' : ''}">${e}</td></tr>`;
+    const loss = `<div class="overflow-x-auto rounded-lg border border-ink-700 max-w-xl"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-3 text-left font-medium">Verluste</th><th class="py-2 px-3 text-right font-medium">Du</th><th class="py-2 px-3 text-right font-medium">Gegner</th></tr></thead><tbody>
+        ${lr('Tote', fmt(A.sDead), fmt(A.eDead), 1)}${lr('Schwer verwundet', fmt(A.sSev), fmt(A.eSev), 1)}${lr('Verwundet', fmt(A.sWound), fmt(A.eWound))}
+        ${lr('Tote + schwer verwundet', fmt(A.sDead + A.sSev), fmt(A.eDead + A.eSev), 1)}${lr('Heilung', fmt(A.sHeal), '–')}${lr('Power verloren', short(A.sPow), short(A.ePow))}</tbody></table></div>`;
+
+    // Tabellen
+    const group = (keyFn) => { const m = new Map(); rows.forEach(r => { const k = keyFn(r); if (k == null) return; if (!m.has(k)) m.set(k, []); m.get(k).push(r); }); return [...m.entries()].map(([k, rs]) => ({ k, ...kbAgg(rs), last: rs.reduce((x, r) => Math.max(x, Date.parse(r.battle_start || 0) || 0), 0) })); };
+    const red = 'text-red-300', grn = 'text-emerald-300', gold = 'text-gold-300', sky = 'text-sky-300';
+    const tradeCol = { k: 'trade', l: 'Trade', v: kbTrade, f: (a) => { const t = kbTrade(a); return `<span class="${t == null ? '' : t >= 1 ? grn : red} font-semibold">${kbRatioTxt(t)}</span>`; } };
+    const kpdCol = { k: 'kpd', l: 'KP / Toter', v: (a) => a.sDead > 0 ? a.kp / a.sDead : (a.kp > 0 ? Infinity : null), f: (a) => kbRatioTxt(a.sDead > 0 ? a.kp / a.sDead : (a.kp > 0 ? Infinity : null)) };
+    const lossCols = [
+      { k: 'sDead', l: 'Tote', v: a => a.sDead, f: a => short(a.sDead), c: red }, { k: 'sSev', l: 'Schwer verw.', v: a => a.sSev, f: a => short(a.sSev), c: red },
+      { k: 'sWound', l: 'Verwundet', v: a => a.sWound, f: a => short(a.sWound) }, { k: 'sHeal', l: 'Heilung', v: a => a.sHeal, f: a => short(a.sHeal), c: sky },
+      { k: 'eDead', l: 'Geg. Tote', v: a => a.eDead, f: a => short(a.eDead), c: grn }, { k: 'eSev', l: 'Geg. SV', v: a => a.eSev, f: a => short(a.eSev), c: grn }];
+    const lim = kbShow;
+    let T, hint = '';
+    if (tab === 'march') {
+      const g = group(r => [r.self_hero1, r.self_hero2].filter(Boolean).join(' / ') || '–');
+      T = kbTable('march', [{ k: 'k', l: 'Marsch', v: a => a.k, left: true, c: 'text-slate-200' }, { k: 'battles', l: 'Kämpfe', v: a => a.battles, f: a => fmt(a.battles) },
+        { k: 'last', l: 'Zuletzt', v: a => a.last, f: a => a.last ? new Date(a.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–' },
+        { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => short(a.kp), c: gold }, { k: 'avg', l: 'Ø KP', v: a => a.battles ? a.kp / a.battles : 0, f: a => a.battles ? short(a.kp / a.battles) : '–' },
+        tradeCol, kpdCol, ...lossCols], g, { k: 'kp', dir: 'desc' });
+      hint = 'Ein Marsch = dein Kommandanten-Paar. Trade = Gegner (Tote + schwer verwundet) pro eigene (Tote + schwer verwundet) – über 1 heißt, du hast besser getauscht.';
+    } else if (tab === 'day') {
+      const g = group(r => r.battle_start ? isoDay(new Date(r.battle_start)) : null);
+      T = kbTable('day', [{ k: 'k', l: 'Tag', v: a => a.k, left: true, f: a => new Date(a.k + 'T12:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: '2-digit' }) },
+        { k: 'battles', l: 'Kämpfe', v: a => a.battles, f: a => fmt(a.battles) }, { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => short(a.kp), c: gold },
+        tradeCol, kpdCol, ...lossCols], g, { k: 'k', dir: 'desc' }, lim);
+    } else if (tab === 'enemy') {
+      const g = group(r => r.is_pvp && r.enemy_name ? (r.enemy_alliance ? `[${r.enemy_alliance}] ` : '') + r.enemy_name : null);
+      T = kbTable('enemy', [{ k: 'k', l: 'Gegner', v: a => a.k, left: true, c: 'text-slate-200' }, { k: 'rows', l: 'Kämpfe', v: a => a.rows, f: a => fmt(a.rows) },
+        { k: 'last', l: 'Zuletzt', v: a => a.last, f: a => a.last ? new Date(a.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–' },
+        { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => short(a.kp), c: gold }, tradeCol, ...lossCols], g, { k: 'rows', dir: 'desc' }, lim);
+      hint = 'Nur PvP-Kämpfe.';
+    } else {
+      const one = rows.map(r => ({ ...r, ...kbAgg([r]), t: Date.parse(r.battle_start || 0) || 0, march: [r.self_hero1, r.self_hero2].filter(Boolean).join(' / ') || '–' }));
+      T = kbTable('list', [{ k: 't', l: 'Datum', v: a => a.t, left: true, f: a => a.t ? new Date(a.t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–' },
+        { k: 'pvp', l: 'Art', v: a => a.is_pvp ? 1 : 0, left: true, f: a => `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${a.is_pvp ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'}">${a.is_pvp ? 'PvP' : 'PvE'}</span>` },
+        { k: 'march', l: 'Marsch', v: a => a.march, left: true, c: 'text-slate-200' },
+        { k: 'enemy', l: 'Gegner', v: a => (a.enemy_alliance ? `[${a.enemy_alliance}] ` : '') + (a.enemy_name || ''), left: true, f: a => `${a.enemy_alliance ? `[${esc(a.enemy_alliance)}] ` : ''}${esc(a.enemy_name || '–')}` },
+        { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => a.kp ? fmt(a.kp) : '–', c: gold }, { k: 'troops', l: 'Truppen', v: a => a.sTroops, f: a => short(a.sTroops) },
+        tradeCol, ...lossCols], one, { k: 't', dir: 'desc' }, lim);
     }
-    el.innerHTML = `<section id="kampfBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">⚔️ Kampf</h2>
-      <p class="text-xs text-slate-400 mb-3">Deine Kampfberichte aus dem Mailcache des Spiels – der Uploader auf deinem PC lädt sie automatisch hoch.</p>${body}
-      ${!kbLoading ? '<button type="button" id="kbReload" class="mt-2 px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">↻ Neu laden</button>' : ''}</section>`;
+    const tabs = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', '🎯 Gegner'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => `<button type="button" data-kbtab="${k}" aria-pressed="${tab === k}" class="seg-btn rounded-lg py-1.5 text-xs font-semibold transition">${l}</button>`).join('')}</div>`;
+    const more = lim && T.n > lim && tab !== 'march' ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(T.n - lim)} weitere)</button>` : '';
+    el.innerHTML = head(filters + info + kpis + loss) + `</section>
+      <section id="kbTabBox" class="panel rounded-2xl p-5">${tabs}<div class="text-[11px] text-slate-500 mb-2">Zum Sortieren auf eine Spalte klicken.${hint ? ' ' + hint : ''}</div>${T.html}${more}</section>`;
     kbBind(el);
   }
   function kbBind(el) {
-    const st = kbSt(), re = () => { kbShow = 30; savePassive(); renderKampf(); };
+    const st = kbSt(), re = () => { kbShow = 50; savePassive(); renderKampf(); };
     $('kbReload')?.addEventListener('click', () => { loadBattles(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; re(); });
     el.querySelectorAll('[data-kbdays]').forEach(b => b.onclick = () => { const v = b.dataset.kbdays; st.days = v === 'custom' ? 'custom' : +v; re(); });
     el.querySelectorAll('[data-kbdate]').forEach(i => i.addEventListener('change', () => { st[i.dataset.kbdate] = i.value; re(); }));
-    $('kbMore')?.addEventListener('click', () => { kbShow += 30; renderKampf(); });
+    el.querySelectorAll('[data-kbtab]').forEach(b => b.onclick = () => { st.tab = b.dataset.kbtab; re(); });
+    el.querySelectorAll('[data-kbsort]').forEach(b => b.onclick = () => { const [t, k] = b.dataset.kbsort.split('|'), S = (st.sort = st.sort || {}), cur = S[t];
+      S[t] = { k, dir: cur && cur.k === k ? (cur.dir === 'desc' ? 'asc' : 'desc') : (['k', 'march', 'enemy', 'pvp'].includes(k) ? 'asc' : 'desc') }; savePassive(); renderKampf(); });
+    $('kbMore')?.addEventListener('click', () => { kbShow += 50; renderKampf(); });
   }
   function renderStats(m) {
     const top = $('statsTop'), sec = $('passiveInputs');
