@@ -35,10 +35,12 @@ window.RokMods.battles = (R) => {
   }
   function kbSt() { const s = (S.kampf = S.kampf || { acc: '', type: 'pvp', days: 30, from: '', to: '' }); if (s.type !== 'pvp' && s.type !== 'pve') s.type = 'pvp'; return s; }
   // PvE-Arten: NpcBType aus dem Bericht → Kategorie (1 = Barbar sicher, Rest einstellbar unter „PvE-Gegnerarten“)
-  var KB_CATS = [['barb', '🪓 Barbaren'], ['fort', '🏯 Forts'], ['kvkkaruak', '👹 KvK-Karuak'], ['maraud', '🐎 Marodeure'], ['other', '❔ Sonstige']];
-  // NpcBType aus den Berichten: 1 = Barbar (Kdt. 273), 41 = Barbarenfort (Kdt. 272, viele Wellen in einem Bericht),
-  // 9 = Karuak ohne Belohnung (Kdt. 2) → wird nicht gezählt, 47 / 28–30 = KvK-Karuak
-  var KB_NPC = { 1: 'barb', 41: 'fort', 9: 'skip', 47: 'kvkkaruak', 28: 'kvkkaruak', 29: 'kvkkaruak', 30: 'kvkkaruak' };
+  var KB_CATS = [['barb', '🪓 Barbaren'], ['fort', '🏯 Forts'], ['baulur', '🐗 Baulurs'], ['raid', '👑 Raid-Boss'], ['ckaruak', '💎 Kristall-Karuak'], ['maraud', '🐎 Marodeure']];
+  // NpcBType aus den Berichten: 1 = Barbar (Kdt. 273) · 41 = Fort (Kdt. 272, viele Wellen) · 47 / 28–30 = Baulurs (KvK)
+  // 2 = Raid-Boss (Kdt. 204, 2,1 Mio. Truppen, Belohnung per Mail „KillRaidBossReport“) · 13 = Kristall-Karuak? (Kdt. 77, Beute im Bericht)
+  // 9 = Karuak ohne Belohnung und alles Unbekannte (z. B. Offseason-Event) → wird nicht gezählt
+  var KB_NPC = { 1: 'barb', 41: 'fort', 47: 'baulur', 28: 'baulur', 29: 'baulur', 30: 'baulur', 2: 'raid', 13: 'ckaruak' };
+  var KB_REWARD_MAIL = { KillRaidBossReport: 'raid' };   // Belohnungen, die als eigene Mail kommen → Kategorie
   // Ein Ziel zählt als besiegt, wenn alle Gegner-Truppen weg sind – ein Fort zählt einmal pro Bericht
   function kbDefeated(r) { const t = kbN(r.enemy_troops_start); return t > 0 && kbN(r.enemy_dead) + kbN(r.enemy_severe) + kbN(r.enemy_wounded) >= t * 0.999; }
   function kbTargets(rows, cat) {
@@ -47,13 +49,17 @@ window.RokMods.battles = (R) => {
     return s.size;
   }
   function kbCatOf(bt, group) {
-    const map = kbSt().npcMap || {};
-    if (bt != null && map[bt]) return map[bt];
-    if (bt != null && KB_NPC[bt]) return KB_NPC[bt];
-    if (group > 1) return 'fort';
-    return 'other';
+    if (bt != null) return KB_NPC[bt] || 'skip';
+    return group > 1 ? 'fort' : 'skip';   // alte Berichte ohne Art: Rally = Fort
   }
-  function kbCatLabel(c) { return (KB_CATS.find(x => x[0] === c) || KB_CATS[3])[1]; }
+  function kbCatLabel(c) { return (KB_CATS.find(x => x[0] === c) || [c, '–'])[1]; }
+  function kxLootCat(r) { return r.source === 'event' ? (KB_REWARD_MAIL[r.event_name] || 'skip') : kbCatOf(r.npc_btype, 1); }
+  // Gruppenkämpfe, bei denen du nur Teilnehmer warst (rok_rallies) – als Zeilen für die Zählung
+  function kxRallyRows(pvp) {
+    const st = kbSt();
+    return (kxRally || []).filter(r => (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start) && (pvp ? !!r.is_pvp : !r.is_pvp))
+      .map(r => ({ mail_id: r.mail_id, opponent_id: 'rally', battle_start: r.battle_start, player_id: r.player_id, npc_btype: r.npc_btype, npc_level: r.npc_level, group_size: Math.max(2, +r.members || 2), is_pvp: !!r.is_pvp, joined: true }));
+  }
   function kbIsPvp(r) { return !!r.is_pvp && kbN(r.kill_points) > 0; }   // PvP = nur Kämpfe gegen Spieler, die Kill Points gebracht haben
   function kbMarchOf(r) { return [r.self_hero1, r.self_hero2].filter(Boolean).join(' / ') || '–'; }
   function kbEnemyOf(r) { return r.enemy_name ? (r.enemy_alliance ? `[${r.enemy_alliance}] ` : '') + r.enemy_name : null; }
@@ -116,20 +122,20 @@ window.RokMods.battles = (R) => {
       return (f == null || t >= f) && (to == null || t <= to); }
     return !(+st.days > 0) || t >= Date.now() - st.days * 86400000;
   }
-  function kxSections() {
+  function kxSections(mode) {
     if (!kxLoot && !kxLoading) loadKampfExtra();
     if (!kxLoot) return '';
     const st = kbSt(), th = 'py-2 px-2 font-medium', td = 'py-1 px-2 text-right tabular-nums';
     const accOk = r => !st.acc || String(r.player_id) === st.acc;
     // Beute
-    const pve = st.type === 'pve', cat = pve ? st.cat || '' : '';
-    const loot = kxLoot.filter(r => accOk(r) && kxInRange(r.got_at) && (!cat || (r.source !== 'event' && kbCatOf(r.npc_btype, 1) === cat)));
+    const isLoot = mode === 'loot', pve = isLoot || st.type === 'pve', cat = isLoot ? (st.lootCat || '') : (pve ? st.cat || '' : '');
+    const loot = kxLoot.filter(r => { if (!accOk(r) || !kxInRange(r.got_at)) return false; const c = kxLootCat(r); return c !== 'skip' && (!cat || c === cat); });
     const agg = new Map(); loot.forEach(r => { const k = r.item_type + '_' + r.item_id; const o = agg.get(k) || { t: r.item_type, id: r.item_id, amt: 0, seen: 0 }; o.amt += +r.amount || 0; o.seen++; agg.set(k, o); });
     const gi = (o) => KX_GROUPS.findIndex(g => g[0] === kxGroupOf(o.t, o.id));
     const items = [...agg.values()].sort((a, b) => gi(a) - gi(b) || b.amt - a.amt);
     const nNpc = new Set(loot.filter(r => r.source !== 'event').map(r => r.mail_id + r.idx.split('_')[0])).size, nEv = new Set(loot.filter(r => r.source === 'event').map(r => r.mail_id)).size;
     const lootBox = `<section id="kxLootBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">🎁 <span>Belohnungen</span>${cat ? ' – <span>' + kbCatLabel(cat) + '</span>' : ''}</h2>
-      <p class="text-xs text-slate-400 mb-3">Was du im gewählten Zeitraum aus NPC-Kämpfen (${fmt(nNpc)} besiegte Ziele) und Event-Belohnungen (${fmt(nEv)} Mails) bekommen hast.</p>
+      <p class="text-xs text-slate-400 mb-3">Was du im gewählten Zeitraum aus NPC-Kämpfen (${fmt(nNpc)} besiegte Ziele) und eigenen Belohnungs-Mails (${fmt(nEv)} Mails, z. B. Raid-Boss) bekommen hast.</p>
       ${items.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
         <th class="${th} text-left">Gegenstand</th><th class="${th} text-right">Menge</th><th class="${th} text-right">Gesehen</th></tr></thead>
         <tbody>${items.map((o, i) => { const g = kxGroupOf(o.t, o.id), head = !i || kxGroupOf(items[i - 1].t, items[i - 1].id) !== g;
@@ -148,7 +154,7 @@ window.RokMods.battles = (R) => {
           <td class="py-1 px-2">${r.leader_alliance ? `[${esc(r.leader_alliance)}] ` : ''}${esc(r.leader_name || '–')}</td><td class="py-1 px-2 text-slate-400">${kbHeroes(r.my_hero1, r.my_hero2)}</td><td class="${td}">${fmt(r.members)}</td>
           <td class="py-1 px-2 text-slate-400">${r.is_pvp ? '' : '🪓 '}${esc(r.enemy_alliances || r.enemy_names || '–')}</td><td class="${td} text-gold-300">${short(r.group_kill_points)}</td><td class="${td} text-emerald-300">${short(r.group_severe)}</td></tr>`).join('')}</tbody></table></div>
         ${ral.length > 100 ? '<div class="mt-2 text-[11px] text-slate-500">Nur die letzten 100.</div>' : ''}` : '<div class="text-sm text-slate-500">Keine Gruppenkämpfe in diesem Filter.</div>'}</section>`;
-    return pve ? lootBox : rallyBox;   // PvE: nur Belohnungen · PvP: Gruppenkämpfe
+    return isLoot ? lootBox : (pve ? '' : rallyBox);   // Loot-Seite: Belohnungen · PvP: Gruppenkämpfe
   }
   // Trade = Gegner-Verluste (Tote + schwer verwundet) pro eigene Verluste
   function kbTrade(a) { const own = a.sDead + a.sSev, en = a.eDead + a.eSev; return own > 0 ? en / own : (en > 0 ? Infinity : null); }
@@ -213,18 +219,20 @@ window.RokMods.battles = (R) => {
     if (st.march && !allMarches.includes(st.march)) st.march = '';
     const rows = kbFiltered(), A = kbAgg(rows), R0 = kbRange(rows);
     // Große Auswahl PvP / PvE
-    const nPvp = new Set(kbRows.filter(kbIsPvp).map(r => r.mail_id)).size, nPve = new Set(kbRows.filter(r => !r.is_pvp && kbCatOf(r.npc_btype, r.group_size) !== 'skip').map(r => r.mail_id)).size;
+    if (!kxLoot && !kxLoading) loadKampfExtra();
+    const rallyPvp = kxRallyRows(true), rallyPve = kxRallyRows(false).filter(r => kbCatOf(r.npc_btype, r.group_size) !== 'skip');
+    const nPvp = new Set(kbRows.filter(kbIsPvp).map(r => r.mail_id).concat(rallyPvp.map(r => r.mail_id))).size, nPve = new Set(kbRows.filter(r => !r.is_pvp && kbCatOf(r.npc_btype, r.group_size) !== 'skip').map(r => r.mail_id)).size;
     const bigBtn = (k, icon, l, sub, n) => `<button type="button" data-kbtype="${k}" aria-pressed="${st.type === k}" class="seg-btn rounded-xl px-5 py-4 text-left transition">
         <div class="flex items-center gap-3"><span class="text-3xl leading-none">${icon}</span><span><span class="block font-display text-xl tracking-wide">${l}</span><span class="block text-[11px] opacity-80">${sub}</span></span><span class="ml-auto text-sm tabular-nums opacity-80">${fmt(n)}</span></div></button>`;
     const typeSel = `<div class="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-ink-950 border border-ink-700 mb-3">
-        ${bigBtn('pvp', '⚔️', 'PvP', 'Kämpfe gegen Spieler mit Kill Points', nPvp)}${bigBtn('pve', '🪓', 'PvE', 'Barbaren, Forts, KvK-Karuak und Belohnungen', nPve)}</div>`;
+        ${bigBtn('pvp', '⚔️', 'PvP', 'Kämpfe gegen Spieler mit Kill Points', nPvp)}${bigBtn('pve', '🪓', 'PvE', 'Barbaren, Forts, Baulurs, Raid-Boss und Belohnungen', nPve)}</div>`;
     // PvE: Kategorie-Auswahl
-    const pveAll = kbRows.filter(r => !r.is_pvp && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start));
+    const pveAll = kbRows.filter(r => !r.is_pvp && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start)).concat(rallyPve);
     const catN = (c) => kbTargets(pveAll, c);
     const catSel = pvp ? '' : `<div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3">${segBtn('data-kbcat', '', 'Alle', !st.cat, 'px-3 py-1.5')}${KB_CATS.map(([k, l]) => segBtn('data-kbcat', k, `${l} <span class="opacity-60 tabular-nums">${fmt(catN(k))}</span>`, st.cat === k, 'px-3 py-1.5')).join('')}</div>`;
     const marchSel = `<select data-kbmarch class="${inp} min-w-[11rem]"><option value="">Alle Märsche</option>${allMarches.map(m => `<option value="${esc(m)}" ${st.march === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`;
     const enemyChip = pvp && st.enemy ? `<button type="button" data-kbenemy="" class="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-xs text-red-200">🎯 ${esc(st.enemy)} ✕</button>` : '';
-    const filters = typeSel + catSel + `<div class="flex flex-wrap items-center gap-2 mb-2">${marchSel}${enemyChip}
+    const timeRow = (lead) => `<div class="flex flex-wrap items-center gap-2 mb-2">${lead}
         ${accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[[1, '24 h'], [7, '7 Tage'], [30, '30 Tage'], [90, '90 Tage'], [0, 'Alles'], ['custom', 'Zeitraum']].map(([k, l]) => segBtn('data-kbdays', k, l, String(st.days) === String(k))).join('')}</div>
         ${(st.kvks || []).map((k, i) => { const on = st.days === 'custom' && st.from === k.from && st.to === k.to;
@@ -233,8 +241,27 @@ window.RokMods.battles = (R) => {
           ${st.from && st.to && !(st.kvks || []).some(k => k.from === st.from && k.to === st.to) ? `<input type="text" data-kbkvkname placeholder="z. B. KvK 3" maxlength="24" class="${inp} w-28"><button type="button" data-kbkvksave class="px-2 py-1 rounded-lg border border-gold-500/50 text-xs text-gold-200 hover:bg-gold-500/10">🏁 Als KvK speichern</button>` : ''}` : ''}
         <button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>
       </div>`;
+    const filters = typeSel + catSel + timeRow(marchSel + enemyChip);
+    // Unterseiten: Battles · Loot · Ressourcen
+    const page = st.page || 'battles';
+    const subTabs = `<div class="grid grid-cols-3 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-4 max-w-xl">${[['battles', '⚔️ Battles'], ['loot', '🎁 Loot'], ['res', '🌾 Ressourcen']].map(([k, l]) => segBtn('data-kbpage', k, l, page === k, 'py-2 text-sm')).join('')}</div>`;
+    const pageHead = (icon, t, sub) => `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">${icon} ${t}</h2><p class="text-xs text-slate-400 mb-3">${sub}</p>`;
+    if (page === 'loot') {
+      if (!kxLoot && !kxLoading) loadKampfExtra();
+      const lc = st.lootCat || '';
+      const lootCats = `<div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-1">${segBtn('data-kblootcat', '', 'Alle', !lc, 'px-3 py-1.5')}${KB_CATS.map(([k, l]) => segBtn('data-kblootcat', k, l, lc === k, 'px-3 py-1.5')).join('')}</div>`;
+      el.innerHTML = subTabs + pageHead('🎁', 'Loot', 'Alles, was du aus PvE bekommen hast – aus den Kampfberichten und aus den eigenen Belohnungs-Mails.') + timeRow('') + lootCats + '</section>'
+        + (kxLoot ? kxSections('loot') : '<section class="panel rounded-2xl p-6 text-center text-sm text-slate-400">Lade Loot …</section>');
+      ['kxLootBox'].forEach(id => $(id) && makeFold($(id), id)); kbBind(el); return;
+    }
+    if (page === 'res') {
+      if (!rsRows && !rsLoading) loadRes();
+      el.innerHTML = subTabs + pageHead('🌾', 'Ressourcen', 'Was deine Sammeltrupps auf der Karte gefarmt haben – aus den Sammel-Mails im Postfach.') + timeRow('') + '</section>' + rsHtml();
+      kbBind(el); rsDraw(); return;
+    }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
-    const info = note + `<div class="text-[11px] text-slate-500 mb-4">${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
+    const nJoin = new Set((pvp ? rallyPvp : rallyPve).map(r => r.mail_id)).size;
+    const info = note + `<div class="text-[11px] text-slate-500 mb-4">${nJoin ? `<span class="text-sky-300">🛡️ ${fmt(nJoin)}</span> <span>${pvp ? 'Rally-/Garnisonskämpfe als Teilnehmer (unten)' : 'Rallys als Teilnehmer mitgezählt'}</span> · ` : ''}${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
     // 1) Karten
     const cardHtml = KB_METRICS.filter(m => pvp || m.k !== 'kp').map(m => { const v = m.v(A), on = !!cards[m.k];
       return `<button type="button" data-kbcard="${m.k}" aria-pressed="${on}" class="text-left rounded-xl border p-3 transition ${on ? 'border-ink-600 bg-ink-950/70' : 'border-ink-800 bg-ink-950/30 opacity-50'} hover:border-gold-500/50">
@@ -247,13 +274,14 @@ window.RokMods.battles = (R) => {
     const khTile = (icon, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">${icon}</span>${l}</div>
         <div class="font-display text-3xl tabular-nums ${c}">${v}</div><div class="text-[11px] text-slate-500">${sub}</div></div>`;
     const H = kbHealCost(rows, st.healType || 'mix');
-    const cc = (c) => kbTargets(rows, c);
+    const rowsT = pvp ? rows : rows.concat(rallyPve.filter(r => !st.cat || kbCatOf(r.npc_btype, r.group_size) === st.cat));   // + Rallys, bei denen du dabei warst
+    const cc = (c) => kbTargets(rowsT, c);
     const healTile = `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">💰</span>Heilkosten<span class="ml-auto px-1.5 py-0.5 rounded bg-ink-800 text-[10px] text-slate-300">${H.tier}</span></div>
         <div class="mt-1 grid grid-cols-2 gap-x-3 text-sm tabular-nums">${[['🌽', 'Nahrung', H.food], ['🪵', 'Holz', H.wood], ['🪨', 'Stein', H.stone], ['🪙', 'Gold', H.gold]].map(([i, l, v]) => `<div class="flex justify-between"><span class="text-slate-400">${i} <span>${l}</span></span><span class="text-white">${short(v)}</span></div>`).join('')}</div>
         <div class="mt-2 flex flex-wrap gap-1">${[['mix', 'Gemischt'], ['inf', 'Infanterie'], ['cav', 'Kavallerie'], ['arch', 'Bogen']].map(([k, l]) => segBtn('data-kbheal', k, l, (st.healType || 'mix') === k, 'px-1.5 py-0.5 !text-[10px]')).join('')}</div>
         <div class="mt-1 text-[10px] text-slate-500"><span>Schätzung ohne Boni für</span> ${short(khHeal)} <span>schwer Verwundete.</span> <span>Stufe aus der verlorenen Power erkannt, Truppenart steht nicht im Bericht.</span></div></div>`;
     const topBar = !pvp ? `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-        ${khTile('🪓', 'Besiegte Ziele', fmt(kbTargets(rows)), KB_CATS.filter(([k]) => cc(k)).map(([k, l]) => `<span style="color:${KB_CAT_COL[k]}">${l.split(' ')[0]} ${fmt(cc(k))}</span>`).join(' · ') || '–', 'text-emerald-300')}
+        ${khTile('🪓', 'Besiegte Ziele', fmt(kbTargets(rowsT)), KB_CATS.filter(([k]) => cc(k)).map(([k, l]) => `<span style="color:${KB_CAT_COL[k]}">${l.split(' ')[0]} ${fmt(cc(k))}</span>`).join(' · ') || '–', 'text-emerald-300')}
         ${khTile('🩸', 'Verwundete', short(khHeal), `<span>schwer verwundet (Lazarett)</span> · ${short(A.sWound)} <span>leicht verwundet</span>`, 'text-orange-300')}
         ${healTile}
       </div>` : `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
@@ -353,10 +381,10 @@ window.RokMods.battles = (R) => {
     }
     const tabs = !pvp ? '<h2 class="font-display text-lg text-gold-300 mb-2">📜 Alle Kämpfe</h2>' : `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', pvp ? '🎯 Gegner' : '🪓 Ziele'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => segBtn('data-kbtab', k, l, tab === k, 'py-1.5')).join('')}</div>`;
     const more = lim && T.n > lim && tab !== 'march' ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(T.n - lim)} weitere)</button>` : '';
-    el.innerHTML = head(filters + info + topBar + cardsBox) + `</section>${extraBox}${pvp ? '' : kxSections()}${trend}${pvp ? analysis + kxSections() : ''}
+    el.innerHTML = subTabs + head(filters + info + topBar + cardsBox) + `</section>${extraBox}${trend}${pvp ? analysis + kxSections() : ''}
       <section id="kbTabBox" class="panel rounded-2xl p-5">${tabs}<div class="text-[11px] text-slate-500 mb-2">Zum Sortieren auf eine Spalte klicken.${hint ? ' ' + hint : ''}</div>${T.html}${more}</section>`;
     makeFold($('kbTrendBox'), 'kbtrend'); ['kbFoeBox', 'kbNpcBox'].forEach(id => $(id) && makeFold($(id), id)); makeFold($('kbMarchBox'), 'kbmarch'); ['kxLootBox', 'kxRallyBox'].forEach(id => $(id) && makeFold($(id), id));
-    kbDrawCharts(rows, R0, cards, !!st.cum, pvp);
+    kbDrawCharts(pvp ? rows : rowsT, R0, cards, !!st.cum, pvp);
     kbBind(el);
   }
   function kbDrawCharts(rows, R0, cards, cum, pvp) {
@@ -378,7 +406,7 @@ window.RokMods.battles = (R) => {
     mk('kbChartTr', KB_METRICS.filter(m => m.k !== 'kp' && cards[m.k]));
   }
   // PvE-Verlauf: besiegte Ziele pro Tag, gestapelt nach Art
-  var KB_CAT_COL = { barb: '#34d399', kvkkaruak: '#f87171', maraud: '#a78bfa', fort: '#f5c542', other: '#64748b' };
+  var KB_CAT_COL = { barb: '#34d399', fort: '#f5c542', baulur: '#fb923c', raid: '#f87171', ckaruak: '#38bdf8', maraud: '#a78bfa', skip: '#64748b' };
   function kbDrawPve(rows, R0, cum) {
     const c = $('kbChartPve'); if (!c) return;
     const n = Math.min(R0.n, 400), from = new Date(R0.from.getTime() + (R0.n - n) * 86400000), keys = [], labels = [];
@@ -412,11 +440,64 @@ window.RokMods.battles = (R) => {
     const tot = u4 + u5; o.tier = !tot ? 'T4' : u5 / tot > .95 ? 'T5' : u5 / tot < .05 ? 'T4' : `T4/T5 · ${dec(u5 / tot * 100, 0)} % T5`;
     return o;
   }
+  // ---------- Ressourcen: Sammel-Mails (rok_mails, mail_type = 'Rss') ----------
+  var rsRows = null, rsLoading = false, rsErr = '';
+  var RS_TYPES = { 1: ['🌽', 'Nahrung', '#fbbf24'], 2: ['🪵', 'Holz', '#a16207'], 3: ['🪨', 'Stein', '#94a3b8'], 4: ['🪙', 'Gold', '#f5c542'], 5: ['💎', 'Edelsteine', '#60a5fa'] };
+  function rsType(t) { return RS_TYPES[t] || ['📦', 'Typ ' + t, '#64748b']; }
+  async function loadRes(force) {
+    if (rsLoading || (rsRows && !force)) return; rsLoading = true; rsErr = '';
+    try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
+      const all = [];
+      for (let f = 0; f < 200000; f += 1000) {
+        const { data, error } = await db.from('rok_mails').select('mail_id,player_id,account,sent_at,content').eq('mail_type', 'Rss').order('sent_at', { ascending: false }).range(f, f + 999);
+        if (error) throw error; all.push(...(data || [])); if (!data || data.length < 1000) break;
+      }
+      rsRows = all.map(r => { let c = r.content; if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = {}; } } c = (c && (c.content || c)) || {};
+        return { id: r.mail_id, pid: r.player_id, acc: r.account, t: r.sent_at, type: +c.ResType || 0, val: +c.ResValue || 0, talent: +c.talentAdd || 0, lvl: +c.Level || 0, crystal: +c.ResCollectCrystal || 0 }; });
+    } catch (e) { rsRows = rsRows || []; rsErr = e?.message || String(e); }
+    rsLoading = false; if (R.view === 'battles' && kbSt().page === 'res') renderKampf();
+  }
+  function rsFiltered() { const st = kbSt(); return (rsRows || []).filter(r => (!st.acc || String(r.pid) === st.acc) && kxInRange(r.t)); }
+  function rsHtml() {
+    if (!rsRows) return '<section class="panel rounded-2xl p-6 text-center text-sm text-slate-400">Lade Sammel-Mails …</section>';
+    const rows = rsFiltered(), by = {};
+    rows.forEach(r => { const o = by[r.type] || (by[r.type] = { val: 0, n: 0, talent: 0 }); o.val += r.val; o.n++; o.talent += r.talent; });
+    const types = Object.keys(by).map(Number).sort((a, b) => a - b), tot = rows.reduce((a, r) => a + r.val, 0), cry = rows.reduce((a, r) => a + r.crystal, 0);
+    const tile = (icon, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">${icon}</span><span>${l}</span></div><div class="font-display text-2xl tabular-nums" style="color:${c}">${short(v)}</div><div class="text-[11px] text-slate-500">${sub}</div></div>`;
+    const tiles = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        ${tile('📦', 'Gesamt', tot, `${fmt(rows.length)}× <span>gesammelt</span>`, '#ffffff')}
+        ${(types.length ? types : [1, 2, 3, 4]).map(t => { const [i, l, c] = rsType(t), o = by[t] || { val: 0, n: 0, talent: 0 }; return tile(i, l, o.val, `${fmt(o.n)}× · <span>Talent</span> +${short(o.talent)}`, c); }).join('')}
+        ${cry ? tile('🔷', 'Kristalle', cry, '<span>aus Kristallminen</span>', '#38bdf8') : ''}</div>`;
+    const err = rsErr ? `<div class="mb-2 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(rsErr)}</div>` : '';
+    const list = rows.slice(0, 100);
+    const td = 'py-1 px-2 text-right tabular-nums';
+    return `<section class="panel rounded-2xl p-5">${err}${tiles}</section>
+      <section id="rsTrendBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">Gesammelt pro Tag</h2><div class="h-64"><canvas id="rsChart"></canvas></div></section>
+      <section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">📜 Letzte Sammel-Mails</h2>
+        ${list.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
+          <th class="py-2 px-2 text-left font-medium">Datum</th><th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-left font-medium">Ressource</th><th class="py-2 px-2 text-right font-medium">Level</th><th class="py-2 px-2 text-right font-medium">Menge</th><th class="py-2 px-2 text-right font-medium">davon Talent</th></tr></thead>
+          <tbody>${list.map(r => { const [i, l] = rsType(r.type); return `<tr class="border-b border-ink-800/60"><td class="py-1 px-2 whitespace-nowrap text-slate-400">${r.t ? new Date(r.t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–'}</td><td class="py-1 px-2" translate="no">${esc(r.acc || r.pid || '–')}</td><td class="py-1 px-2">${i} <span>${l}</span></td><td class="${td}">${r.lvl || '–'}</td><td class="${td} text-gold-300">${fmt(r.val)}</td><td class="${td} text-slate-400">${r.talent ? fmt(r.talent) : '–'}</td></tr>`; }).join('')}</tbody></table></div>
+          ${rows.length > 100 ? '<div class="mt-2 text-[11px] text-slate-500">Nur die letzten 100.</div>' : ''}` : '<div class="text-sm text-slate-500">Keine Sammel-Mails in diesem Zeitraum.</div>'}</section>`;
+  }
+  function rsDraw() {
+    const c = $('rsChart'); if (!c || !window.Chart || !rsRows) return;
+    const rows = rsFiltered(), R0 = kbRange(rows.map(r => ({ battle_start: r.t })));
+    const n = Math.min(R0.n, 400), from = new Date(R0.from.getTime() + (R0.n - n) * 86400000), keys = [], labels = [];
+    for (let i = 0; i < n; i++) { const d = new Date(from.getTime() + i * 86400000); keys.push(isoDay(d)); labels.push(d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })); }
+    const idx = new Map(keys.map((k, i) => [k, i])), types = [...new Set(rows.map(r => r.type))].sort((a, b) => a - b), data = {};
+    types.forEach(t => data[t] = keys.map(() => 0));
+    rows.forEach(r => { if (!r.t) return; const i = idx.get(isoDay(new Date(r.t))); if (i != null) data[r.type][i] += r.val; });
+    kbCharts.push(new Chart(c, { type: 'bar', data: { labels, datasets: types.map(t => { const [, l, col] = rsType(t); return { label: l, data: data[t], backgroundColor: col + 'dd', borderRadius: 3, maxBarThickness: 22 }; }) },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { boxWidth: 10, color: '#94a3b8', font: { size: 11 } } }, tooltip: { callbacks: { label: (x) => `${x.dataset.label}: ${fmt(x.raw)}` } } },
+        scales: { x: { stacked: true, ticks: { maxTicksLimit: 10, color: '#64748b' }, grid: { display: false } }, y: { stacked: true, beginAtZero: true, suggestedMax: 1, ticks: { callback: (v) => short(v), color: '#64748b' }, grid: { color: 'rgba(148,163,184,.08)' } } } } }));
+  }
   function kbBind(el) {
     const st = kbSt(), re = () => { kbShow = 50; savePassive(); renderKampf(); };
-    $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); renderKampf(); });
+    $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); if (st.page === 'res') loadRes(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; st.march = ''; st.enemy = ''; re(); });
+    el.querySelectorAll('[data-kbpage]').forEach(b => b.onclick = () => { st.page = b.dataset.kbpage; re(); });
+    el.querySelectorAll('[data-kblootcat]').forEach(b => b.onclick = () => { st.lootCat = b.dataset.kblootcat; re(); });
     el.querySelectorAll('[data-kbheal]').forEach(b => b.onclick = () => { st.healType = b.dataset.kbheal; re(); });
     el.querySelectorAll('[data-kbkvk]').forEach(b => b.onclick = () => { const k = (st.kvks || [])[+b.dataset.kbkvk]; if (!k) return; st.days = 'custom'; st.from = k.from; st.to = k.to; re(); });
     el.querySelectorAll('[data-kbkvkdel]').forEach(b => b.onclick = () => { (st.kvks || []).splice(+b.dataset.kbkvkdel, 1); re(); });
