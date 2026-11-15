@@ -451,34 +451,62 @@ window.RokMods.battles = (R) => {
     } catch (e) { rsRows = rsRows || []; rsErr = e?.message || String(e); }
     rsLoading = false; if (R.view === 'battles' && kbSt().page === 'res') renderKampf();
   }
-  function rsFiltered() { const st = kbSt(); return (rsRows || []).filter(r => (!st.acc || String(r.pid) === st.acc) && kxInRange(r.t)); }
+  // Gruppen: jede Farm (Spieler-ID) frei einer Gruppe zuordnen, z. B. „Mirox“ oder „Loli“ – lokal gespeichert
+  function rsGroupOf(pid) { return (kbSt().rsGroups || {})[String(pid)] || ''; }
+  function rsFiltered(noGroup) { const st = kbSt(); return (rsRows || []).filter(r => (!st.acc || String(r.pid) === st.acc) && (noGroup || !st.rsGroup || rsGroupOf(r.pid) === (st.rsGroup === '–' ? '' : st.rsGroup)) && kxInRange(r.t)); }
   function rsHtml() {
     if (!rsRows) return '<section class="panel rounded-2xl p-6 text-center text-sm text-slate-400">Lade Sammel-Mails …</section>';
-    const rows = rsFiltered(), by = {};
+    const st = kbSt(), rows = rsFiltered(), by = {};
     rows.forEach(r => { const o = by[r.type] || (by[r.type] = { val: 0, n: 0, talent: 0 }); o.val += r.val; o.n++; o.talent += r.talent; });
     const types = Object.keys(by).map(Number).sort((a, b) => a - b), tot = rows.reduce((a, r) => a + r.val, 0), cry = rows.reduce((a, r) => a + r.crystal, 0);
     const tile = (icon, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">${icon}</span><span>${l}</span></div><div class="font-display text-2xl tabular-nums" style="color:${c}">${short(v)}</div><div class="text-[11px] text-slate-500">${sub}</div></div>`;
+    const shown = types.length ? types : [1, 2, 3, 4];
     const tiles = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
         ${tile('📦', 'Gesamt', tot, `${fmt(rows.length)}× <span>gesammelt</span>`, '#ffffff')}
-        ${(types.length ? types : [1, 2, 3, 4]).map(t => { const [i, l, c] = rsType(t), o = by[t] || { val: 0, n: 0, talent: 0 }; return tile(i, l, o.val, `${fmt(o.n)}× · <span>Talent</span> +${short(o.talent)}`, c); }).join('')}
+        ${shown.map(t => { const [i, l, c] = rsType(t), o = by[t] || { val: 0, n: 0, talent: 0 }; return tile(i, l, o.val, `${fmt(o.n)}× · <span>Talent</span> +${short(o.talent)}`, c); }).join('')}
         ${cry ? tile('🔷', 'Kristalle', cry, '<span>aus Kristallminen</span>', '#38bdf8') : ''}</div>`;
     const err = rsErr ? `<div class="mb-2 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(rsErr)}</div>` : '';
-    const list = rows.slice(0, 100);
-    const td = 'py-1 px-2 text-right tabular-nums';
-    // Pro Account (jede Farm unter ihrer Spieler-ID) + Summe
-    const st = kbSt(), accRows = (rsRows || []).filter(r => kxInRange(r.t)), per = new Map();
-    accRows.forEach(r => { const k = String(r.pid); const o = per.get(k) || { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }; o.n++; o.v[r.type] = (o.v[r.type] || 0) + r.val; o.tot += r.val; o.last = Math.max(o.last, Date.parse(r.t || 0) || 0); per.set(k, o); });
-    const accs = [...per.values()].sort((a, b) => b.tot - a.tot), cols = [1, 2, 3, 4, ...[...new Set(accRows.map(r => r.type))].filter(t => t > 4).sort()];
-    const sum = { n: 0, v: {}, tot: 0 }; accs.forEach(o => { sum.n += o.n; sum.tot += o.tot; cols.forEach(t => sum.v[t] = (sum.v[t] || 0) + (o.v[t] || 0)); });
+    // Gruppen-Auswahl
+    const groups = [...new Set(Object.values(st.rsGroups || {}).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+    const hasNone = (rsRows || []).some(r => !rsGroupOf(r.pid));
+    const gBtn = (k, l) => `<button type="button" data-rsgfilter="${esc(k)}" aria-pressed="${(st.rsGroup || '') === k}" class="seg-btn rounded-lg px-3 py-1.5 text-xs font-semibold transition" translate="no">${l}</button>`;
+    const groupSel = groups.length ? `<div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3"><span class="px-2 text-[11px] text-slate-500">Gruppe</span>${gBtn('', '<span>Alle</span>')}${groups.map(g => gBtn(g, '👥 ' + esc(g))).join('')}${hasNone ? gBtn('–', '<span>Ohne Gruppe</span>') : ''}</div>` : '';
+    // Verlauf & Hochrechnung
+    const R0 = kbRange(rows.map(r => ({ battle_start: r.t }))), days = Math.max(1, R0.n), hz = +st.rsHz || 30;
+    const proj = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">${[['📦', 'Gesamt', tot, '#ffffff'], ...shown.map(t => { const [i, l, c] = rsType(t); return [i, l, (by[t] || { val: 0 }).val, c]; })].map(([i, l, v, c]) =>
+        `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-3"><div class="text-xs text-slate-400">${i} <span>${l}</span></div><div class="font-display text-xl tabular-nums" style="color:${c}">${short(v / days * hz)}</div><div class="text-[11px] text-slate-500">Ø ${short(v / days)} <span>pro Tag</span></div></div>`).join('')}</div>`;
+    const trendBox = `<section id="rsTrendBox" class="panel rounded-2xl p-5"><div class="flex flex-wrap items-center justify-between gap-2 mb-2"><h2 class="font-display text-lg text-gold-300">📈 Verlauf & Hochrechnung</h2>
+        <div class="flex items-center gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700"><span class="px-2 text-[11px] text-slate-500">Hochrechnung</span>${[7, 30, 90].map(n => `<button type="button" data-rshz="${n}" aria-pressed="${hz === n}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${n} <span>Tage</span></button>`).join('')}</div></div>
+        <div class="h-64"><canvas id="rsChart"></canvas></div>
+        <div class="mt-3 text-xs text-slate-400"><span>So viel hättest du in</span> <b class="text-gold-300">${hz} <span>Tagen</span></b><span>, wenn du so weiter sammelst wie im gewählten Zeitraum</span> (${fmt(days)} <span>Tage</span>):</div>${proj}</section>`;
+    // Pro Account mit Gruppen-Spalte
+    const td = 'py-1 px-2 text-right tabular-nums', inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs w-28 focus:outline-none focus:border-gold-500';
+    const accRows = rsFiltered(true).filter(r => !st.acc || String(r.pid) === st.acc), per = new Map();
+    (rsRows || []).filter(r => kxInRange(r.t)).forEach(r => { const k = String(r.pid); const o = per.get(k) || { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }; o.n++; o.v[r.type] = (o.v[r.type] || 0) + r.val; o.tot += r.val; o.last = Math.max(o.last, Date.parse(r.t || 0) || 0); per.set(k, o); });
+    (rsRows || []).forEach(r => { const k = String(r.pid); if (!per.has(k)) per.set(k, { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }); });   // auch ohne Mails im Zeitraum zuordnen können
+    const cols = [1, 2, 3, 4, ...[...new Set(accRows.map(r => r.type))].filter(t => t > 4).sort()];
+    let accs = [...per.values()].filter(o => !st.rsGroup || rsGroupOf(o.pid) === (st.rsGroup === '–' ? '' : st.rsGroup));
+    accs.sort((a, b) => (rsGroupOf(a.pid) || '~').localeCompare(rsGroupOf(b.pid) || '~') || b.tot - a.tot);
+    const addSum = (list) => { const s = { n: 0, v: {}, tot: 0 }; list.forEach(o => { s.n += o.n; s.tot += o.tot; cols.forEach(t => s.v[t] = (s.v[t] || 0) + (o.v[t] || 0)); }); return s; };
+    const sumRow = (label, s, cnt, cls) => `<tr class="${cls} font-semibold"><td class="py-2 px-2 text-gold-300" colspan="2">${label}</td><td class="${td} text-slate-500">${fmt(cnt)}</td><td class="${td}">${fmt(s.n)}</td>${cols.map(t => `<td class="${td}">${short(s.v[t] || 0)}</td>`).join('')}<td class="${td} text-gold-300">${short(s.tot)}</td><td></td></tr>`;
+    let body = '', curG = null;
+    accs.forEach((o, i) => {
+      const g = rsGroupOf(o.pid);
+      body += `<tr class="border-b border-ink-800/60 hover:bg-ink-800/40 ${st.acc === o.pid ? 'bg-gold-500/10' : ''}"><td class="py-1.5 px-2 text-slate-100 cursor-pointer" data-kbaccpick="${esc(o.pid)}" translate="no">${esc(o.acc || '–')}</td>
+        <td class="py-1 px-2"><input data-rsgroup="${esc(o.pid)}" list="rsGroupList" value="${esc(g)}" placeholder="Gruppe …" class="${inp}" translate="no"></td>
+        <td class="${td} text-slate-500">${esc(o.pid)}</td><td class="${td}">${fmt(o.n)}</td>${cols.map(t => `<td class="${td}">${o.v[t] ? short(o.v[t]) : '–'}</td>`).join('')}<td class="${td} text-gold-300 font-semibold">${short(o.tot)}</td><td class="${td} text-slate-400">${o.last ? new Date(o.last).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '–'}</td></tr>`;
+      const next = accs[i + 1];
+      if (groups.length && (!next || rsGroupOf(next.pid) !== g)) { const gl = accs.filter(x => rsGroupOf(x.pid) === g); body += sumRow(`Σ ${g ? '👥 ' + esc(g) : '<span>Ohne Gruppe</span>'}`, addSum(gl), gl.length, 'bg-ink-900/40'); }
+    });
+    if (accs.length) body += sumRow('Σ <span>Alle zusammen</span>', addSum(accs), accs.length, 'bg-ink-900/80');
     const perBox = `<section id="rsAccBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-1">👥 Pro Account</h2>
-      <p class="text-xs text-slate-400 mb-3">Jede Farm einzeln (Spieler-ID) und unten alle zusammen. Antippen, um nur diesen Account zu sehen.</p>
+      <p class="text-xs text-slate-400 mb-3">Jede Farm einzeln (Spieler-ID). In der Spalte „Gruppe“ einen Namen eintragen (z. B. Mirox oder Loli) – dann gibt es Zwischensummen und oben eine Gruppen-Auswahl. Auf den Namen tippen, um nur diesen Account zu sehen.</p>
+      <datalist id="rsGroupList">${groups.map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>
       ${accs.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
-        <th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-right font-medium">ID</th><th class="py-2 px-2 text-right font-medium">Sammelzüge</th>${cols.map(t => { const [i, l] = rsType(t); return `<th class="py-2 px-2 text-right font-medium">${i} <span>${l}</span></th>`; }).join('')}<th class="py-2 px-2 text-right font-medium">Gesamt</th><th class="py-2 px-2 text-right font-medium">Zuletzt</th></tr></thead>
-        <tbody>${accs.map(o => `<tr class="border-b border-ink-800/60 hover:bg-ink-800/40 cursor-pointer ${st.acc === o.pid ? 'bg-gold-500/10' : ''}" data-kbaccpick="${esc(o.pid)}"><td class="py-1.5 px-2 text-slate-100" translate="no">${esc(o.acc || '–')}</td><td class="${td} text-slate-500">${esc(o.pid)}</td><td class="${td}">${fmt(o.n)}</td>${cols.map(t => `<td class="${td}">${o.v[t] ? short(o.v[t]) : '–'}</td>`).join('')}<td class="${td} text-gold-300 font-semibold">${short(o.tot)}</td><td class="${td} text-slate-400">${o.last ? new Date(o.last).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '–'}</td></tr>`).join('')}
-          <tr class="bg-ink-900/70 font-semibold"><td class="py-2 px-2 text-gold-300">Σ <span>Alle zusammen</span></td><td class="${td} text-slate-500">${fmt(accs.length)}</td><td class="${td}">${fmt(sum.n)}</td>${cols.map(t => `<td class="${td}">${short(sum.v[t] || 0)}</td>`).join('')}<td class="${td} text-gold-300">${short(sum.tot)}</td><td></td></tr></tbody></table></div>`
-        : '<div class="text-sm text-slate-500">Noch keine Sammel-Mails.</div>'}</section>`;
-    return `<section class="panel rounded-2xl p-5">${err}${tiles}</section>${perBox}
-      <section id="rsTrendBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">Gesammelt pro Tag</h2><div class="h-64"><canvas id="rsChart"></canvas></div></section>
+        <th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-left font-medium">Gruppe</th><th class="py-2 px-2 text-right font-medium">ID</th><th class="py-2 px-2 text-right font-medium">Sammelzüge</th>${cols.map(t => { const [i, l] = rsType(t); return `<th class="py-2 px-2 text-right font-medium">${i} <span>${l}</span></th>`; }).join('')}<th class="py-2 px-2 text-right font-medium">Gesamt</th><th class="py-2 px-2 text-right font-medium">Zuletzt</th></tr></thead>
+        <tbody>${body}</tbody></table></div>` : '<div class="text-sm text-slate-500">Noch keine Sammel-Mails.</div>'}</section>`;
+    const list = rows.slice(0, 100);
+    return groupSel + `<section class="panel rounded-2xl p-5">${err}${tiles}</section>${trendBox}${perBox}
       <section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">📜 Letzte Sammel-Mails</h2>
         ${list.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
           <th class="py-2 px-2 text-left font-medium">Datum</th><th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-left font-medium">Ressource</th><th class="py-2 px-2 text-right font-medium">Level</th><th class="py-2 px-2 text-right font-medium">Menge</th><th class="py-2 px-2 text-right font-medium">davon Talent</th></tr></thead>
@@ -502,6 +530,9 @@ window.RokMods.battles = (R) => {
     $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); if (st.page === 'res') loadRes(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; st.march = ''; st.enemy = ''; re(); });
+    el.querySelectorAll('[data-rsgroup]').forEach(i => i.addEventListener('change', () => { const g = (st.rsGroups = st.rsGroups || {}), v = i.value.trim().slice(0, 24); if (v) g[i.dataset.rsgroup] = v; else delete g[i.dataset.rsgroup]; re(); }));
+    el.querySelectorAll('[data-rsgfilter]').forEach(b => b.onclick = () => { st.rsGroup = b.dataset.rsgfilter; re(); });
+    el.querySelectorAll('[data-rshz]').forEach(b => b.onclick = () => { st.rsHz = +b.dataset.rshz; savePassive(); renderKampf(); });
     el.querySelectorAll('[data-kbaccpick]').forEach(b => b.onclick = () => { const v = b.dataset.kbaccpick; st.acc = st.acc === v ? '' : v; re(); });
     el.querySelectorAll('[data-kbpage]').forEach(b => b.onclick = () => { st.page = b.dataset.kbpage; re(); });
     el.querySelectorAll('[data-kblootcat]').forEach(b => b.onclick = () => { st.lootCat = b.dataset.kblootcat; re(); });
