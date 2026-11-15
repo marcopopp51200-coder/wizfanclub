@@ -212,7 +212,7 @@ window.RokMods.battles = (R) => {
     const note = kbErr && kbErr !== 'missing' ? `<div class="mb-3 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(kbErr)}</div>`
       : !kbRows.length ? '<div class="mb-3 text-[11px] text-slate-500">Noch keine Kampfberichte – sie kommen automatisch, sobald der Kampf-Uploader auf dem PC läuft.</div>' : '';
     const accs = [...new Map(kbRows.filter(r => r.player_id != null).map(r => [String(r.player_id), `${r.self_name || 'Spieler'}${r.account ? ` (${r.account})` : ''}`])).entries()];
-    const accsRes = [...new Map([...accs, ...(rsRows || []).filter(r => r.pid != null).map(r => [String(r.pid), r.acc || ('Spieler ' + r.pid)])]).entries()];   // + Farmen (nur Ressourcen)
+    const accsRes = [...new Map([...accs, ...(rsRows || []).filter(r => r.pid != null).map(r => [String(r.pid), rsNameOf(r.pid, r.acc)])]).entries()];   // + Farmen (nur Ressourcen)
     if (st.acc && !accsRes.some(([k]) => k === st.acc)) st.acc = '';
     st.type = (st.page || 'battles') === 'loot' ? 'pve' : 'pvp';   // Battles = PvP · Loot = kompletter PvE-Bereich
     const pvp = st.type === 'pvp';
@@ -452,7 +452,10 @@ window.RokMods.battles = (R) => {
     rsLoading = false; if (R.view === 'battles' && kbSt().page === 'res') renderKampf();
   }
   // Gruppen: jede Farm (Spieler-ID) frei einer Gruppe zuordnen, z. B. „Mirox“ oder „Loli“ – lokal gespeichert
-  function rsGroupOf(pid) { return (kbSt().rsGroups || {})[String(pid)] || ''; }
+  var RS_GROUPS = ['g1', 'g2', 'g3', 'g4', 'g5'];
+  function rsGroupOf(pid) { const g = (kbSt().rsGroups || {})[String(pid)] || ''; return RS_GROUPS.includes(g) ? g : ''; }
+  function rsGroupLabel(g) { return ((kbSt().rsGroupNames || {})[g] || '').trim() || 'Gruppe ' + (RS_GROUPS.indexOf(g) + 1); }
+  function rsNameOf(pid, fallback) { return ((kbSt().rsNames || {})[String(pid)] || '').trim() || fallback || ('Farm ' + pid); }
   function rsFiltered(noGroup) { const st = kbSt(); return (rsRows || []).filter(r => (!st.acc || String(r.pid) === st.acc) && (noGroup || !st.rsGroup || rsGroupOf(r.pid) === (st.rsGroup === '–' ? '' : st.rsGroup)) && kxInRange(r.t)); }
   function rsHtml() {
     if (!rsRows) return '<section class="panel rounded-2xl p-6 text-center text-sm text-slate-400">Lade Sammel-Mails …</section>';
@@ -466,11 +469,14 @@ window.RokMods.battles = (R) => {
         ${shown.map(t => { const [i, l, c] = rsType(t), o = by[t] || { val: 0, n: 0, talent: 0 }; return tile(i, l, o.val, `${fmt(o.n)}× · <span>Talent</span> +${short(o.talent)}`, c); }).join('')}
         ${cry ? tile('🔷', 'Kristalle', cry, '<span>aus Kristallminen</span>', '#38bdf8') : ''}</div>`;
     const err = rsErr ? `<div class="mb-2 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(rsErr)}</div>` : '';
-    // Gruppen-Auswahl
-    const groups = [...new Set(Object.values(st.rsGroups || {}).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-    const hasNone = (rsRows || []).some(r => !rsGroupOf(r.pid));
+    // Gruppen: oben benennen (bis zu 5) und auswählen
+    const used = new Set((rsRows || []).map(r => rsGroupOf(r.pid)));
     const gBtn = (k, l) => `<button type="button" data-rsgfilter="${esc(k)}" aria-pressed="${(st.rsGroup || '') === k}" class="seg-btn rounded-lg px-3 py-1.5 text-xs font-semibold transition" translate="no">${l}</button>`;
-    const groupSel = groups.length ? `<div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3"><span class="px-2 text-[11px] text-slate-500">Gruppe</span>${gBtn('', '<span>Alle</span>')}${groups.map(g => gBtn(g, '👥 ' + esc(g))).join('')}${hasNone ? gBtn('–', '<span>Ohne Gruppe</span>') : ''}</div>` : '';
+    const gInp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs w-28 text-slate-100 focus:outline-none focus:border-gold-500';
+    const groupSel = `<section class="panel rounded-2xl p-4"><div class="flex flex-wrap items-center gap-2 mb-2"><span class="text-sm font-semibold text-gold-300">👥 <span>Gruppen</span></span>
+        ${RS_GROUPS.map((g, i) => `<label class="flex items-center gap-1 text-[11px] text-slate-500">${i + 1}<input data-rsgname="${g}" value="${esc((st.rsGroupNames || {})[g] || '')}" placeholder="Gruppe ${i + 1}" maxlength="20" class="${gInp}" translate="no"></label>`).join('')}</div>
+        <div class="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${gBtn('', '<span>Alle</span>')}${RS_GROUPS.filter(g => used.has(g)).map(g => gBtn(g, '👥 ' + esc(rsGroupLabel(g)))).join('')}${used.has('') ? gBtn('–', '<span>Ohne Gruppe</span>') : ''}</div></section>`;
+    const groups = RS_GROUPS.filter(g => used.has(g));
     // Verlauf & Hochrechnung
     const R0 = kbRange(rows.map(r => ({ battle_start: r.t }))), days = Math.max(1, R0.n), hz = +st.rsHz || 30;
     const proj = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mt-3">${[['📦', 'Gesamt', tot, '#ffffff'], ...shown.map(t => { const [i, l, c] = rsType(t); return [i, l, (by[t] || { val: 0 }).val, c]; })].map(([i, l, v, c]) =>
@@ -486,22 +492,21 @@ window.RokMods.battles = (R) => {
     (rsRows || []).forEach(r => { const k = String(r.pid); if (!per.has(k)) per.set(k, { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }); });   // auch ohne Mails im Zeitraum zuordnen können
     const cols = [1, 2, 3, 4, ...[...new Set(accRows.map(r => r.type))].filter(t => t > 4).sort()];
     let accs = [...per.values()].filter(o => !st.rsGroup || rsGroupOf(o.pid) === (st.rsGroup === '–' ? '' : st.rsGroup));
-    accs.sort((a, b) => (rsGroupOf(a.pid) || '~').localeCompare(rsGroupOf(b.pid) || '~') || b.tot - a.tot);
+    accs.sort((a, b) => (rsGroupOf(a.pid) || 'z').localeCompare(rsGroupOf(b.pid) || 'z') || b.tot - a.tot);
     const addSum = (list) => { const s = { n: 0, v: {}, tot: 0 }; list.forEach(o => { s.n += o.n; s.tot += o.tot; cols.forEach(t => s.v[t] = (s.v[t] || 0) + (o.v[t] || 0)); }); return s; };
     const sumRow = (label, s, cnt, cls) => `<tr class="${cls} font-semibold"><td class="py-2 px-2 text-gold-300" colspan="2">${label}</td><td class="${td} text-slate-500">${fmt(cnt)}</td><td class="${td}">${fmt(s.n)}</td>${cols.map(t => `<td class="${td}">${short(s.v[t] || 0)}</td>`).join('')}<td class="${td} text-gold-300">${short(s.tot)}</td><td></td></tr>`;
     let body = '', curG = null;
     accs.forEach((o, i) => {
       const g = rsGroupOf(o.pid);
-      body += `<tr class="border-b border-ink-800/60 hover:bg-ink-800/40 ${st.acc === o.pid ? 'bg-gold-500/10' : ''}"><td class="py-1.5 px-2 text-slate-100 cursor-pointer" data-kbaccpick="${esc(o.pid)}" translate="no">${esc(o.acc || '–')}</td>
-        <td class="py-1 px-2"><input data-rsgroup="${esc(o.pid)}" list="rsGroupList" value="${esc(g)}" placeholder="Gruppe …" class="${inp}" translate="no"></td>
+      body += `<tr class="border-b border-ink-800/60 hover:bg-ink-800/40 ${st.acc === o.pid ? 'bg-gold-500/10' : ''}"><td class="py-1 px-2 whitespace-nowrap"><button type="button" data-kbaccpick="${esc(o.pid)}" title="Nur diesen Account zeigen" class="mr-1 text-slate-500 hover:text-gold-300">🔍</button><input data-rsname="${esc(o.pid)}" value="${esc((st.rsNames || {})[o.pid] || '')}" placeholder="${esc(o.acc || 'Farm ' + o.pid)}" maxlength="30" class="${inp} w-40 text-slate-100" translate="no"></td>
+        <td class="py-1 px-2"><select data-rsgroup="${esc(o.pid)}" class="${inp}" translate="no"><option value="">–</option>${RS_GROUPS.map(x => `<option value="${x}" ${g === x ? 'selected' : ''}>${esc(rsGroupLabel(x))}</option>`).join('')}</select></td>
         <td class="${td} text-slate-500">${esc(o.pid)}</td><td class="${td}">${fmt(o.n)}</td>${cols.map(t => `<td class="${td}">${o.v[t] ? short(o.v[t]) : '–'}</td>`).join('')}<td class="${td} text-gold-300 font-semibold">${short(o.tot)}</td><td class="${td} text-slate-400">${o.last ? new Date(o.last).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '–'}</td></tr>`;
       const next = accs[i + 1];
-      if (groups.length && (!next || rsGroupOf(next.pid) !== g)) { const gl = accs.filter(x => rsGroupOf(x.pid) === g); body += sumRow(`Σ ${g ? '👥 ' + esc(g) : '<span>Ohne Gruppe</span>'}`, addSum(gl), gl.length, 'bg-ink-900/40'); }
+      if (groups.length && (!next || rsGroupOf(next.pid) !== g)) { const gl = accs.filter(x => rsGroupOf(x.pid) === g); body += sumRow(`Σ ${g ? '👥 ' + esc(rsGroupLabel(g)) : '<span>Ohne Gruppe</span>'}`, addSum(gl), gl.length, 'bg-ink-900/40'); }
     });
     if (accs.length) body += sumRow('Σ <span>Alle zusammen</span>', addSum(accs), accs.length, 'bg-ink-900/80');
     const perBox = `<section id="rsAccBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-1">👥 Pro Account</h2>
-      <p class="text-xs text-slate-400 mb-3">Jede Farm einzeln (Spieler-ID). In der Spalte „Gruppe“ einen Namen eintragen (z. B. Mirox oder Loli) – dann gibt es Zwischensummen und oben eine Gruppen-Auswahl. Auf den Namen tippen, um nur diesen Account zu sehen.</p>
-      <datalist id="rsGroupList">${groups.map(g => `<option value="${esc(g)}"></option>`).join('')}</datalist>
+      <p class="text-xs text-slate-400 mb-3">Jede Farm einzeln (Spieler-ID). Farmen ohne Namen im Spiel-Postfach heißen „Farm + ID“ – trag ihnen einfach selbst einen Namen ein. In der Spalte „Gruppe“ eine der 5 Gruppen wählen (Namen oben vergeben) – dann gibt es Zwischensummen. 🔍 zeigt nur diesen Account.</p>
       ${accs.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
         <th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-left font-medium">Gruppe</th><th class="py-2 px-2 text-right font-medium">ID</th><th class="py-2 px-2 text-right font-medium">Sammelzüge</th>${cols.map(t => { const [i, l] = rsType(t); return `<th class="py-2 px-2 text-right font-medium">${i} <span>${l}</span></th>`; }).join('')}<th class="py-2 px-2 text-right font-medium">Gesamt</th><th class="py-2 px-2 text-right font-medium">Zuletzt</th></tr></thead>
         <tbody>${body}</tbody></table></div>` : '<div class="text-sm text-slate-500">Noch keine Sammel-Mails.</div>'}</section>`;
@@ -510,7 +515,7 @@ window.RokMods.battles = (R) => {
       <section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">📜 Letzte Sammel-Mails</h2>
         ${list.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
           <th class="py-2 px-2 text-left font-medium">Datum</th><th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-left font-medium">Ressource</th><th class="py-2 px-2 text-right font-medium">Level</th><th class="py-2 px-2 text-right font-medium">Menge</th><th class="py-2 px-2 text-right font-medium">davon Talent</th></tr></thead>
-          <tbody>${list.map(r => { const [i, l] = rsType(r.type); return `<tr class="border-b border-ink-800/60"><td class="py-1 px-2 whitespace-nowrap text-slate-400">${r.t ? new Date(r.t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–'}</td><td class="py-1 px-2" translate="no">${esc(r.acc || r.pid || '–')}</td><td class="py-1 px-2">${i} <span>${l}</span></td><td class="${td}">${r.lvl || '–'}</td><td class="${td} text-gold-300">${fmt(r.val)}</td><td class="${td} text-slate-400">${r.talent ? fmt(r.talent) : '–'}</td></tr>`; }).join('')}</tbody></table></div>
+          <tbody>${list.map(r => { const [i, l] = rsType(r.type); return `<tr class="border-b border-ink-800/60"><td class="py-1 px-2 whitespace-nowrap text-slate-400">${r.t ? new Date(r.t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–'}</td><td class="py-1 px-2" translate="no">${esc(rsNameOf(r.pid, r.acc))}</td><td class="py-1 px-2">${i} <span>${l}</span></td><td class="${td}">${r.lvl || '–'}</td><td class="${td} text-gold-300">${fmt(r.val)}</td><td class="${td} text-slate-400">${r.talent ? fmt(r.talent) : '–'}</td></tr>`; }).join('')}</tbody></table></div>
           ${rows.length > 100 ? '<div class="mt-2 text-[11px] text-slate-500">Nur die letzten 100.</div>' : ''}` : '<div class="text-sm text-slate-500">Keine Sammel-Mails in diesem Zeitraum.</div>'}</section>`;
   }
   function rsDraw() {
@@ -530,7 +535,9 @@ window.RokMods.battles = (R) => {
     $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); if (st.page === 'res') loadRes(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; st.march = ''; st.enemy = ''; re(); });
-    el.querySelectorAll('[data-rsgroup]').forEach(i => i.addEventListener('change', () => { const g = (st.rsGroups = st.rsGroups || {}), v = i.value.trim().slice(0, 24); if (v) g[i.dataset.rsgroup] = v; else delete g[i.dataset.rsgroup]; re(); }));
+    el.querySelectorAll('[data-rsgroup]').forEach(i => i.addEventListener('change', () => { const g = (st.rsGroups = st.rsGroups || {}); if (i.value) g[i.dataset.rsgroup] = i.value; else delete g[i.dataset.rsgroup]; re(); }));
+    el.querySelectorAll('[data-rsgname]').forEach(i => i.addEventListener('change', () => { const g = (st.rsGroupNames = st.rsGroupNames || {}); g[i.dataset.rsgname] = i.value.trim().slice(0, 20); re(); }));
+    el.querySelectorAll('[data-rsname]').forEach(i => i.addEventListener('change', () => { const n = (st.rsNames = st.rsNames || {}), v = i.value.trim().slice(0, 30); if (v) n[i.dataset.rsname] = v; else delete n[i.dataset.rsname]; re(); }));
     el.querySelectorAll('[data-rsgfilter]').forEach(b => b.onclick = () => { st.rsGroup = b.dataset.rsgfilter; re(); });
     el.querySelectorAll('[data-rshz]').forEach(b => b.onclick = () => { st.rsHz = +b.dataset.rshz; savePassive(); renderKampf(); });
     el.querySelectorAll('[data-kbaccpick]').forEach(b => b.onclick = () => { const v = b.dataset.kbaccpick; st.acc = st.acc === v ? '' : v; re(); });
