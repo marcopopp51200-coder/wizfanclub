@@ -212,7 +212,8 @@ window.RokMods.battles = (R) => {
     const note = kbErr && kbErr !== 'missing' ? `<div class="mb-3 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(kbErr)}</div>`
       : !kbRows.length ? '<div class="mb-3 text-[11px] text-slate-500">Noch keine Kampfberichte – sie kommen automatisch, sobald der Kampf-Uploader auf dem PC läuft.</div>' : '';
     const accs = [...new Map(kbRows.filter(r => r.player_id != null).map(r => [String(r.player_id), `${r.self_name || 'Spieler'}${r.account ? ` (${r.account})` : ''}`])).entries()];
-    if (st.acc && !accs.some(([k]) => k === st.acc)) st.acc = '';
+    const accsRes = [...new Map([...accs, ...(rsRows || []).filter(r => r.pid != null).map(r => [String(r.pid), r.acc || ('Spieler ' + r.pid)])]).entries()];   // + Farmen (nur Ressourcen)
+    if (st.acc && !accsRes.some(([k]) => k === st.acc)) st.acc = '';
     const pvp = st.type === 'pvp';
     if (!pvp) cards = { ...cards, kp: false };   // PvE bringt keine Kill Points
     const allMarches = [...new Set(kbFiltered(true).map(kbMarchOf))].sort();
@@ -232,8 +233,8 @@ window.RokMods.battles = (R) => {
     const catSel = pvp ? '' : `<div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3">${segBtn('data-kbcat', '', 'Alle', !st.cat, 'px-3 py-1.5')}${KB_CATS.map(([k, l]) => segBtn('data-kbcat', k, `${l} <span class="opacity-60 tabular-nums">${fmt(catN(k))}</span>`, st.cat === k, 'px-3 py-1.5')).join('')}</div>`;
     const marchSel = `<select data-kbmarch class="${inp} min-w-[11rem]"><option value="">Alle Märsche</option>${allMarches.map(m => `<option value="${esc(m)}" ${st.march === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`;
     const enemyChip = pvp && st.enemy ? `<button type="button" data-kbenemy="" class="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-xs text-red-200">🎯 ${esc(st.enemy)} ✕</button>` : '';
-    const timeRow = (lead) => `<div class="flex flex-wrap items-center gap-2 mb-2">${lead}
-        ${accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
+    const timeRow = (lead, list) => `<div class="flex flex-wrap items-center gap-2 mb-2">${lead}
+        ${(list || accs).length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${(list || accs).map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[[1, '24 h'], [7, '7 Tage'], [30, '30 Tage'], [90, '90 Tage'], [0, 'Alles'], ['custom', 'Zeitraum']].map(([k, l]) => segBtn('data-kbdays', k, l, String(st.days) === String(k))).join('')}</div>
         ${(st.kvks || []).map((k, i) => { const on = st.days === 'custom' && st.from === k.from && st.to === k.to;
           return `<span class="inline-flex items-center rounded-lg border ${on ? 'border-gold-500/70 bg-gold-500/15 text-gold-200' : 'border-ink-600 text-slate-300'} text-xs"><button type="button" data-kbkvk="${i}" class="pl-2 pr-1 py-1" title="${esc(k.from)} – ${esc(k.to)}">🏁 ${esc(k.n)}</button><button type="button" data-kbkvkdel="${i}" class="px-1.5 py-1 text-slate-500 hover:text-red-300" title="Zeitraum löschen">✕</button></span>`; }).join('')}
@@ -256,7 +257,7 @@ window.RokMods.battles = (R) => {
     }
     if (page === 'res') {
       if (!rsRows && !rsLoading) loadRes();
-      el.innerHTML = subTabs + pageHead('🌾', 'Ressourcen', 'Was deine Sammeltrupps auf der Karte gefarmt haben – aus den Sammel-Mails im Postfach.') + timeRow('') + '</section>' + rsHtml();
+      el.innerHTML = subTabs + pageHead('🌾', 'Ressourcen', 'Was deine Sammeltrupps auf der Karte gefarmt haben – aus den Sammel-Mails im Postfach, auch von den Farmen aus MuMu.') + timeRow('', accsRes) + '</section>' + rsHtml();
       kbBind(el); rsDraw(); return;
     }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
@@ -471,7 +472,19 @@ window.RokMods.battles = (R) => {
     const err = rsErr ? `<div class="mb-2 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(rsErr)}</div>` : '';
     const list = rows.slice(0, 100);
     const td = 'py-1 px-2 text-right tabular-nums';
-    return `<section class="panel rounded-2xl p-5">${err}${tiles}</section>
+    // Pro Account (jede Farm unter ihrer Spieler-ID) + Summe
+    const st = kbSt(), accRows = (rsRows || []).filter(r => kxInRange(r.t)), per = new Map();
+    accRows.forEach(r => { const k = String(r.pid); const o = per.get(k) || { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }; o.n++; o.v[r.type] = (o.v[r.type] || 0) + r.val; o.tot += r.val; o.last = Math.max(o.last, Date.parse(r.t || 0) || 0); per.set(k, o); });
+    const accs = [...per.values()].sort((a, b) => b.tot - a.tot), cols = [1, 2, 3, 4, ...[...new Set(accRows.map(r => r.type))].filter(t => t > 4).sort()];
+    const sum = { n: 0, v: {}, tot: 0 }; accs.forEach(o => { sum.n += o.n; sum.tot += o.tot; cols.forEach(t => sum.v[t] = (sum.v[t] || 0) + (o.v[t] || 0)); });
+    const perBox = `<section id="rsAccBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-1">👥 Pro Account</h2>
+      <p class="text-xs text-slate-400 mb-3">Jede Farm einzeln (Spieler-ID) und unten alle zusammen. Antippen, um nur diesen Account zu sehen.</p>
+      ${accs.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
+        <th class="py-2 px-2 text-left font-medium">Account</th><th class="py-2 px-2 text-right font-medium">ID</th><th class="py-2 px-2 text-right font-medium">Sammelzüge</th>${cols.map(t => { const [i, l] = rsType(t); return `<th class="py-2 px-2 text-right font-medium">${i} <span>${l}</span></th>`; }).join('')}<th class="py-2 px-2 text-right font-medium">Gesamt</th><th class="py-2 px-2 text-right font-medium">Zuletzt</th></tr></thead>
+        <tbody>${accs.map(o => `<tr class="border-b border-ink-800/60 hover:bg-ink-800/40 cursor-pointer ${st.acc === o.pid ? 'bg-gold-500/10' : ''}" data-kbaccpick="${esc(o.pid)}"><td class="py-1.5 px-2 text-slate-100" translate="no">${esc(o.acc || '–')}</td><td class="${td} text-slate-500">${esc(o.pid)}</td><td class="${td}">${fmt(o.n)}</td>${cols.map(t => `<td class="${td}">${o.v[t] ? short(o.v[t]) : '–'}</td>`).join('')}<td class="${td} text-gold-300 font-semibold">${short(o.tot)}</td><td class="${td} text-slate-400">${o.last ? new Date(o.last).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '–'}</td></tr>`).join('')}
+          <tr class="bg-ink-900/70 font-semibold"><td class="py-2 px-2 text-gold-300">Σ <span>Alle zusammen</span></td><td class="${td} text-slate-500">${fmt(accs.length)}</td><td class="${td}">${fmt(sum.n)}</td>${cols.map(t => `<td class="${td}">${short(sum.v[t] || 0)}</td>`).join('')}<td class="${td} text-gold-300">${short(sum.tot)}</td><td></td></tr></tbody></table></div>`
+        : '<div class="text-sm text-slate-500">Noch keine Sammel-Mails.</div>'}</section>`;
+    return `<section class="panel rounded-2xl p-5">${err}${tiles}</section>${perBox}
       <section id="rsTrendBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">Gesammelt pro Tag</h2><div class="h-64"><canvas id="rsChart"></canvas></div></section>
       <section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">📜 Letzte Sammel-Mails</h2>
         ${list.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
@@ -496,6 +509,7 @@ window.RokMods.battles = (R) => {
     $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); if (st.page === 'res') loadRes(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; st.march = ''; st.enemy = ''; re(); });
+    el.querySelectorAll('[data-kbaccpick]').forEach(b => b.onclick = () => { const v = b.dataset.kbaccpick; st.acc = st.acc === v ? '' : v; re(); });
     el.querySelectorAll('[data-kbpage]').forEach(b => b.onclick = () => { st.page = b.dataset.kbpage; re(); });
     el.querySelectorAll('[data-kblootcat]').forEach(b => b.onclick = () => { st.lootCat = b.dataset.kblootcat; re(); });
     el.querySelectorAll('[data-kbheal]').forEach(b => b.onclick = () => { st.healType = b.dataset.kbheal; re(); });
