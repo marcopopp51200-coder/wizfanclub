@@ -1393,8 +1393,8 @@ window.RokApp = () => {
       <div class="mt-1 text-lg font-bold ${miss ? 'text-white' : 'text-emerald-400'}">${miss ? `Noch <span class="text-indigo-300 tabular-nums">${fmt(miss)}</span> Passseiten fehlen` : 'Genug Passseiten für die Migration ✓'}</div>
       <div class="mt-3 h-2 rounded-full bg-ink-950 overflow-hidden"><div class="h-full rounded-full" style="width:${pct}%;background:linear-gradient(90deg,#818cf8,#6366f1)"></div></div>
       ${(() => { if (typeof pmReady === 'undefined' || !pmReady || !miss) return ''; const d = pmDayTotal('passports').passports || 0;
-        return `<div class="mt-3 grid grid-cols-2 gap-3 text-sm"><div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Pro Tag</div><b class="tabular-nums text-emerald-300">${d > 0 ? '+' + fmtLeg(d) : '–'}</b></div>
-          <div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Tage bis zum Ziel</div><b class="tabular-nums text-indigo-300">${d > 0 ? fmt(Math.ceil(miss / d)) + ' Tage' : 'Passive aktivieren'}</b></div></div>`; })()}`;
+        return `<div class="mt-3 grid grid-cols-2 gap-3 text-sm"><div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Pro Woche</div><b class="tabular-nums text-emerald-300">${d > 0 ? '+' + fmtLeg(d * 7) : '–'}</b></div>
+          <div class="rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">Bis zum Ziel</div><b class="tabular-nums text-indigo-300">${d > 0 ? `${fmt(Math.ceil(miss / d / 7))} Wochen` : 'Passive aktivieren'}</b>${d > 0 ? `<div class="text-[10px] text-slate-500">${fmt(Math.ceil(miss / d))} Tage · ${dayPlus(Math.ceil(miss / d)).toLocaleDateString('de-DE')}</div>` : ''}</div></div>`; })()}`;
   }
   $('passGoal').addEventListener('input', () => {
     const g = passGoalNum(); LS.set(PASS_GOAL, g ? String(g) : '');
@@ -1629,6 +1629,7 @@ window.RokApp = () => {
   $('speedInputRows').addEventListener('input', updateSpeedSum);
 
   // Getrennte Seiten: Ressourcen | VIP | Gems | Speedups | AP
+  function isSolo(m) { return m === 'marauders'; }   // eigene Seite ohne Scan / Statistics / Passive
   const NOSCAN = ['passports', 'goldheads', 'keys', 'armaments', 'marauders'];   // vorerst nur Eingabe von Hand
   function applyMode() {
     const has = { speedups: hasSpeed, resources: hasRes, vip: hasVip, gems: hasGems, ap: hasAp, mats: hasMats, passports: hasPass }[R.mode] ?? (COUNTERS[R.mode] ? renderCnt(R.mode) : false);
@@ -1676,7 +1677,7 @@ window.RokApp = () => {
     $('matsInputs').classList.toggle('hidden', R.mode !== 'mats');
     if ($('loadingState').classList.contains('hidden')) $('analyzeLabel').textContent = R.mode === 'mats' ? 'Materialien scannen' : 'Analysieren';
     renderCredits();
-    $('emptyState').classList.toggle('hidden', !!has || R.mode === 'marauders');
+    $('emptyState').classList.toggle('hidden', !!has || isSolo(R.mode));
     $('emptyState').querySelector('p').textContent = {
       resources: 'Lade einen Screenshot der Ressourcen deines Main-Accounts hoch und klicke auf „Analysieren“.',
       vip: 'Lade einen Screenshot deines Inventars mit VIP-Punkte-Items hoch und klicke auf „Analysieren“ – oder nutze „Rechner ohne Scan öffnen“.',
@@ -1698,6 +1699,7 @@ window.RokApp = () => {
   // ---------- Klappbare Felder (Zustand pro Gerät + Cloud über user_state) ----------
   var FOLD_KEY = 'rok_scanner_fold', folds;   // var: makeFold kann schon vor dieser Zeile laufen
   function loadFolds() { if (!folds) { try { folds = JSON.parse(LS.get('rok_scanner_fold', '{}')) || {}; } catch { folds = {}; } } return folds; }
+  R.makeFold = (...a) => makeFold(...a);   // auch für Module (battles.js)
   function makeFold(sec, key) {
     if (!sec) return;
     loadFolds();
@@ -2264,7 +2266,9 @@ window.RokApp = () => {
         { k: 'vipd', label: 'VIP täglich', desc: 'VIP 10–11: 1 · VIP 12–13: 2 · VIP 14–19 & SVIP: 3 pro Tag (aus deinem VIP-Stand)', perDay: () => ({ goldheads: ghVipDaily() }) },
         { k: 'olympia', label: 'Champions of Olympia', desc: '2 Goldheads jedes Wochenende', perDay: () => ({ goldheads: 2 / 7 }), inc: (s, days) => ({ goldheads: 2 * weekdaysIn(days, 6) }) },
         { k: 'aoo', label: 'Ark of Osiris', desc: 'alle 2 Wochen · Sieg 10, Niederlage 5', inputs: [{ key: 'w', label: 'Gewinnquote (%)', def: 50 }], perDay: (s) => ({ goldheads: (nv(s.w, 50) / 100 * 10 + (1 - nv(s.w, 50) / 100) * 5) / 14 }) },
-        { k: 'karuak', label: 'Karuak (monatlich)', desc: 'einmal im Monat', inputs: [{ key: 'n', label: 'Goldheads pro Monat', ph: 'z. B. 20' }], perDay: (s) => ({ goldheads: nv(s.n, 0) / 30 }) }
+        { k: 'karuak', label: 'Karuak (monatlich)', desc: 'einmal im Monat', inputs: [{ key: 'n', label: 'Goldheads pro Monat', ph: 'z. B. 20' }], perDay: (s) => ({ goldheads: nv(s.n, 0) / 30 }) },
+        { k: 'chests', label: 'Kisten (12 pro Tag)', desc: 'Getestet: 3× 100 Kisten = 32 · 31 · 40 Skulpturen → Ø 34,3 pro 100 Kisten',
+          inputs: [{ key: 'n', label: 'Kisten pro Tag', def: 12 }, { key: 'r', label: 'Skulpturen pro 100 Kisten', def: 34.33 }], perDay: (s) => ({ goldheads: nv(s.n, 12) * nv(s.r, 34.33) / 100 }) }
       ] }
   };
   const PM_COL = ['#38bdf8', '#a78bfa', '#f97316', '#f472b6', '#e2e8f0', '#ef4444', '#2dd4bf'];
@@ -3021,8 +3025,105 @@ window.RokApp = () => {
   const migRow = (pw) => pw == null ? null : MIG.find(r => pw < r[0] * 1e6) || MIG[MIG.length - 1];
   const migSelRow = () => { const i = migSt().sel; return i != null && MIG[i] ? MIG[i] : null; };
   const migNeed = () => { const r = migSelRow() || migRow(migPower()); if (!r) return null; const s = migSt().mode === 'same'; return { passports: s ? r[2] : r[1], credits: (s ? r[2] : r[1]) * PP_CR, row: r }; };
-  const creditsNow = () => { const c = +migSt().credits; return c >= 0 && migSt().credits !== '' && migSt().credits != null ? c : null; };
-  function renderMigStats() {
+  const creditsRaw = () => { const c = +migSt().credits; return c >= 0 && migSt().credits !== '' && migSt().credits != null ? c : null; };
+  // Credits = eingetragener Stand + was du im Inventar verkaufen willst (Tabelle „Für Credits verkaufen“)
+  const creditsNow = () => { const c = creditsRaw(), v = sellTotal(); return c == null && !v ? null : (c || 0) + v; };
+  // ---------- Für Allianz-Credits verkaufen ----------
+  const SELL_GROUPS = [
+    { k: 'bp_epic', sec: 'bp', label: 'Blaupausen lila (ganz)', val: 45000, n: 20, c: '#c084fc' },
+    { k: 'bp_blue', sec: 'bp', label: 'Blaupausen blau (ganz)', val: 8000, n: 20, c: '#60a5fa' },
+    { k: 'bp_green', sec: 'bp', label: 'Blaupausen grün (ganz)', val: 2200, alt: 8000, altLabel: '8k-Teil', altFirst: 2, n: 15, c: '#4ade80' },
+    { k: 'bp_grey', sec: 'bp', label: 'Blaupausen grau (ganz)', val: 400, n: 6, c: '#cbd5e1' },
+    { k: 'fr_epic', sec: 'fr', label: 'Fragmente lila', val: 1500, n: 20, c: '#c084fc' },
+    { k: 'fr_blue', sec: 'fr', label: 'Fragmente blau', val: 260, n: 20, c: '#60a5fa' },
+    { k: 'fr_green', sec: 'fr', label: 'Fragmente grün', val: 70, alt: 260, altLabel: 'Kav', altFirst: 2, n: 15, c: '#4ade80' }
+  ];
+  const SELL_ITEMS = [
+    { k: 'st_g1', sec: 'star', label: 'Stern grün ★', val: 40 }, { k: 'st_g2', sec: 'star', label: 'Stern grün ★★', val: 160 }, { k: 'st_g3', sec: 'star', label: 'Stern grün ★★★', val: 160 },
+    { k: 'st_b1', sec: 'star', label: 'Stern blau ★', val: 100 }, { k: 'st_b2', sec: 'star', label: 'Stern blau ★★', val: 400 }, { k: 'st_b3', sec: 'star', label: 'Stern blau ★★★', val: 400 },
+    { k: 'st_p1', sec: 'star', label: 'Stern lila ★', val: 300 }, { k: 'st_p2', sec: 'star', label: 'Stern lila ★★', val: 1200 }, { k: 'st_p3', sec: 'star', label: 'Stern lila ★★★', val: 1200 },
+    { k: 'o_book', sec: 'other', label: 'Buch', val: 40 }, { k: 'o_arrow', sec: 'other', label: 'Pfeil', val: 40 },
+    { k: 'o_atk12', sec: 'other', label: 'Angriffs-Boost 12 Std.', val: 500 }, { k: 'o_atk24', sec: 'other', label: 'Angriffs-Boost 24 Std.', val: 800 },
+    { k: 'o_def12', sec: 'other', label: 'Verteidigungs-Boost 12 Std.', val: 500 }, { k: 'o_def24', sec: 'other', label: 'Verteidigungs-Boost 24 Std.', val: 800 },
+    { k: 'o_scout', sec: 'other', label: 'Anti-Scout', val: 1000 }, { k: 'o_apple', sec: 'other', label: 'Goldener Apfel', val: 600 }
+  ];
+  const SELL_SECS = [['bp', '📜 Ausrüstungs-Blaupausen'], ['fr', '🧩 Blaupausen-Fragmente'], ['star', '⭐ Sterne'], ['other', '🎒 Sonstiges']];
+  const sellSt = () => { const x = (passive.sell = passive.sell || {}); x.cnt = x.cnt || {}; x.extra = x.extra || {}; x.hide = x.hide || {}; x.alt = x.alt || {}; return x; };
+  const sellFields = (g) => g.n + (+sellSt().extra[g.k] || 0);
+  const sellAlt = (g, i) => { const a = sellSt().alt[g.k + '_' + i]; return a == null ? i < (g.altFirst || 0) : !!a; };
+  const sellGroupSum = (g) => { const st = sellSt(); let n = 0, v = 0; for (let i = 0; i < sellFields(g); i++) { const c = +st.cnt[g.k + '_' + i] || 0; n += c; v += c * (g.alt && sellAlt(g, i) ? g.alt : g.val); } return { n, v }; };
+  function sellTotal() {
+    if (typeof passiveReady === 'undefined' || !passiveReady) return 0;
+    const st = sellSt(); let t = 0;
+    SELL_GROUPS.forEach(g => { if (!st.hide[g.k]) t += sellGroupSum(g).v; });
+    SELL_ITEMS.forEach(it => { if (!st.hide[it.k]) t += (+st.cnt[it.k] || 0) * it.val; });
+    return t;
+  }
+  var sellOpen = new Set(['bp']);
+  function sellHtml() {
+    const st = sellSt(), c = 'bg-ink-950 border border-ink-600 rounded-lg px-1.5 py-1 text-xs tabular-nums focus:outline-none focus:border-gold-500';
+    const eye = (k) => `<button type="button" data-sellhide="${k}" tabindex="-1" class="text-xs px-1 ${st.hide[k] ? 'text-amber-300' : 'text-slate-500 hover:text-amber-300'}" title="${st.hide[k] ? 'Wieder mitzählen' : 'Ausgrauen – will ich nicht verkaufen'}">${st.hide[k] ? '🚫' : '👁'}</button>`;
+    const grp = (g) => { const S = sellGroupSum(g), off = st.hide[g.k];
+      return `<div class="rounded-lg border border-ink-700 bg-ink-950/40 p-2 ${off ? 'opacity-40' : ''}">
+        <div class="flex items-center justify-between gap-2 mb-1.5"><span class="text-xs font-semibold" style="color:${g.c}">${g.label} <span class="text-slate-500 font-normal">· ${fmt(g.val)}${g.alt ? ` / ${fmt(g.alt)} (${g.altLabel})` : ''} je Stück</span>${off ? ' <span class="text-amber-300 font-normal">· zählt nicht</span>' : ''}</span>
+          <span class="text-xs tabular-nums text-slate-300"><span data-sellgsum="${g.k}">${fmt(S.n)} Stk · <b class="text-gold-300">${short(S.v)}</b></span> ${eye(g.k)}</span></div>
+        <div class="grid grid-cols-4 sm:grid-cols-5 lg:grid-cols-10 gap-1">${Array.from({ length: sellFields(g) }, (_, i) => `<div class="min-w-0">
+          <input data-sellcnt="${g.k}_${i}" type="number" min="0" step="1" value="${st.cnt[g.k + '_' + i] || ''}" placeholder="${i + 1}" class="w-full text-right ${c}">
+          ${g.alt ? `<label class="mt-0.5 flex items-center gap-0.5 text-[9px] text-slate-400"><input type="checkbox" tabindex="-1" data-sellalt="${g.k}_${i}" ${sellAlt(g, i) ? 'checked' : ''} class="accent-emerald-500 w-3 h-3">${g.altLabel}</label>` : ''}</div>`).join('')}</div>
+        <div class="mt-1.5 flex gap-2"><button type="button" tabindex="-1" data-selladd="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-gold-500/60">+ 5 Felder</button>
+          ${+st.extra[g.k] > 0 ? `<button type="button" tabindex="-1" data-sellrem="${g.k}" class="text-[11px] px-2 py-0.5 rounded border border-ink-600 hover:border-red-500/60 text-slate-400">− 5 Felder</button>` : ''}</div></div>`; };
+    const item = (it) => `<tr class="border-b border-ink-800 last:border-b-0 ${st.hide[it.k] ? 'opacity-40' : ''}"><td class="py-1 px-2 text-slate-300">${it.label}${st.hide[it.k] ? ' <span class="text-amber-300 text-[10px]">· zählt nicht</span>' : ''}</td><td class="py-1 px-2 text-right tabular-nums text-slate-400">${fmt(it.val)}</td>
+      <td class="py-1 px-2"><input data-sellcnt="${it.k}" type="number" min="0" step="1" value="${st.cnt[it.k] || ''}" placeholder="0" class="w-20 text-right ${c}"></td>
+      <td class="py-1 px-2 text-right tabular-nums text-gold-300" data-sellisum="${it.k}">${(+st.cnt[it.k] || 0) ? short((+st.cnt[it.k] || 0) * it.val) : '–'}</td><td class="text-right">${eye(it.k)}</td></tr>`;
+    return `<section id="sellBox" class="panel rounded-2xl p-5">
+      <h2 class="font-display text-lg text-gold-300">Für Credits verkaufen</h2>
+      <p class="text-xs text-slate-400 mb-3">Trag ein, was du im Inventar hast – jedes Feld ist ein Teil, gerechnet wird mit dem festen Wert. Mit <b>Tab</b> springst du zum nächsten Feld. 👁 graut aus, was du nicht verkaufen willst (zählt dann nicht mit).</p>
+      <div id="sellPlan">${sellPlanHtml()}</div>
+      ${SELL_SECS.map(([sec, l]) => { const gs = SELL_GROUPS.filter(g => g.sec === sec), its = SELL_ITEMS.filter(it => it.sec === sec);
+        return `<details data-sellsec="${sec}" class="mt-2" ${sellOpen.has(sec) ? 'open' : ''}><summary class="text-sm font-semibold text-slate-200 cursor-pointer hover:text-gold-300">${l} <span class="text-xs text-slate-500 font-normal" data-sellsecsum="${sec}">· ${short(sellSecTotal(sec))}</span></summary>
+          <div class="mt-2 space-y-2">${gs.map(grp).join('')}${its.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-1.5 px-2 text-left font-medium">Item</th><th class="py-1.5 px-2 text-right font-medium">Credits je Stück</th><th class="py-1.5 px-2 text-left font-medium">Anzahl</th><th class="py-1.5 px-2 text-right font-medium">Summe</th><th></th></tr></thead><tbody>${its.map(item).join('')}</tbody></table></div>` : ''}</div></details>`; }).join('')}
+    </section>`;
+  }
+  const sellSecTotal = (sec) => { const st = sellSt(); return SELL_GROUPS.filter(g => g.sec === sec && !st.hide[g.k]).reduce((a, g) => a + sellGroupSum(g).v, 0) + SELL_ITEMS.filter(it => it.sec === sec && !st.hide[it.k]).reduce((a, it) => a + (+st.cnt[it.k] || 0) * it.val, 0); };
+  // Oben im Verkaufs-Kasten: was der Verkauf bringt und was noch fehlt (zum Migrations-Termin oder jetzt)
+  function sellPlanHtml() {
+    const st = migSt(), need = migNeed(), sold = sellTotal(), pagesCr = (ppPages() || 0) * PP_CR, raw = creditsRaw() || 0;
+    const dd = st.date ? dOff(st.date) : null, passive = dd != null && dd > 0 ? (pmIncome('passports', dd).credits || 0) : 0;
+    const box = (l, v, cl, sub) => `<div class="rounded-lg border border-ink-700 bg-ink-950/50 px-2.5 py-2"><div class="text-[10px] uppercase tracking-widest text-slate-400">${l}</div><div class="text-base font-bold tabular-nums ${cl}">${v}</div>${sub ? `<div class="text-[10px] text-slate-500">${sub}</div>` : ''}</div>`;
+    const secBoxes = SELL_SECS.map(([k, l]) => box(l, short(sellSecTotal(k)), 'text-white')).join('');
+    if (!need) return `<div class="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2">${secBoxes}${box('Verkauf gesamt', short(sold), 'text-gold-200', `= ${pmFmt('passports', sold / PP_CR)} Passseiten`)}</div><div class="text-[11px] text-slate-500 mb-2">Power bzw. Migrations-Zeile oben wählen, dann rechnet er aus, wie viel du verkaufen musst.</div>`;
+    const needCr = need.passports * PP_CR, have = pagesCr + raw + passive, missNo = Math.max(0, needCr - have), missAfter = needCr - have - sold;
+    const when = dd != null && dd > 0 ? `zum ${new Date(st.date + 'T00:00:00').toLocaleDateString('de-DE')} (inkl. ${short(passive)} Passive)` : 'jetzt';
+    const sug = missAfter > 0 ? [['lila Blaupausen', 45000], ['blaue Blaupausen', 8000], ['lila Fragmente', 1500], ['lila Sterne ★★', 1200]].map(([l, v]) => `${fmt(Math.ceil(missAfter / v))} ${l}`).join(' · ') : '';
+    return `<div class="rounded-xl border ${missAfter <= 0 ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-gold-500/40 bg-gold-500/5'} p-3 mb-3">
+      <div class="text-xs text-slate-300 mb-2">Migration: <b>${fmt(need.passports)} Passseiten</b> = ${short(needCr)} Credits · gerechnet ${when}</div>
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-2">
+        ${box('Ohne Verkauf fehlen', missNo ? short(missNo) : 'nichts ✓', missNo ? 'text-red-300' : 'text-emerald-300', missNo ? `= ${pmFmt('passports', missNo / PP_CR)} Seiten` : '')}
+        ${box('Verkauf bringt', short(sold), 'text-gold-200', `= ${pmFmt('passports', sold / PP_CR)} Seiten${missNo ? ` · deckt ${dec(Math.min(100, sold / missNo * 100), 0)} %` : ''}`)}
+        ${box(missAfter > 0 ? 'Nach Verkauf fehlen' : 'Überschuss', short(Math.abs(missAfter)), missAfter > 0 ? 'text-red-300' : 'text-emerald-300', `= ${pmFmt('passports', Math.abs(missAfter) / PP_CR)} Seiten`)}
+        ${box('Noch verkaufen', missAfter > 0 ? short(missAfter) : '–', missAfter > 0 ? 'text-amber-200' : 'text-slate-500', missAfter > 0 ? 'Credits zusätzlich' : 'reicht ✓')}
+      </div>
+      ${sug ? `<div class="mt-2 text-[11px] text-slate-400">Das wären z. B. ≈ ${sug}</div>` : ''}
+      <div class="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-2">${secBoxes}</div></div>`;
+  }
+  function updSellSums() {   // Summen aktualisieren, ohne die Felder neu zu zeichnen (Tab springt weiter)
+    const box = $('sellBox'); if (!box) return; const st = sellSt();
+    SELL_GROUPS.forEach(g => { const S = sellGroupSum(g), el = box.querySelector(`[data-sellgsum="${g.k}"]`); if (el) el.innerHTML = `${fmt(S.n)} Stk · <b class="text-gold-300">${short(S.v)}</b>`; });
+    SELL_ITEMS.forEach(it => { const el = box.querySelector(`[data-sellisum="${it.k}"]`); if (el) el.textContent = (+st.cnt[it.k] || 0) ? short((+st.cnt[it.k] || 0) * it.val) : '–'; });
+    SELL_SECS.forEach(([k]) => { const el = box.querySelector(`[data-sellsecsum="${k}"]`); if (el) el.textContent = '· ' + short(sellSecTotal(k)); });
+    const p = $('sellPlan'); if (p) p.innerHTML = sellPlanHtml();
+  }
+  function bindSell(root, upd) {
+    const st = sellSt();
+    root.querySelectorAll('[data-sellsec]').forEach(d => d.addEventListener('toggle', () => { if (d.open) sellOpen.add(d.dataset.sellsec); else sellOpen.delete(d.dataset.sellsec); }));
+    root.querySelectorAll('[data-sellcnt]').forEach(i => i.addEventListener('input', () => { const v = Math.max(0, Math.round(+i.value || 0)); if (v) st.cnt[i.dataset.sellcnt] = v; else delete st.cnt[i.dataset.sellcnt];
+      clearTimeout(bindSell._t); bindSell._t = setTimeout(() => upd(false), 300); }));
+    root.querySelectorAll('[data-sellalt]').forEach(i => i.addEventListener('change', () => { st.alt[i.dataset.sellalt] = i.checked; upd(false); }));
+    root.querySelectorAll('[data-selladd]').forEach(b => b.onclick = () => { st.extra[b.dataset.selladd] = (+st.extra[b.dataset.selladd] || 0) + 5; upd(true); });
+    root.querySelectorAll('[data-sellrem]').forEach(b => b.onclick = () => { const k = b.dataset.sellrem, g = SELL_GROUPS.find(x => x.k === k); st.extra[k] = Math.max(0, (+st.extra[k] || 0) - 5); for (let i = sellFields(g); i < sellFields(g) + 5; i++) delete st.cnt[k + '_' + i]; upd(true); });
+    root.querySelectorAll('[data-sellhide]').forEach(b => b.onclick = () => { if (st.hide[b.dataset.sellhide]) delete st.hide[b.dataset.sellhide]; else st.hide[b.dataset.sellhide] = true; upd(true); });
+  }
+  function renderMigStats(onlyMig) {
     const top = $('statsTop'), st = migSt(), need = migNeed(), pw = migPower(), pages = ppPages(), cr = creditsNow(), sel = migSelRow();
     const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-sm tabular-nums focus:outline-none focus:border-gold-500';
     const card = (l, v, c, sub) => `<div class="rounded-xl border border-ink-700 bg-ink-950/50 p-3"><div class="text-[10px] uppercase tracking-widest text-slate-400">${l}</div><div class="text-xl font-bold tabular-nums ${c}">${v}</div>${sub ? `<div class="text-[11px] text-slate-500">${sub}</div>` : ''}</div>`;
@@ -3031,22 +3132,30 @@ window.RokApp = () => {
     const rng = (i) => { const r = MIG[i]; return r[0] === Infinity ? '> 100 Mio.' : `${i ? MIG[i - 1][0] : 0}–${r[0]} Mio.`; };
     const order = MIG.map((r, i) => i).reverse();   // Power absteigend
     const cell = (i, mode, txt, cls) => `<td data-migpick="${i}" data-mode="${mode}" class="py-1.5 px-3 text-right tabular-nums cursor-pointer hover:bg-gold-500/10 ${cls}">${txt}</td>`;
-    top.innerHTML = `<section id="migBox" class="panel rounded-2xl p-5">
+    const migSec = `<section id="migBox" class="panel rounded-2xl p-5">
       <h2 class="font-display text-lg text-gold-300">Migration</h2>
       <div class="grid sm:grid-cols-3 gap-3 mb-4">
         <label class="text-xs text-slate-400">Power (Mio.)<input id="migPower" type="text" inputmode="decimal" value="${st.power ? String(st.power / 1e6).replace('.', ',') : ''}" placeholder="${profPower() ? (profPower() / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 }) + ' (Profil)' : 'z. B. 85'}" class="mt-1 w-full text-right ${inp}"></label>
         <div class="text-xs text-slate-400">Art<div class="mt-1 grid grid-cols-2 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[['normal', 'Normal'], ['same', 'Same-KvK']].map(([k, l]) => `<button type="button" data-migmode="${k}" aria-pressed="${st.mode === k}" class="seg-btn rounded-lg py-1.5 text-xs font-semibold transition">${l}</button>`).join('')}</div></div>
-        <label class="text-xs text-slate-400">Credits jetzt<input id="migCredits" type="text" inputmode="numeric" value="${cr != null ? cr : ''}" placeholder="z. B. 12.500.000" class="mt-1 w-full text-right ${inp}"></label>
+        <label class="text-xs text-slate-400">Credits jetzt<input id="migCredits" type="text" inputmode="numeric" value="${creditsRaw() != null ? creditsRaw() : ''}" placeholder="z. B. 12.500.000" class="mt-1 w-full text-right ${inp}"></label>
       </div>
+      <label class="text-xs text-slate-400 flex flex-wrap items-center gap-2 mb-3">📅 Wann willst du migrieren?<input id="migDate" type="date" value="${st.date || ''}" class="${inp} !py-1 text-xs">${st.date ? '<button type="button" id="migDateClr" class="text-slate-500 hover:text-red-400">✕</button>' : ''}</label>
       <div class="text-[11px] text-slate-500 mb-3">${sel ? `Ausgewählt in der Tabelle: <b class="text-gold-300">${rng(MIG.indexOf(sel))}</b> · ${st.mode === 'same' ? 'Same-KvK' : 'Normal'} <button type="button" id="migAuto" class="ml-1 underline hover:text-gold-300">zurück zu meiner Power</button>`
         : pw == null ? 'Keine Power im Profil – oben eintragen oder in der Tabelle eine Zeile anklicken.' : `Gerechnet mit ${(pw / 1e6).toLocaleString('de-DE', { maximumFractionDigits: 1 })} Mio. Power${st.power ? '' : ' aus deinem Profil'} · oder in der Tabelle anklicken, was du willst.`} 1 Passseite = 600.000 Credits.</div>
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${card('Passseiten nötig', need ? fmt(need.passports) : '–', 'text-indigo-300', need ? `= ${short(need.credits)} Credits` : '')}
         ${card('Passseiten jetzt', pages != null ? fmt(pages) : '–', 'text-white', pages == null ? 'noch nicht eingetragen' : '')}
-        ${card('Credits jetzt', cr != null ? short(cr) : '–', 'text-white', cr == null ? 'oben eintragen' : `= ${pmFmt('passports', cr / PP_CR)} Passseiten`)}
+        ${card('Credits jetzt', cr != null ? short(cr) : '–', 'text-white', cr == null ? 'oben eintragen' : `= ${pmFmt('passports', cr / PP_CR)} Passseiten${sellTotal() ? ` · inkl. ${short(sellTotal())} aus Verkauf` : ''}`)}
         ${card(miss != null && miss > 0 ? 'Fehlen noch' : 'Stand', miss == null ? '–' : miss > 0 ? `${pmFmt('passports', miss)} Seiten` : 'reicht ✓', miss > 0 ? 'text-red-400' : 'text-emerald-400',
           miss > 0 ? `= ${short(miss * PP_CR)} Credits · ${days == null ? 'Passive aktivieren' : `ca. ${fmt(days)} Tage (${dayPlus(days).toLocaleDateString('de-DE')})`}` : '')}
       </div>
+ ${(() => { if (!st.date || !need) return ''; const dd = dOff(st.date); if (dd == null) return '';
+        if (dd < 0) return '<div class="mt-3 text-xs text-slate-500">Der Migrations-Termin liegt in der Vergangenheit.</div>';
+        const atD = haveEq + (dd ? (pmIncome('passports', dd).credits || 0) / PP_CR : 0), gap = need.passports - atD, ok = gap <= 1e-9;
+        return `<div class="mt-3 rounded-xl border ${ok ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-red-500/40 bg-red-500/10'} p-3 text-sm">
+          📅 Migration am <b>${new Date(st.date + 'T00:00:00').toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })}</b> (in ${fmt(dd)} Tagen):
+          du hast dann ≈ <b class="tabular-nums">${pmFmt('passports', atD)}</b> von ${fmt(need.passports)} Passseiten –
+          ${ok ? '<b class="text-emerald-300">reicht ✓</b>' : `<b class="text-red-300">es fehlen ${pmFmt('passports', gap)} Seiten (${short(gap * PP_CR)} Credits)</b> · dafür bräuchtest du zusätzlich ≈ ${short(dd ? gap * PP_CR / dd * 7 : gap * PP_CR)} Credits ${dd ? 'pro Woche' : 'heute'}`}</div>`; })()}
       ${need ? `<button type="button" id="migGoal" class="mt-3 text-xs px-3 py-2 rounded-lg border border-ink-600 hover:border-gold-500/60 hover:text-gold-300">🎯 ${fmt(need.passports)} Passseiten als Migrations-Ziel übernehmen</button>` : ''}
       <div class="mt-4 overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs">
         <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-3 text-left font-medium">Power</th><th class="py-2 px-3 text-right font-medium">Passseiten normal</th><th class="py-2 px-3 text-right font-medium">Same-KvK</th><th class="py-2 px-3 text-right font-medium">Credits normal</th><th class="py-2 px-3 text-right font-medium">Same-KvK</th></tr></thead>
@@ -3056,7 +3165,12 @@ window.RokApp = () => {
             ${cell(i, 'normal', fmt(r[1] * PP_CR), on && !sm ? 'text-slate-100 font-bold' : 'text-slate-400')}${cell(i, 'same', fmt(r[2] * PP_CR), on && sm ? 'text-slate-100 font-bold' : 'text-slate-400')}</tr>`; }).join('')}</tbody></table></div>
       <div class="mt-1 text-[11px] text-slate-500">Zeile oder Zahl anklicken → wird oben ausgerechnet.</div>
     </section>`;
+    if (onlyMig && $('migBox') && $('sellBox')) $('migBox').outerHTML = migSec;
+    else { top.innerHTML = migSec + sellHtml(); makeFold($('sellBox'), 'sell');
+      bindSell($('sellBox'), (full) => { savePassive(); if (full) renderMigStats(); else { updSellSums(); renderMigStats(true); } if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); }); }
     makeFold($('migBox'), 'mig');
+    $('migDate').onchange = (e) => { st.date = pDate(e.target.value) ? e.target.value : ''; upd(); };
+    $('migDateClr')?.addEventListener('click', () => { st.date = ''; upd(); });
     const upd = () => { savePassive(); renderMigStats(); if (R.areaTab === 'passive') renderPMOut('passports'); renderAreaTabs(); };
     top.querySelectorAll('[data-migmode]').forEach(b => b.onclick = () => { st.mode = b.dataset.migmode; upd(); });
     top.querySelectorAll('[data-migpick]').forEach(c => c.onclick = () => { st.sel = +c.dataset.migpick; if (c.dataset.mode) st.mode = c.dataset.mode; upd(); });
@@ -3601,7 +3715,15 @@ window.RokApp = () => {
     const names = (R.COMMANDERS || []).filter(x => x.r === 'legendary' || !x.r).map(x => x.name);
     top.innerHTML = `<section id="ghBox" class="panel rounded-2xl p-5">
       <h2 class="font-display text-lg text-gold-300">Kommandanten-Expertise</h2>
-      <p class="text-xs text-slate-400 mb-3">Trag alle Kommandanten ein, die du skillen willst – mit Datum, bis wann du sie brauchst. Gerechnet wird in der Reihenfolge der Daten.</p>
+      <p class="text-xs text-slate-400 mb-3">Bis zu 5 Kommandanten in deiner Reihenfolge (mit Datum zuerst nach Datum). Er zieht die Kosten nacheinander von deinen Goldheads ab und zeigt, ab wann du jeden kaufen kannst.</p>
+      ${P.rows.length ? `<div class="mb-4 overflow-x-auto rounded-lg border border-gold-500/30 bg-gold-500/5"><table class="w-full text-xs">
+        <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">#</th><th class="py-2 px-2 text-left font-medium">Kommandant</th><th class="py-2 px-2 text-right font-medium">Kosten</th><th class="py-2 px-2 text-right font-medium">Kaufbar ab</th><th class="py-2 px-2 text-right font-medium">Danach übrig</th></tr></thead>
+        <tbody><tr class="border-b border-ink-800 text-slate-400"><td></td><td class="py-1.5 px-2">Goldheads jetzt</td><td></td><td></td><td class="py-1.5 px-2 text-right tabular-nums text-white">${fmt(P.stock)}</td></tr>
+        ${P.rows.map((r, k) => { const at = r.reach == null ? null : P.stock + (r.reach ? pmIncome('goldheads', r.reach).goldheads || 0 : 0), left = at == null ? null : at - r.cum;
+          return `<tr class="border-b border-ink-800 last:border-b-0"><td class="py-1.5 px-2 text-gold-300 font-bold">${k + 1}.</td><td class="py-1.5 px-2 text-slate-200">${esc(r.c.name || 'Kommandant')} <span class="text-slate-500">${r.c.cur.join('-')} → ${r.c.tgt.join('-')}</span></td>
+            <td class="py-1.5 px-2 text-right tabular-nums text-gold-300">−${fmt(r.need)}</td>
+            <td class="py-1.5 px-2 text-right tabular-nums ${r.reach === 0 ? 'text-emerald-400 font-bold' : r.reach ? 'text-indigo-300 font-semibold' : 'text-slate-500'}">${r.reach === 0 ? 'jetzt ✓' : r.reach ? `${dayPlus(r.reach).toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' })} <span class="text-slate-500 font-normal">(${fmt(r.reach)} T.)</span>` : 'Passive aktivieren'}</td>
+            <td class="py-1.5 px-2 text-right tabular-nums text-slate-300">${left == null ? '–' : fmt(Math.floor(left))}</td></tr>`; }).join('')}</tbody></table></div>` : ''}
       ${names.length ? `<datalist id="ghNames">${names.map(n => `<option value="${esc(n)}">`).join('')}</datalist>` : ''}
       <div class="space-y-2">${P.rows.map((r, k) => { const c = r.c; return `<div class="rounded-xl border ${r.ok === false ? 'border-red-500/40 bg-red-500/5' : r.ok ? 'border-emerald-500/40 bg-emerald-500/5' : 'border-ink-700 bg-ink-950/40'} p-3">
         <div class="flex flex-wrap items-center gap-2">
@@ -3618,7 +3740,7 @@ window.RokApp = () => {
           <span>erreicht ${r.reach === 0 ? '<b class="text-emerald-400">jetzt ✓</b>' : r.reach ? `<b class="text-indigo-300">${dayPlus(r.reach).toLocaleDateString('de-DE')}</b> (in ${fmt(r.reach)} Tagen)` : '<b class="text-slate-500">–</b>'}</span>
           ${r.dd != null ? (r.ok ? '<span class="text-emerald-400">pünktlich ✓</span>' : r.dd < 0 ? '<span class="text-slate-500">Datum liegt in der Vergangenheit</span>' : `<span class="text-red-400">am ${dLabel(c.date)} fehlen ${fmt(r.cum - (r.atDate || 0))} – dafür bräuchtest du ${r.dd > 0 ? fmt(Math.ceil((r.cum - P.stock) / r.dd)) : '–'} pro Tag</span>`) : ''}
         </div></div>`; }).join('')}</div>
-      <button type="button" id="ghAdd" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">+ Kommandant</button>
+      ${st.list.length < 5 ? '<button type="button" id="ghAdd" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">+ Kommandant</button>' : '<div class="mt-3 text-[11px] text-slate-500">Maximal 5 Kommandanten.</div>'}
       <div class="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${card('Goldheads nötig (alle)', fmt(P.total), 'text-gold-300', `${fmt(P.rows.length)} Kommandanten`)}
         ${card('Goldheads jetzt', fmt(P.stock), 'text-white', PMOD.goldheads.now().goldheads == null ? 'noch nicht eingetragen' : '')}
@@ -3635,7 +3757,7 @@ window.RokApp = () => {
     top.querySelectorAll('[data-ghname]').forEach(i => i.onchange = () => { const c = find(i.dataset.ghname); if (c) { c.name = i.value.trim().slice(0, 40); savePassive(); } });
     top.querySelectorAll('[data-ghdate]').forEach(i => i.onchange = () => { const c = find(i.dataset.ghdate); if (c) { c.date = pDate(i.value) ? i.value : ''; upd(); } });
     top.querySelectorAll('[data-ghdel]').forEach(b => b.onclick = () => { st.list = st.list.filter(x => x.id !== b.dataset.ghdel); upd(); });
-    $('ghAdd').onclick = () => { st.list.push({ id: 'c' + Date.now().toString(36), name: '', cur: [1, 1, 1, 1], tgt: [5, 5, 5, 5], date: '' }); upd(); };
+    if ($('ghAdd')) $('ghAdd').onclick = () => { st.list.push({ id: 'c' + Date.now().toString(36), name: '', cur: [1, 1, 1, 1], tgt: [5, 5, 5, 5], date: '' }); upd(); };
     const wrap = $('ghChartWrap'); if (ghChart) { try { ghChart.destroy(); } catch {} ghChart = null; }
     if (!window.Chart) { wrap.innerHTML = '<div class="h-full grid place-items-center text-xs text-slate-500">Diagramm konnte nicht geladen werden.</div>'; return; }
     const far = Math.max(30, ...P.rows.map(r => r.reach || 0), ...P.rows.map(r => r.dd || 0));
@@ -3728,6 +3850,10 @@ window.RokApp = () => {
         ${[7, 14, 30, 60, 90].map(d => `<button type="button" data-resdays="${d}" aria-pressed="${days === d}" class="seg-btn rounded-lg px-3 py-1 border border-ink-700 font-semibold">${d} Tage</button>`).join('')}
         ${kOff > 0 ? `<button type="button" data-resdays="${kOff}" aria-pressed="${days === kOff}" class="seg-btn rounded-lg px-3 py-1 border border-ink-700 font-semibold">bis KvK (${kOff})</button>` : ''}
         <label class="inline-flex items-center gap-1">eigene <input id="resDaysIn" type="number" min="1" step="1" value="${[7, 14, 30, 60, 90, kOff].includes(days) ? '' : days}" placeholder="Tage" class="w-20 text-right ${inp} !py-1"></label></div>
+      <div class="overflow-x-auto rounded-lg border border-emerald-500/30 bg-emerald-500/5 mb-3"><table class="w-full text-xs">
+        <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">Nur Farmen</th><th class="py-2 px-2 text-right font-medium">pro Tag</th><th class="py-2 px-2 text-right font-medium">7 Tage</th><th class="py-2 px-2 text-right font-medium">14 Tage</th><th class="py-2 px-2 text-right font-medium">30 Tage</th></tr></thead>
+        <tbody>${RES.map(r => `<tr class="border-b border-ink-800"><td class="py-1.5 px-2 text-slate-200">${ico(r, 'w-3.5 h-3.5')} ${r.label}</td>${[1, 7, 14, 30].map(n => `<td class="py-1.5 px-2 text-right tabular-nums ${tot[r.k] ? 'text-emerald-300' : 'text-slate-600'}">${tot[r.k] ? '+' + short(tot[r.k] * n) : '–'}</td>`).join('')}</tr>`).join('')}
+          <tr class="font-semibold"><td class="py-1.5 px-2 text-white">Gesamt</td>${[1, 7, 14, 30].map(n => `<td class="py-1.5 px-2 text-right tabular-nums text-emerald-200">${rssSum(tot) ? '+' + short(rssSum(tot) * n) : '–'}</td>`).join('')}</tr></tbody></table></div>
       <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-3">${RES.map(r => card(r.label, tot[r.k] ? short(tot[r.k] * days) : '–', 'text-emerald-300', tot[r.k] ? `+${short(tot[r.k])} / Tag · +${short(tot[r.k] * 7)} / Woche` : 'keine Farm', ico(r, 'w-4 h-4'))).join('')}</div>
       <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs">
         <thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">Farm</th><th class="py-2 px-2 text-left font-medium">Sammelt</th><th class="py-2 px-2 text-left font-medium">Märsche (Lv)</th><th class="py-2 px-2 text-right font-medium">+6 %</th><th class="py-2 px-2 text-right font-medium">pro Sendung</th><th class="py-2 px-2 text-right font-medium">Sendungen</th><th class="py-2 px-2 text-right font-medium">pro Tag</th><th class="py-2 px-2 text-right font-medium">${fmt(days)} Tage</th></tr></thead>
@@ -3771,6 +3897,40 @@ window.RokApp = () => {
       kvkRssSt().push(e); savePassive(); renderResStats(); };
     top.querySelectorAll('[data-krdel]').forEach(b => b.onclick = async () => { if (!(await UI.confirm('Diesen KvK löschen?'))) return; passive.kvkRss = kvkRssSt().filter(x => x.id !== b.dataset.krdel); savePassive(); renderResStats(); });
   }
+  // ---------- Keys: Kisten-Chancen (offizielle Werte aus dem Spiel) ----------
+  const KEY_CHESTS = [
+    { k: 'gold', key: 'key_gold', label: 'Goldene Kiste', keyLabel: 'Goldene Schlüssel', img: 'sonstiges/goldkey.png', icon: '🔑', odds: [
+      ['Legendärer Kommandant', 0.80566, true], ['Epischer Kommandant', 2.34762, true], ['Elite-Kommandant', 3.41472], ['Legendäre Kommandanten-Skulptur', 3.07422, true], ['Epische Kommandanten-Skulptur', 8.45411],
+      ['Elite-Kommandanten-Skulptur', 15.97166], ['Dazzling Starlight Sculpture', 4.88385], ['Brand-new Starlight Sculpture', 9.7677], ['Ressourcen-Item', 17.09348], ['Speedup', 12.82011], ['Tome of Knowledge', 21.36685]] },
+    { k: 'silver', key: 'key_silver', label: 'Silberne Kiste', keyLabel: 'Silberne Schlüssel', img: 'sonstiges/silverkey.png', icon: '🗝️', odds: [
+      ['Elite-Kommandant', 0.707, true], ['Fortgeschrittener Kommandant', 2.122], ['Epische Kommandanten-Skulptur', 1.0089, true], ['Elite-Kommandanten-Skulptur', 4.03559], ['Fortgeschrittene Kommandanten-Skulptur', 8.45552],
+      ['Brand-new Starlight Sculpture', 3.364], ['Ordinary Starlight Sculpture', 6.727], ['Obsolete Starlight Sculpture', 16.818], ['Ressourcen-Item', 21.023], ['Speedup', 12.614], ['Tome of Knowledge', 23.125]] },
+    { k: 'equip', key: 'key_material', label: 'Ausrüstungs-Kiste', keyLabel: 'Material-Schlüssel', img: 'sonstiges/materialkey.png', icon: '🧰', odds: [
+      ['Legendäre Blaupause', 0.052, true], ['Epische Blaupause', 0.676, true], ['Elite-Blaupausen', 4.929], ['Fortgeschrittene Blaupausen', 10.427], ['Normale Blaupausen', 4.175],
+      ['Ausrüstungs-Materialien (grau bis legendär)', 40.596], ['Ressourcen-Item', 22.334], ['Speedup', 16.811]] }
+  ];
+  const keyOddsSt = () => (passive.keyOdds = passive.keyOdds || {});
+  function renderKeyStats() {
+    const top = $('statsTop'), st = keyOddsSt(), last = R.history.filter(e => e.type === 'keys').sort((a, b) => b.ts - a.ts)[0] || {};
+    const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-sm tabular-nums focus:outline-none focus:border-gold-500';
+    const pc = (x) => x >= 0.9995 ? '≈ 100 %' : (x * 100).toLocaleString('de-DE', { maximumFractionDigits: x < 0.1 ? 2 : 1 }) + ' %';
+    top.innerHTML = `<section id="keyOddsBox" class="panel rounded-2xl p-5">
+      <h2 class="font-display text-lg text-gold-300">Kisten-Chancen</h2>
+      <p class="text-xs text-slate-400 mb-3">Offizielle Chancen pro geöffneter Kiste. Anzahl Schlüssel kommt aus deinem letzten Keys-Eintrag – oder trag selbst ein, wie viele du öffnen willst.</p>
+      <div class="grid lg:grid-cols-3 gap-3">${KEY_CHESTS.map(ch => { const n = st[ch.k] != null && st[ch.k] !== '' ? +st[ch.k] : (+last[ch.key] || 0);
+        return `<div class="rounded-xl border border-ink-700 bg-ink-950/40 p-3">
+          <div class="flex items-center justify-between gap-2 mb-2"><b class="text-white">${ico(ch, 'w-5 h-5')} ${ch.label}</b>
+            <label class="text-[11px] text-slate-400 flex items-center gap-1">Kisten<input data-keyn="${ch.k}" type="number" min="0" step="1" value="${n || ''}" placeholder="${+last[ch.key] || 0}" class="w-20 text-right ${inp}"></label></div>
+          <div class="text-[10px] text-slate-500 mb-1">${ch.keyLabel}${last[ch.key] != null ? ` · im Inventar ${fmt(last[ch.key])}` : ''}</div>
+          <table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-1 text-left font-medium">Belohnung</th><th class="py-1 text-right font-medium">Chance</th><th class="py-1 text-right font-medium">Ø bei ${fmt(n)}</th><th class="py-1 text-right font-medium">mind. 1×</th></tr></thead>
+          <tbody>${ch.odds.map(([l, p, rare]) => { const q = p / 100; return `<tr class="border-b border-ink-800 last:border-b-0 ${rare ? 'text-gold-200' : 'text-slate-300'}"><td class="py-1 pr-1">${rare ? '⭐ ' : ''}${l}</td><td class="py-1 text-right tabular-nums">${dec(p, p < 1 ? 3 : 2)} %</td>
+            <td class="py-1 text-right tabular-nums">${n ? dec(n * q, n * q < 10 ? 1 : 0) : '–'}</td><td class="py-1 text-right tabular-nums">${n ? pc(1 - Math.pow(1 - q, n)) : '–'}</td></tr>`; }).join('')}</tbody></table>
+          ${ch.k === 'equip' ? '<div class="mt-2 text-[10px] text-slate-500">Bei den Ausrüstungs-Materialien sagt das Spiel nicht, wie sie sich auf grau bis legendär verteilen – legendäre sind sicher seltener als graue.</div>' : ''}</div>`; }).join('')}</div>
+      <div class="mt-2 text-[11px] text-slate-500">⭐ = seltene Belohnung. „mind. 1×“ = Chance, sie bei dieser Anzahl Kisten mindestens einmal zu bekommen.</div>
+    </section>`;
+    makeFold($('keyOddsBox'), 'keyodds');
+    top.querySelectorAll('[data-keyn]').forEach(i => i.addEventListener('change', () => { const v = i.value.trim(); st[i.dataset.keyn] = v === '' ? null : Math.max(0, Math.round(+v || 0)); savePassive(); renderKeyStats(); }));
+  }
   function renderStats(m) {
     const top = $('statsTop'), sec = $('passiveInputs');
     if (m === 'ap') { sec.classList.add('hidden'); if (!top.querySelector('#apCanDo')) renderApStats(); else renderApStatsOut(); renderCredits(); return; }
@@ -3783,6 +3943,7 @@ window.RokApp = () => {
     else if (m === 'armaments') renderArmStats();
     else if (m === 'mats') renderMatStats();
     else if (m === 'resources') renderResStats();
+    else if (m === 'keys') renderKeyStats();
     else if (false) top.innerHTML = `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-2">Power → benötigte Passseiten</h2>
         <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-3 text-left font-medium">Power</th><th class="py-2 px-3 text-right font-medium">Passseiten</th></tr></thead>
         <tbody><tr><td colspan="2" class="py-6 text-center text-slate-500">Tabelle folgt – sobald die Daten da sind, steht hier, wie viele Passseiten du für deine Power brauchst.</td></tr></tbody></table></div></section>`;
@@ -3794,7 +3955,7 @@ window.RokApp = () => {
   }
   function renderAreaTabs() {
     const el = $('areaTabs'); if (!el || typeof HUB === 'undefined' || !HUB) return;
-    el.classList.toggle('hidden', R.mode === 'marauders');
+    el.classList.toggle('hidden', isSolo(R.mode));
     const h = HUB.find(x => x.m === R.mode) || {}, m = R.mode;
     const lastTs = (() => { const t = m === 'mats' ? 'materials' : m; const e = R.history.filter(x => x.type === t).sort((a, b) => b.ts - a.ts)[0]; return e ? e.ts : null; })();
     const upIcon = '<svg class="w-9 h-9 text-gold-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg>';
@@ -3825,13 +3986,13 @@ window.RokApp = () => {
   }
   // Links Statistics · Mitte Scan + Dashboard (wie früher nebeneinander) · rechts Passive
   function setAreaTab(t) {
-    if (t === 'scan' || R.mode === 'marauders') t = 'dash';
+    if (t === 'scan' || isSolo(R.mode)) t = 'dash';
     if (t === 'passive' && R.mode !== 'ap' && !PMOD[R.mode] && !passiveFields(R.mode)) t = 'dash';
     R.areaTab = t;
     const aside = $('areaAside'), main = $('results'), stats = $('statsArea');
     delete aside.dataset.tab;
-    $('areaGrid').className = t === 'dash' && R.mode !== 'marauders' ? 'grid lg:grid-cols-[380px_1fr] gap-6' : 'grid gap-6';
-    aside.classList.toggle('hidden', t !== 'dash' || R.mode === 'marauders');
+    $('areaGrid').className = t === 'dash' && !isSolo(R.mode) ? 'grid lg:grid-cols-[380px_1fr] gap-6' : 'grid gap-6';
+    aside.classList.toggle('hidden', t !== 'dash' || isSolo(R.mode));
     main.classList.toggle('hidden', t !== 'dash');
     stats.classList.toggle('hidden', t === 'dash');
     $('statsLeft').classList.toggle('hidden', t !== 'stats');
@@ -3901,8 +4062,8 @@ window.RokApp = () => {
   R.view = 'feed';   // Startseite = Feed; Scanner & Dashboard über das Profil-Menü
   let lastMainView = 'feed';
   // Seiten: view → Element · Module ergänzen R.VIEW_EL / R.MAIN_VIEWS / R.viewHooks (Funktion beim Öffnen)
-  R.VIEW_EL = { scanner: 'scannerView', rank: 'rankView', profile: 'profileView', craft: 'craftView', kvk: 'kvkView', feed: 'feedView', kingdom: 'kingdomView', help: 'helpView', showcases: 'showcasesView' };
-  R.MAIN_VIEWS = ['kingdom', 'feed', 'rank', 'craft', 'help'];   // mit Haupt-Reitern oben
+  R.VIEW_EL = { scanner: 'scannerView', rank: 'rankView', profile: 'profileView', craft: 'craftView', kvk: 'kvkView', feed: 'feedView', battles: 'battlesView', kingdom: 'kingdomView', help: 'helpView', showcases: 'showcasesView' };
+  R.MAIN_VIEWS = ['kingdom', 'feed', 'battles', 'rank', 'craft', 'help'];   // mit Haupt-Reitern oben
   R.viewHooks = {};
   // Verlauf der Seiten für die Zurück-Buttons (Startseite = Rangliste)
   let shownView = null; R.navStack = []; R.navBack = false;
@@ -4111,7 +4272,7 @@ window.RokApp = () => {
   window.RokMods.showcase(R);
   window.RokMods.crafting(R);
   // Neue Bereiche (je eine Datei) – fehlt eine Datei, läuft der Rest trotzdem
-  ['feed', 'news', 'showcases', 'kingdom', 'helpme'].forEach((m) => { if (window.RokMods[m]) { try { window.RokMods[m](R); } catch (e) { console.error('Modul ' + m, e); } } });
+  ['feed', 'news', 'showcases', 'kingdom', 'helpme', 'battles'].forEach((m) => { if (window.RokMods[m]) { try { window.RokMods[m](R); } catch (e) { console.error('Modul ' + m, e); } } });
 
   // Init
   R.renderHeaderAvatar();
