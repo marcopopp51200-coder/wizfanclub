@@ -35,11 +35,21 @@ window.RokMods.battles = (R) => {
   }
   function kbSt() { const s = (S.kampf = S.kampf || { acc: '', type: 'pvp', days: 30, from: '', to: '' }); if (s.type !== 'pvp' && s.type !== 'pve') s.type = 'pvp'; return s; }
   // PvE-Arten: NpcBType aus dem Bericht → Kategorie (1 = Barbar sicher, Rest einstellbar unter „PvE-Gegnerarten“)
-  var KB_CATS = [['barb', '🪓 Barbaren'], ['maraud', '🐎 Marodeure'], ['fort', '🏯 Forts'], ['other', '❔ Sonstige']];
+  var KB_CATS = [['barb', '🪓 Barbaren'], ['fort', '🏯 Forts'], ['kvkkaruak', '👹 KvK-Karuak'], ['maraud', '🐎 Marodeure'], ['other', '❔ Sonstige']];
+  // NpcBType aus den Berichten: 1 = Barbar (Kdt. 273), 41 = Barbarenfort (Kdt. 272, viele Wellen in einem Bericht),
+  // 9 = Karuak ohne Belohnung (Kdt. 2) → wird nicht gezählt, 47 / 28–30 = KvK-Karuak
+  var KB_NPC = { 1: 'barb', 41: 'fort', 9: 'skip', 47: 'kvkkaruak', 28: 'kvkkaruak', 29: 'kvkkaruak', 30: 'kvkkaruak' };
+  // Ein Ziel zählt als besiegt, wenn alle Gegner-Truppen weg sind – ein Fort zählt einmal pro Bericht
+  function kbDefeated(r) { const t = kbN(r.enemy_troops_start); return t > 0 && kbN(r.enemy_dead) + kbN(r.enemy_severe) + kbN(r.enemy_wounded) >= t * 0.999; }
+  function kbTargets(rows, cat) {
+    const s = new Set(); rows.forEach(r => { const c = kbCatOf(r.npc_btype, r.group_size); if (cat && c !== cat) return;
+      if (c === 'fort') s.add('f|' + r.mail_id); else if (kbDefeated(r)) s.add(r.mail_id + '|' + r.opponent_id); });
+    return s.size;
+  }
   function kbCatOf(bt, group) {
     const map = kbSt().npcMap || {};
     if (bt != null && map[bt]) return map[bt];
-    if (bt === 1) return 'barb'; if (bt === 9) return 'maraud';
+    if (bt != null && KB_NPC[bt]) return KB_NPC[bt];
     if (group > 1) return 'fort';
     return 'other';
   }
@@ -61,6 +71,7 @@ window.RokMods.battles = (R) => {
     else if (+st.days > 0) from = Date.now() - st.days * 86400000;
     return rows.filter(r => { if (st.acc && String(r.player_id) !== st.acc) return false;
       if (st.type === 'pvp' && !kbIsPvp(r)) return false; if (st.type === 'pve' && r.is_pvp) return false;
+      if (st.type === 'pve' && kbCatOf(r.npc_btype, r.group_size) === 'skip') return false;   // Karuak ohne Belohnung
       if (st.type === 'pve' && st.cat && kbCatOf(r.npc_btype, r.group_size) !== st.cat) return false;
       if (!skipMarch && st.march && kbMarchOf(r) !== st.march) return false;
       if (st.type === 'pvp' && st.enemy && kbEnemyOf(r) !== st.enemy) return false;
@@ -202,14 +213,14 @@ window.RokMods.battles = (R) => {
     if (st.march && !allMarches.includes(st.march)) st.march = '';
     const rows = kbFiltered(), A = kbAgg(rows), R0 = kbRange(rows);
     // Große Auswahl PvP / PvE
-    const nPvp = new Set(kbRows.filter(kbIsPvp).map(r => r.mail_id)).size, nPve = new Set(kbRows.filter(r => !r.is_pvp).map(r => r.mail_id)).size;
+    const nPvp = new Set(kbRows.filter(kbIsPvp).map(r => r.mail_id)).size, nPve = new Set(kbRows.filter(r => !r.is_pvp && kbCatOf(r.npc_btype, r.group_size) !== 'skip').map(r => r.mail_id)).size;
     const bigBtn = (k, icon, l, sub, n) => `<button type="button" data-kbtype="${k}" aria-pressed="${st.type === k}" class="seg-btn rounded-xl px-5 py-4 text-left transition">
         <div class="flex items-center gap-3"><span class="text-3xl leading-none">${icon}</span><span><span class="block font-display text-xl tracking-wide">${l}</span><span class="block text-[11px] opacity-80">${sub}</span></span><span class="ml-auto text-sm tabular-nums opacity-80">${fmt(n)}</span></div></button>`;
     const typeSel = `<div class="grid grid-cols-2 gap-2 p-1.5 rounded-2xl bg-ink-950 border border-ink-700 mb-3">
-        ${bigBtn('pvp', '⚔️', 'PvP', 'Kämpfe gegen Spieler mit Kill Points', nPvp)}${bigBtn('pve', '🪓', 'PvE', 'Barbaren, Marodeure, Forts und Belohnungen', nPve)}</div>`;
+        ${bigBtn('pvp', '⚔️', 'PvP', 'Kämpfe gegen Spieler mit Kill Points', nPvp)}${bigBtn('pve', '🪓', 'PvE', 'Barbaren, Forts, KvK-Karuak und Belohnungen', nPve)}</div>`;
     // PvE: Kategorie-Auswahl
     const pveAll = kbRows.filter(r => !r.is_pvp && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start));
-    const catN = (c) => new Set(pveAll.filter(r => kbCatOf(r.npc_btype, r.group_size) === c).map(r => r.mail_id + '|' + r.opponent_id)).size;
+    const catN = (c) => kbTargets(pveAll, c);
     const catSel = pvp ? '' : `<div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3">${segBtn('data-kbcat', '', 'Alle', !st.cat, 'px-3 py-1.5')}${KB_CATS.map(([k, l]) => segBtn('data-kbcat', k, `${l} <span class="opacity-60 tabular-nums">${fmt(catN(k))}</span>`, st.cat === k, 'px-3 py-1.5')).join('')}</div>`;
     const marchSel = `<select data-kbmarch class="${inp} min-w-[11rem]"><option value="">Alle Märsche</option>${allMarches.map(m => `<option value="${esc(m)}" ${st.march === m ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>`;
     const enemyChip = pvp && st.enemy ? `<button type="button" data-kbenemy="" class="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-xs text-red-200">🎯 ${esc(st.enemy)} ✕</button>` : '';
@@ -236,13 +247,13 @@ window.RokMods.battles = (R) => {
     const khTile = (icon, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">${icon}</span>${l}</div>
         <div class="font-display text-3xl tabular-nums ${c}">${v}</div><div class="text-[11px] text-slate-500">${sub}</div></div>`;
     const H = kbHealCost(rows, st.healType || 'mix');
-    const cc = (c) => rows.filter(r => kbCatOf(r.npc_btype, r.group_size) === c).length;
+    const cc = (c) => kbTargets(rows, c);
     const healTile = `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">💰</span>Heilkosten<span class="ml-auto px-1.5 py-0.5 rounded bg-ink-800 text-[10px] text-slate-300">${H.tier}</span></div>
         <div class="mt-1 grid grid-cols-2 gap-x-3 text-sm tabular-nums">${[['🌽', 'Nahrung', H.food], ['🪵', 'Holz', H.wood], ['🪨', 'Stein', H.stone], ['🪙', 'Gold', H.gold]].map(([i, l, v]) => `<div class="flex justify-between"><span class="text-slate-400">${i} <span>${l}</span></span><span class="text-white">${short(v)}</span></div>`).join('')}</div>
         <div class="mt-2 flex flex-wrap gap-1">${[['mix', 'Gemischt'], ['inf', 'Infanterie'], ['cav', 'Kavallerie'], ['arch', 'Bogen']].map(([k, l]) => segBtn('data-kbheal', k, l, (st.healType || 'mix') === k, 'px-1.5 py-0.5 !text-[10px]')).join('')}</div>
         <div class="mt-1 text-[10px] text-slate-500"><span>Schätzung ohne Boni für</span> ${short(khHeal)} <span>schwer Verwundete.</span> <span>Stufe aus der verlorenen Power erkannt, Truppenart steht nicht im Bericht.</span></div></div>`;
     const topBar = !pvp ? `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-        ${khTile('🪓', 'Besiegte Ziele', fmt(A.rows), `<span class="text-emerald-300">🪓 ${fmt(cc('barb'))}</span> · <span class="text-violet-300">🐎 ${fmt(cc('maraud'))}</span> · <span class="text-gold-300">🏯 ${fmt(cc('fort'))}</span>`, 'text-emerald-300')}
+        ${khTile('🪓', 'Besiegte Ziele', fmt(kbTargets(rows)), KB_CATS.filter(([k]) => cc(k)).map(([k, l]) => `<span style="color:${KB_CAT_COL[k]}">${l.split(' ')[0]} ${fmt(cc(k))}</span>`).join(' · ') || '–', 'text-emerald-300')}
         ${khTile('🩸', 'Verwundete', short(khHeal), `<span>schwer verwundet (Lazarett)</span> · ${short(A.sWound)} <span>leicht verwundet</span>`, 'text-orange-300')}
         ${healTile}
       </div>` : `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
@@ -367,15 +378,17 @@ window.RokMods.battles = (R) => {
     mk('kbChartTr', KB_METRICS.filter(m => m.k !== 'kp' && cards[m.k]));
   }
   // PvE-Verlauf: besiegte Ziele pro Tag, gestapelt nach Art
-  var KB_CAT_COL = { barb: '#34d399', maraud: '#a78bfa', fort: '#f5c542', other: '#64748b' };
+  var KB_CAT_COL = { barb: '#34d399', kvkkaruak: '#f87171', maraud: '#a78bfa', fort: '#f5c542', other: '#64748b' };
   function kbDrawPve(rows, R0, cum) {
     const c = $('kbChartPve'); if (!c) return;
     const n = Math.min(R0.n, 400), from = new Date(R0.from.getTime() + (R0.n - n) * 86400000), keys = [], labels = [];
     for (let i = 0; i < n; i++) { const d = new Date(from.getTime() + i * 86400000); keys.push(isoDay(d)); labels.push(d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })); }
     const idx = new Map(keys.map((k, i) => [k, i]));
-    const cats = KB_CATS.filter(([k]) => k !== 'other' || rows.some(r => kbCatOf(r.npc_btype, r.group_size) === 'other'));
+    const has = new Set(rows.map(r => kbCatOf(r.npc_btype, r.group_size))), cats = KB_CATS.filter(([k]) => k === 'barb' || has.has(k));
     const data = Object.fromEntries(cats.map(([k]) => [k, keys.map(() => 0)]));
-    rows.forEach(r => { if (!r.battle_start) return; const i = idx.get(isoDay(new Date(r.battle_start))); const k = kbCatOf(r.npc_btype, r.group_size); if (i != null && data[k]) data[k][i]++; });
+    const seen = new Set();
+    rows.forEach(r => { if (!r.battle_start) return; const i = idx.get(isoDay(new Date(r.battle_start))); const k = kbCatOf(r.npc_btype, r.group_size); if (i == null || !data[k]) return;
+      const key = k === 'fort' ? 'f|' + r.mail_id : r.mail_id + '|' + r.opponent_id; if (seen.has(key) || (k !== 'fort' && !kbDefeated(r))) return; seen.add(key); data[k][i]++; });
     if (cum) Object.values(data).forEach(a => { for (let i = 1; i < a.length; i++) a[i] += a[i - 1]; });
     kbCharts.push(new Chart(c, { type: cum ? 'line' : 'bar',
       data: { labels, datasets: cats.map(([k, l]) => ({ label: l, data: data[k], backgroundColor: KB_CAT_COL[k] + (cum ? '22' : 'dd'), borderColor: KB_CAT_COL[k], borderWidth: cum ? 2 : 0, borderRadius: 3, pointRadius: 0, tension: .25, fill: false, maxBarThickness: 22 })) },
