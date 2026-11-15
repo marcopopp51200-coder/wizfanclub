@@ -128,7 +128,7 @@ window.RokMods.battles = (R) => {
     const st = kbSt(), th = 'py-2 px-2 font-medium', td = 'py-1 px-2 text-right tabular-nums';
     const accOk = r => !st.acc || String(r.player_id) === st.acc;
     // Beute
-    const isLoot = mode === 'loot', pve = isLoot || st.type === 'pve', cat = isLoot ? (st.lootCat || '') : (pve ? st.cat || '' : '');
+    const isLoot = mode === 'loot', pve = isLoot || st.type === 'pve', cat = pve ? st.cat || '' : '';
     const loot = kxLoot.filter(r => { if (!accOk(r) || !kxInRange(r.got_at)) return false; const c = kxLootCat(r); return c !== 'skip' && (!cat || c === cat); });
     const agg = new Map(); loot.forEach(r => { const k = r.item_type + '_' + r.item_id; const o = agg.get(k) || { t: r.item_type, id: r.item_id, amt: 0, seen: 0 }; o.amt += +r.amount || 0; o.seen++; agg.set(k, o); });
     const gi = (o) => KX_GROUPS.findIndex(g => g[0] === kxGroupOf(o.t, o.id));
@@ -201,7 +201,7 @@ window.RokMods.battles = (R) => {
     const st = kbSt(); let tab = st.tab || 'march'; let cards = (st.cards = st.cards || { kp: true, eLoss: true, sDead: true, sSev: true });
     const segBtn = (attr, k, l, on, cls) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg ${cls || 'px-2 py-1'} text-xs font-semibold transition">${l}</button>`;
     const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-gold-500';
-    const head = (txt) => `<section id="kampfBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">⚔️ Battles</h2>
+    const head = (txt) => `<section id="kampfBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">${(kbSt().page || 'battles') === 'loot' ? '🎁 Loot' : '⚔️ Battles'}</h2>
       <p class="text-xs text-slate-400 mb-3">Deine Kampfberichte aus dem Mailcache des Spiels – der Uploader auf deinem PC lädt sie automatisch hoch. Nur Berichte, die noch im Postfach sind, kommen an.</p>${txt}`;
     let msg = '';
     if (kbLoading && !kbRows) msg = `<div class="py-8 text-center text-sm text-slate-400">Lade Kampfberichte … <span id="kbProg" class="tabular-nums">${fmt(kbProg)}</span></div>`;
@@ -214,6 +214,7 @@ window.RokMods.battles = (R) => {
     const accs = [...new Map(kbRows.filter(r => r.player_id != null).map(r => [String(r.player_id), `${r.self_name || 'Spieler'}${r.account ? ` (${r.account})` : ''}`])).entries()];
     const accsRes = [...new Map([...accs, ...(rsRows || []).filter(r => r.pid != null).map(r => [String(r.pid), r.acc || ('Spieler ' + r.pid)])]).entries()];   // + Farmen (nur Ressourcen)
     if (st.acc && !accsRes.some(([k]) => k === st.acc)) st.acc = '';
+    st.type = (st.page || 'battles') === 'loot' ? 'pve' : 'pvp';   // Battles = PvP · Loot = kompletter PvE-Bereich
     const pvp = st.type === 'pvp';
     if (!pvp) cards = { ...cards, kp: false };   // PvE bringt keine Kill Points
     const allMarches = [...new Set(kbFiltered(true).map(kbMarchOf))].sort();
@@ -242,19 +243,11 @@ window.RokMods.battles = (R) => {
           ${st.from && st.to && !(st.kvks || []).some(k => k.from === st.from && k.to === st.to) ? `<input type="text" data-kbkvkname placeholder="z. B. KvK 3" maxlength="24" class="${inp} w-28"><button type="button" data-kbkvksave class="px-2 py-1 rounded-lg border border-gold-500/50 text-xs text-gold-200 hover:bg-gold-500/10">🏁 Als KvK speichern</button>` : ''}` : ''}
         <button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>
       </div>`;
-    const filters = typeSel + catSel + timeRow(marchSel + enemyChip);
+    const filters = catSel + timeRow(marchSel + enemyChip);
     // Unterseiten: Battles · Loot · Ressourcen
     const page = st.page || 'battles';
     const subTabs = `<div class="grid grid-cols-3 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-4 max-w-xl">${[['battles', '⚔️ Battles'], ['loot', '🎁 Loot'], ['res', '🌾 Ressourcen']].map(([k, l]) => segBtn('data-kbpage', k, l, page === k, 'py-2 text-sm')).join('')}</div>`;
     const pageHead = (icon, t, sub) => `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">${icon} ${t}</h2><p class="text-xs text-slate-400 mb-3">${sub}</p>`;
-    if (page === 'loot') {
-      if (!kxLoot && !kxLoading) loadKampfExtra();
-      const lc = st.lootCat || '';
-      const lootCats = `<div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-1">${segBtn('data-kblootcat', '', 'Alle', !lc, 'px-3 py-1.5')}${KB_CATS.map(([k, l]) => segBtn('data-kblootcat', k, l, lc === k, 'px-3 py-1.5')).join('')}</div>`;
-      el.innerHTML = subTabs + pageHead('🎁', 'Loot', 'Alles, was du aus PvE bekommen hast – aus den Kampfberichten und aus den eigenen Belohnungs-Mails.') + timeRow('') + lootCats + '</section>'
-        + (kxLoot ? kxSections('loot') : '<section class="panel rounded-2xl p-6 text-center text-sm text-slate-400">Lade Loot …</section>');
-      ['kxLootBox'].forEach(id => $(id) && makeFold($(id), id)); kbBind(el); return;
-    }
     if (page === 'res') {
       if (!rsRows && !rsLoading) loadRes();
       el.innerHTML = subTabs + pageHead('🌾', 'Ressourcen', 'Was deine Sammeltrupps auf der Karte gefarmt haben – aus den Sammel-Mails im Postfach, auch von den Farmen aus MuMu.') + timeRow('', accsRes) + '</section>' + rsHtml();
@@ -382,7 +375,7 @@ window.RokMods.battles = (R) => {
     }
     const tabs = !pvp ? '<h2 class="font-display text-lg text-gold-300 mb-2">📜 Alle Kämpfe</h2>' : `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', pvp ? '🎯 Gegner' : '🪓 Ziele'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => segBtn('data-kbtab', k, l, tab === k, 'py-1.5')).join('')}</div>`;
     const more = lim && T.n > lim && tab !== 'march' ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(T.n - lim)} weitere)</button>` : '';
-    el.innerHTML = subTabs + head(filters + info + topBar + cardsBox) + `</section>${extraBox}${trend}${pvp ? analysis + kxSections() : ''}
+    el.innerHTML = subTabs + head(filters + info + topBar + cardsBox) + `</section>${extraBox}${pvp ? '' : kxSections('loot')}${trend}${pvp ? analysis + kxSections() : ''}
       <section id="kbTabBox" class="panel rounded-2xl p-5">${tabs}<div class="text-[11px] text-slate-500 mb-2">Zum Sortieren auf eine Spalte klicken.${hint ? ' ' + hint : ''}</div>${T.html}${more}</section>`;
     makeFold($('kbTrendBox'), 'kbtrend'); ['kbFoeBox', 'kbNpcBox'].forEach(id => $(id) && makeFold($(id), id)); makeFold($('kbMarchBox'), 'kbmarch'); ['kxLootBox', 'kxRallyBox'].forEach(id => $(id) && makeFold($(id), id));
     kbDrawCharts(pvp ? rows : rowsT, R0, cards, !!st.cum, pvp);
