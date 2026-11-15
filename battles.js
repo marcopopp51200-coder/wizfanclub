@@ -88,7 +88,17 @@ window.RokMods.battles = (R) => {
     } catch { kxLoot = kxLoot || []; kxRally = kxRally || []; }
     kxLoading = false; if (R.view === 'battles') renderKampf();
   }
-  function kxItemName(t, id) { return kxNames[t + '_' + id] || (t === 1 ? `Ressource #${id}` : `Gegenstand #${id}`); }
+  // Bekannte Gegenstände (aus den Kampfberichten abgeglichen: Menge pro Drop + Häufigkeit) – Reihenfolge der Gruppen = Anzeige
+  var KX_GROUPS = [['crystal', '💎 Kristalle'], ['gem', '💠 Edelsteine'], ['speed', '⏱️ Beschleuniger'], ['mat', '🧱 Materialien'], ['res', '🌾 Ressourcen'], ['other', '📦 Sonstiges']];
+  var KX_ITEMS = {
+    '1_9': ['crystal', 'Kristalle'],
+    '2_26': ['gem', '10 Edelsteine'],
+    '2_34': ['speed', '1-Min. Beschleuniger'], '2_71': ['speed', '1-Min. Trainingsbeschleuniger'], '2_72': ['speed', '5-Min. Trainingsbeschleuniger'], '2_92': ['speed', '5-Min. Heilbeschleuniger'],
+    '2_412': ['mat', 'Leder (normal)'], '2_413': ['mat', 'Eisenerz (normal)'], '2_414': ['mat', 'Tierknochen (normal)'], '2_417': ['mat', 'Ebenholz (normal)'],
+    '2_141': ['res', '1.000 Nahrung'], '2_142': ['res', '1.000 Holz'], '2_143': ['res', '750 Stein'], '2_144': ['res', '500 Gold'], '2_7005': ['res', 'Ressourcenpaket C Stufe 1'],
+    '2_130': ['other', 'Wissensbuch Stufe 3'] };
+  function kxGroupOf(t, id) { return (KX_ITEMS[t + '_' + id] || [])[0] || (t === 1 ? 'res' : 'other'); }
+  function kxItemName(t, id) { const k = t + '_' + id, own = kxNames[k]; return KX_ITEMS[k]?.[1] || (own && !/^name hier$/i.test(own.trim()) ? own : (t === 1 ? `Ressource #${id}` : `Gegenstand #${id}`)); }
   function kxInRange(ts) {
     const st = kbSt(); const t = ts ? Date.parse(ts) : NaN;
     if (st.days === 'custom') { const f = st.from ? new Date(st.from + 'T00:00:00').getTime() : null, to = st.to ? new Date(st.to + 'T23:59:59').getTime() : null;
@@ -103,15 +113,18 @@ window.RokMods.battles = (R) => {
     // Beute
     const pve = st.type === 'pve', cat = pve ? st.cat || '' : '';
     const loot = kxLoot.filter(r => accOk(r) && kxInRange(r.got_at) && (!cat || (r.source !== 'event' && kbCatOf(r.npc_btype, 1) === cat)));
-    const agg = new Map(); loot.forEach(r => { const k = r.item_type + '_' + r.item_id; const o = agg.get(k) || { t: r.item_type, id: r.item_id, npc: 0, ev: 0 }; if (r.source === 'event') o.ev += +r.amount || 0; else o.npc += +r.amount || 0; agg.set(k, o); });
-    const items = [...agg.values()].sort((a, b) => (b.npc + b.ev) - (a.npc + a.ev));
+    const agg = new Map(); loot.forEach(r => { const k = r.item_type + '_' + r.item_id; const o = agg.get(k) || { t: r.item_type, id: r.item_id, amt: 0, seen: 0 }; o.amt += +r.amount || 0; o.seen++; agg.set(k, o); });
+    const gi = (o) => KX_GROUPS.findIndex(g => g[0] === kxGroupOf(o.t, o.id));
+    const items = [...agg.values()].sort((a, b) => gi(a) - gi(b) || b.amt - a.amt);
     const nNpc = new Set(loot.filter(r => r.source !== 'event').map(r => r.mail_id + r.idx.split('_')[0])).size, nEv = new Set(loot.filter(r => r.source === 'event').map(r => r.mail_id)).size;
     const lootBox = `<section id="kxLootBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">🎁 <span>Belohnungen</span>${cat ? ' – <span>' + kbCatLabel(cat) + '</span>' : ''}</h2>
       <p class="text-xs text-slate-400 mb-3">Was du im gewählten Zeitraum aus NPC-Kämpfen (${fmt(nNpc)} besiegte Ziele) und Event-Belohnungen (${fmt(nEv)} Mails) bekommen hast.</p>
       ${items.length ? `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700">
-        <th class="${th} text-left">Gegenstand</th><th class="${th} text-right">aus NPC-Kämpfen</th><th class="${th} text-right">aus Events</th><th class="${th} text-right">Gesamt</th></tr></thead>
-        <tbody>${items.map(o => `<tr class="border-b border-ink-800/60"><td class="py-1 px-2">${esc(kxItemName(o.t, o.id))}</td><td class="${td}">${o.npc ? fmt(o.npc) : '–'}</td><td class="${td}">${o.ev ? fmt(o.ev) : '–'}</td><td class="${td} text-gold-300">${fmt(o.npc + o.ev)}</td></tr>`).join('')}</tbody></table></div>
-        <div class="mt-2 text-[11px] text-slate-500">Das Spiel speichert nur Nummern. Namen kommen aus der Tabelle „rok_item_names“ – fehlende werden als #Nummer angezeigt.</div>` : '<div class="text-sm text-slate-500">Keine Beute in diesem Zeitraum.</div>'}</section>`;
+        <th class="${th} text-left">Gegenstand</th><th class="${th} text-right">Menge</th><th class="${th} text-right">Gesehen</th></tr></thead>
+        <tbody>${items.map((o, i) => { const g = kxGroupOf(o.t, o.id), head = !i || kxGroupOf(items[i - 1].t, items[i - 1].id) !== g;
+          return (head ? `<tr class="bg-ink-900/60"><td colspan="3" class="py-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-gold-300">${KX_GROUPS.find(x => x[0] === g)[1]}</td></tr>` : '')
+            + `<tr class="border-b border-ink-800/60"><td class="py-1 px-2 pl-4">${esc(kxItemName(o.t, o.id))}</td><td class="${td} text-gold-300">${fmt(o.amt)}</td><td class="${td} text-slate-400">${fmt(o.seen)}×</td></tr>`; }).join('')}</tbody></table></div>
+        <div class="mt-2 text-[11px] text-slate-500">Menge = alles zusammen, Gesehen = wie oft der Gegenstand gedroppt ist. Unbekannte Gegenstände stehen als #Nummer unter „Sonstiges“.</div>` : '<div class="text-sm text-slate-500">Keine Beute in diesem Zeitraum.</div>'}</section>`;
     // Gruppenkämpfe
     const ral = (kxRally || []).filter(r => accOk(r) && kxInRange(r.battle_start) && (st.type === 'pvp' ? !!r.is_pvp : !r.is_pvp && (!cat || kbCatOf(r.npc_btype, 2) === cat)));
     const rSum = ral.reduce((a, r) => a + (+r.group_kill_points || 0), 0);
@@ -124,7 +137,7 @@ window.RokMods.battles = (R) => {
           <td class="py-1 px-2">${r.leader_alliance ? `[${esc(r.leader_alliance)}] ` : ''}${esc(r.leader_name || '–')}</td><td class="py-1 px-2 text-slate-400">${kbHeroes(r.my_hero1, r.my_hero2)}</td><td class="${td}">${fmt(r.members)}</td>
           <td class="py-1 px-2 text-slate-400">${r.is_pvp ? '' : '🪓 '}${esc(r.enemy_alliances || r.enemy_names || '–')}</td><td class="${td} text-gold-300">${short(r.group_kill_points)}</td><td class="${td} text-emerald-300">${short(r.group_severe)}</td></tr>`).join('')}</tbody></table></div>
         ${ral.length > 100 ? '<div class="mt-2 text-[11px] text-slate-500">Nur die letzten 100.</div>' : ''}` : '<div class="text-sm text-slate-500">Keine Gruppenkämpfe in diesem Filter.</div>'}</section>`;
-    return pve ? lootBox + rallyBox : rallyBox;   // Beute nur bei PvE
+    return pve ? lootBox : rallyBox;   // PvE: nur Belohnungen · PvP: Gruppenkämpfe
   }
   // Trade = Gegner-Verluste (Tote + schwer verwundet) pro eigene Verluste
   function kbTrade(a) { const own = a.sDead + a.sSev, en = a.eDead + a.eSev; return own > 0 ? en / own : (en > 0 ? Infinity : null); }
@@ -168,18 +181,19 @@ window.RokMods.battles = (R) => {
     const el = $('battlesView'); if (!el) return;
     if (!kbRows && !kbLoading) loadBattles();
     kbCharts.forEach(c => { try { c.destroy(); } catch {} }); kbCharts = [];
-    const st = kbSt(), tab = st.tab || 'march'; let cards = (st.cards = st.cards || { kp: true, eLoss: true, sDead: true, sSev: true });
+    const st = kbSt(); let tab = st.tab || 'march'; let cards = (st.cards = st.cards || { kp: true, eLoss: true, sDead: true, sSev: true });
     const segBtn = (attr, k, l, on, cls) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg ${cls || 'px-2 py-1'} text-xs font-semibold transition">${l}</button>`;
     const inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-gold-500';
     const head = (txt) => `<section id="kampfBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">⚔️ Battles</h2>
       <p class="text-xs text-slate-400 mb-3">Deine Kampfberichte aus dem Mailcache des Spiels – der Uploader auf deinem PC lädt sie automatisch hoch. Nur Berichte, die noch im Postfach sind, kommen an.</p>${txt}`;
     let msg = '';
     if (kbLoading && !kbRows) msg = `<div class="py-8 text-center text-sm text-slate-400">Lade Kampfberichte … <span id="kbProg" class="tabular-nums">${fmt(kbProg)}</span></div>`;
-    else if (kbErr === 'missing') msg = `<div class="py-6 text-sm text-amber-300">Die Tabelle „rok_battles“ fehlt noch in Supabase. Bitte zuerst das SQL vom Kampf-Uploader ausführen.</div>`;
-    else if (kbErr) msg = `<div class="py-6 text-sm text-red-400">Laden hat nicht geklappt: ${esc(kbErr)}</div>`;
-    else if (!kbRows.length) msg = `<div class="py-6 text-sm text-slate-400">Noch keine Kampfberichte da. Starte den Kampf-Uploader auf deinem PC – er liest den Mailcache des Spiels und lädt die Berichte hoch.</div>`;
     if (msg) { el.innerHTML = head(msg + (!kbLoading ? '<button type="button" id="kbReload" class="mt-2 px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">↻ Neu laden</button>' : '')) + '</section>'; kbBind(el); return; }
 
+    // Ohne Daten sieht die Seite genauso aus – nur leer (für Spieler ohne Uploader)
+    if (!kbRows) kbRows = [];
+    const note = kbErr && kbErr !== 'missing' ? `<div class="mb-3 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(kbErr)}</div>`
+      : !kbRows.length ? '<div class="mb-3 text-[11px] text-slate-500">Noch keine Kampfberichte – sie kommen automatisch, sobald der Kampf-Uploader auf dem PC läuft.</div>' : '';
     const accs = [...new Map(kbRows.filter(r => r.player_id != null).map(r => [String(r.player_id), `${r.self_name || 'Spieler'}${r.account ? ` (${r.account})` : ''}`])).entries()];
     if (st.acc && !accs.some(([k]) => k === st.acc)) st.acc = '';
     const pvp = st.type === 'pvp';
@@ -202,11 +216,14 @@ window.RokMods.battles = (R) => {
     const filters = typeSel + catSel + `<div class="flex flex-wrap items-center gap-2 mb-2">${marchSel}${enemyChip}
         ${accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[[1, '24 h'], [7, '7 Tage'], [30, '30 Tage'], [90, '90 Tage'], [0, 'Alles'], ['custom', 'Zeitraum']].map(([k, l]) => segBtn('data-kbdays', k, l, String(st.days) === String(k))).join('')}</div>
-        ${st.days === 'custom' ? `<input type="date" data-kbdate="from" value="${esc(st.from)}" class="${inp}"><span class="text-xs text-slate-500">bis</span><input type="date" data-kbdate="to" value="${esc(st.to)}" class="${inp}">` : ''}
+        ${(st.kvks || []).map((k, i) => { const on = st.days === 'custom' && st.from === k.from && st.to === k.to;
+          return `<span class="inline-flex items-center rounded-lg border ${on ? 'border-gold-500/70 bg-gold-500/15 text-gold-200' : 'border-ink-600 text-slate-300'} text-xs"><button type="button" data-kbkvk="${i}" class="pl-2 pr-1 py-1" title="${esc(k.from)} – ${esc(k.to)}">🏁 ${esc(k.n)}</button><button type="button" data-kbkvkdel="${i}" class="px-1.5 py-1 text-slate-500 hover:text-red-300" title="Zeitraum löschen">✕</button></span>`; }).join('')}
+        ${st.days === 'custom' ? `<input type="date" data-kbdate="from" value="${esc(st.from)}" class="${inp}"><span class="text-xs text-slate-500">bis</span><input type="date" data-kbdate="to" value="${esc(st.to)}" class="${inp}">
+          ${st.from && st.to && !(st.kvks || []).some(k => k.from === st.from && k.to === st.to) ? `<input type="text" data-kbkvkname placeholder="z. B. KvK 3" maxlength="24" class="${inp} w-28"><button type="button" data-kbkvksave class="px-2 py-1 rounded-lg border border-gold-500/50 text-xs text-gold-200 hover:bg-gold-500/10">🏁 Als KvK speichern</button>` : ''}` : ''}
         <button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>
       </div>`;
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
-    const info = `<div class="text-[11px] text-slate-500 mb-4">${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
+    const info = note + `<div class="text-[11px] text-slate-500 mb-4">${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
     // 1) Karten
     const cardHtml = KB_METRICS.filter(m => pvp || m.k !== 'kp').map(m => { const v = m.v(A), on = !!cards[m.k];
       return `<button type="button" data-kbcard="${m.k}" aria-pressed="${on}" class="text-left rounded-xl border p-3 transition ${on ? 'border-ink-600 bg-ink-950/70' : 'border-ink-800 bg-ink-950/30 opacity-50'} hover:border-gold-500/50">
@@ -218,48 +235,49 @@ window.RokMods.battles = (R) => {
     const khKills = A.eDead + A.eSev, khHeal = A.sSev, khTr = khHeal > 0 ? khKills / khHeal : (khKills > 0 ? Infinity : null);
     const khTile = (icon, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">${icon}</span>${l}</div>
         <div class="font-display text-3xl tabular-nums ${c}">${v}</div><div class="text-[11px] text-slate-500">${sub}</div></div>`;
+    const H = kbHealCost(rows, st.healType || 'mix');
+    const cc = (c) => rows.filter(r => kbCatOf(r.npc_btype, r.group_size) === c).length;
+    const healTile = `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">💰</span>Heilkosten<span class="ml-auto px-1.5 py-0.5 rounded bg-ink-800 text-[10px] text-slate-300">${H.tier}</span></div>
+        <div class="mt-1 grid grid-cols-2 gap-x-3 text-sm tabular-nums">${[['🌽', 'Nahrung', H.food], ['🪵', 'Holz', H.wood], ['🪨', 'Stein', H.stone], ['🪙', 'Gold', H.gold]].map(([i, l, v]) => `<div class="flex justify-between"><span class="text-slate-400">${i} <span>${l}</span></span><span class="text-white">${short(v)}</span></div>`).join('')}</div>
+        <div class="mt-2 flex flex-wrap gap-1">${[['mix', 'Gemischt'], ['inf', 'Infanterie'], ['cav', 'Kavallerie'], ['arch', 'Bogen']].map(([k, l]) => segBtn('data-kbheal', k, l, (st.healType || 'mix') === k, 'px-1.5 py-0.5 !text-[10px]')).join('')}</div>
+        <div class="mt-1 text-[10px] text-slate-500"><span>Schätzung ohne Boni für</span> ${short(khHeal)} <span>schwer Verwundete.</span> <span>Stufe aus der verlorenen Power erkannt, Truppenart steht nicht im Bericht.</span></div></div>`;
     const topBar = !pvp ? `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-        ${khTile('🪓', 'Besiegte Ziele', fmt(A.rows), `<span>Angriffe in</span> ${fmt(A.battles)} <span>Berichten</span>`, 'text-emerald-300')}
+        ${khTile('🪓', 'Besiegte Ziele', fmt(A.rows), `<span class="text-emerald-300">🪓 ${fmt(cc('barb'))}</span> · <span class="text-violet-300">🐎 ${fmt(cc('maraud'))}</span> · <span class="text-gold-300">🏯 ${fmt(cc('fort'))}</span>`, 'text-emerald-300')}
         ${khTile('🩸', 'Verwundete', short(khHeal), `<span>schwer verwundet (Lazarett)</span> · ${short(A.sWound)} <span>leicht verwundet</span>`, 'text-orange-300')}
-        ${khTile('🎯', 'Gegner T + SV', short(khKills), `<span>Tote</span> ${short(A.eDead)} · <span>SV</span> ${short(A.eSev)}`, 'text-white')}
+        ${healTile}
       </div>` : `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
         ${khTile('🏆', 'Kill Points', short(A.kp), fmt(A.kp), 'text-gold-300')}
         ${khTile('🩸', 'Verwundete', short(khHeal), `<span>schwer verwundet (Lazarett)</span> · ${short(A.sWound)} <span>leicht verwundet</span>`, 'text-orange-300')}
         ${khTile('⚖️', 'Trade %', khTr == null ? '–' : khTr === Infinity ? '∞' : dec(khTr * 100, 0) + ' %', `<span>Kills</span> ${short(khKills)} ÷ <span>Heal</span> ${short(khHeal)}`, khTr == null ? 'text-white' : khTr >= 1 ? 'text-emerald-300' : 'text-red-300')}
       </div>`;
-    const cardsBox = `<div class="text-[11px] text-slate-500 mb-2">Karten antippen, um sie im Diagramm ein- oder auszublenden. „/ Tag“ zählt jeden Tag im Zeitraum mit.</div><div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">${cardHtml}</div>`;
+    const cardsBox = !pvp ? '' : `<div class="text-[11px] text-slate-500 mb-2">Karten antippen, um sie im Diagramm ein- oder auszublenden. „/ Tag“ zählt jeden Tag im Zeitraum mit.</div><div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">${cardHtml}</div>`;
     // 1b) PvP: meistbekämpfte Gegner · PvE: Gegnerarten zuordnen
     let extraBox = '';
     if (pvp) {
       const keep = st.enemy; st.enemy = ''; const base = kbFiltered(); st.enemy = keep;
       const m = new Map(); base.forEach(r => { const k = kbEnemyOf(r); if (!k) return; if (!m.has(k)) m.set(k, []); m.get(k).push(r); });
-      const top = [...m.entries()].map(([k, rs]) => ({ k, n: new Set(rs.map(r => r.mail_id)).size, ...kbAgg(rs), last: Math.max(0, ...rs.map(r => Date.parse(r.battle_start || 0) || 0)) })).sort((a, b) => b.n - a.n || b.kp - a.kp).slice(0, 12);
+      const all = [...m.entries()].map(([k, rs]) => { const a = kbAgg(rs); return { k, n: new Set(rs.map(r => r.mail_id)).size, ...a, t: kbTrade(a), net: (a.eDead + a.eSev) - (a.sDead + a.sSev), last: Math.max(0, ...rs.map(r => Date.parse(r.battle_start || 0) || 0)) }; }).filter(o => o.t != null);
+      const tv = (o) => o.t === Infinity ? 1e9 : o.t;
+      const sorted = all.slice().sort((a, b) => tv(b) - tv(a) || b.net - a.net), half = Math.min(6, Math.ceil(sorted.length / 2));
+      const best = sorted.slice(0, half), worst = sorted.slice(half).reverse().slice(0, 6);   // keiner steht in beiden Spalten
+      const card = (o, i, good) => `<button type="button" data-kbenemy="${esc(o.k)}" aria-pressed="${st.enemy === o.k}" class="w-full text-left rounded-xl border ${st.enemy === o.k ? 'border-gold-500/70 bg-gold-500/10' : 'border-ink-700 bg-ink-950/60'} hover:border-gold-500/50 p-3 transition">
+            <div class="flex items-center gap-2"><span class="w-6 h-6 rounded-full grid place-items-center text-[11px] font-bold ${good ? 'bg-emerald-500/80' : 'bg-red-500/80'} text-ink-950">${i + 1}</span><span class="font-semibold text-slate-100 truncate" translate="no">${esc(o.k)}</span><span class="ml-auto font-display text-lg tabular-nums ${tv(o) >= 1 ? 'text-emerald-300' : 'text-red-300'}">${o.t === Infinity ? '∞' : dec(o.t * 100, 0) + ' %'}</span></div>
+            <div class="mt-1.5 flex gap-3 text-[11px] tabular-nums text-slate-400"><span>${fmt(o.n)}×</span><span class="text-gold-300">${short(o.kp)} KP</span><span class="${o.net >= 0 ? 'text-emerald-300' : 'text-red-300'}">${o.net >= 0 ? '+' : '−'}${short(Math.abs(o.net))} <span>Truppen</span></span><span>${o.last ? new Date(o.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span></div></button>`;
+      const col = (title, sub, list, good) => `<div><div class="text-sm font-semibold ${good ? 'text-emerald-300' : 'text-red-300'}">${title}</div><div class="text-[11px] text-slate-500 mb-2">${sub}</div>
+          <div class="space-y-2">${list.length ? list.map((o, i) => card(o, i, good)).join('') : '<div class="rounded-xl border border-dashed border-ink-700 p-4 text-center text-xs text-slate-500">Noch keine Daten</div>'}</div></div>`;
       extraBox = `<section id="kbFoeBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">🎯 Am häufigsten bekämpft</h2>
-        <p class="text-xs text-slate-400 mb-3">Spieler, gegen die du im Filter am öftesten gekämpft hast. Antippen, um nur die Kämpfe gegen diesen Spieler zu sehen.</p>
-        ${top.length ? `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${top.map((o, i) => { const t = kbTrade(o);
-          return `<button type="button" data-kbenemy="${esc(o.k)}" aria-pressed="${st.enemy === o.k}" class="text-left rounded-xl border ${st.enemy === o.k ? 'border-gold-500/70 bg-gold-500/10' : 'border-ink-700 bg-ink-950/60'} hover:border-gold-500/50 p-3 transition">
-            <div class="flex items-center gap-2"><span class="w-6 h-6 rounded-full grid place-items-center text-[11px] font-bold ${i < 3 ? 'bg-gold-500/80 text-ink-950' : 'bg-ink-700 text-slate-300'}">${i + 1}</span><span class="font-semibold text-slate-100 truncate" translate="no">${esc(o.k)}</span><span class="ml-auto text-xs tabular-nums text-slate-300">${fmt(o.n)}×</span></div>
-            <div class="mt-1.5 flex gap-3 text-[11px] tabular-nums"><span class="text-gold-300">${short(o.kp)} KP</span><span class="${t == null ? 'text-slate-400' : t >= 1 ? 'text-emerald-300' : 'text-red-300'}">Trade ${t == null ? '–' : t === Infinity ? '∞' : dec(t * 100, 0) + ' %'}</span><span class="text-slate-400">${o.last ? new Date(o.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span></div></button>`; }).join('')}</div>`
-          : '<div class="text-sm text-slate-500">Keine PvP-Kämpfe mit Kill Points in diesem Filter.</div>'}</section>`;
-    } else {
-      const bt = new Map(); pveAll.forEach(r => { const k = r.npc_btype == null ? 'x' : String(r.npc_btype); const o = bt.get(k) || { k, n: 0, lo: 1e9, hi: 0, grp: 0 }; o.n++; const l = +r.npc_level || 0; if (l) { o.lo = Math.min(o.lo, l); o.hi = Math.max(o.hi, l); } if ((r.group_size || 1) > 1) o.grp++; bt.set(k, o); });
-      const list = [...bt.values()].sort((a, b) => b.n - a.n);
-      extraBox = `<section id="kbNpcBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">🗂️ PvE-Gegnerarten</h2>
-        <p class="text-xs text-slate-400 mb-3">Das Spiel speichert nur eine Nummer für die Art des Gegners. Barbaren (Nr. 1) sind sicher, alles andere kannst du hier selbst zuordnen – die Auswahl wird gespeichert.</p>
-        ${list.some(o => o.k === 'x') ? '<div class="mb-2 text-[11px] text-amber-300">Ältere Berichte haben noch keine Art – nach dem neuen Uploader (Version 4) einmal laufen lassen, dann sind alle zugeordnet.</div>' : ''}
-        <div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">Nr.</th><th class="py-2 px-2 text-right font-medium">Angriffe</th><th class="py-2 px-2 text-right font-medium">Level</th><th class="py-2 px-2 text-right font-medium">davon Rally</th><th class="py-2 px-2 text-left font-medium">Art</th></tr></thead>
-        <tbody>${list.map(o => `<tr class="border-b border-ink-800/60"><td class="py-1 px-2 tabular-nums">${o.k === 'x' ? '–' : esc(o.k)}</td><td class="py-1 px-2 text-right tabular-nums">${fmt(o.n)}</td><td class="py-1 px-2 text-right tabular-nums">${o.hi ? (o.lo === o.hi ? o.lo : o.lo + '–' + o.hi) : '–'}</td><td class="py-1 px-2 text-right tabular-nums">${o.grp ? fmt(o.grp) : '–'}</td>
-          <td class="py-1 px-2">${o.k === 'x' ? '<span class="text-slate-500">unbekannt</span>' : `<select data-kbnpc="${esc(o.k)}" class="${inp}">${KB_CATS.map(([c, l]) => `<option value="${c}" ${kbCatOf(+o.k, o.grp ? 2 : 1) === c ? 'selected' : ''}>${l}</option>`).join('')}</select>`}</td></tr>`).join('')}</tbody></table></div></section>`;
+        <p class="text-xs text-slate-400 mb-3">Trade = Gegner (Tote + schwer verwundet) ÷ deine eigenen. „Truppen“ = was du mehr (+) oder weniger (−) ausgeteilt als eingesteckt hast. Antippen, um nur die Kämpfe gegen diesen Spieler zu sehen.</p>
+        <div class="grid md:grid-cols-2 gap-4">${col('💚 Meister Gewinn', 'Bester Trade', best, true)}${col('💔 Meister Verlust', 'Schlechtester Trade', worst, false)}</div></section>`;
     }
     // 2) Verlauf (eigene Skala je Diagramm)
     const trend = `<section id="kbTrendBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">Kampfverlauf</h2>
         <div class="flex flex-wrap items-center justify-between gap-2 mb-3"><div class="text-[11px] text-slate-500">Werte pro Tag. Jedes Diagramm hat seine eigene Skala.</div>
           <div class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${segBtn('data-kbcum', '0', 'Pro Tag', !st.cum)}${segBtn('data-kbcum', '1', 'Kumuliert', !!st.cum)}</div></div>
-        <div class="grid gap-3 ${cards.kp ? 'lg:grid-cols-2' : ''}">
+        ${!pvp ? `<div class="rounded-xl border border-ink-700 p-3"><div class="text-xs font-semibold text-slate-200 mb-2">Besiegte Ziele pro Tag</div><div class="h-64"><canvas id="kbChartPve"></canvas></div></div>` : `<div class="grid gap-3 ${cards.kp ? 'lg:grid-cols-2' : ''}">
           ${cards.kp ? '<div class="rounded-xl border border-ink-700 p-3"><div class="text-xs font-semibold text-slate-200 mb-2">Kill Points</div><div class="h-56"><canvas id="kbChartKp"></canvas></div></div>' : ''}
           ${KB_METRICS.some(m => m.k !== 'kp' && cards[m.k]) ? '<div class="rounded-xl border border-ink-700 p-3"><div class="text-xs font-semibold text-slate-200 mb-2">Truppen</div><div class="h-56"><canvas id="kbChartTr"></canvas></div></div>' : ''}
           ${!KB_METRICS.some(m => cards[m.k]) ? '<div class="py-8 text-center text-xs text-slate-500">Oben mindestens eine Karte auswählen.</div>' : ''}
-        </div></section>`;
+        </div>`}</section>`;
     // 3) Marsch-Analyse
     const marchOf = kbMarchOf, marches = allMarches;
     const mRows = rows, M = kbAgg(mRows), sec = kbSecs(mRows), tr = kbTrade(M);
@@ -295,6 +313,7 @@ window.RokMods.battles = (R) => {
       { k: 'sWound', l: 'Verwundet', v: a => a.sWound, f: a => short(a.sWound) }, { k: 'sHeal', l: 'Heilung', v: a => a.sHeal, f: a => short(a.sHeal), c: sky },
       { k: 'eDead', l: 'Geg. Tote', v: a => a.eDead, f: a => short(a.eDead), c: grn }, { k: 'eSev', l: 'Geg. SV', v: a => a.eSev, f: a => short(a.eSev), c: grn }];
     const lim = kbShow; let T, hint = '';
+    if (!pvp) tab = 'list';
     if (tab === 'march') {
       T = kbTable('march', [{ k: 'k', l: 'Marsch', v: a => a.k, left: true, f: a => `<button type="button" data-kbpick="${esc(a.k)}" class="text-left text-slate-200 hover:text-gold-300 underline decoration-dotted underline-offset-2">${esc(a.k)}</button>` },
         { k: 'battles', l: 'Kämpfe', v: a => a.battles, f: a => fmt(a.battles) },
@@ -314,22 +333,24 @@ window.RokMods.battles = (R) => {
     } else {
       const one = rows.map(r => ({ ...r, ...kbAgg([r]), t: Date.parse(r.battle_start || 0) || 0, march: marchOf(r), sec: kbSecs([r]) }));
       T = kbTable('list', [{ k: 't', l: 'Datum', v: a => a.t, left: true, f: a => a.t ? new Date(a.t).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '–' },
-        { k: 'pvp', l: 'Art', v: a => a.is_pvp ? 1 : 0, left: true, f: a => `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${a.is_pvp ? 'bg-red-500/20 text-red-300' : 'bg-emerald-500/20 text-emerald-300'}">${a.is_pvp ? 'PvP' : 'PvE'}</span>` },
+        pvp ? null : { k: 'cat', l: 'Art', v: a => kbCatOf(a.npc_btype, a.group_size), left: true, f: a => { const c = kbCatOf(a.npc_btype, a.group_size); return `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" style="background:${KB_CAT_COL[c]}33;color:${KB_CAT_COL[c]}">${kbCatLabel(c)}</span>`; } },
+        pvp ? null : { k: 'lvl', l: 'Level', v: a => +a.npc_level || 0, f: a => a.npc_level ? fmt(a.npc_level) : '–' },
         { k: 'march', l: 'Marsch', v: a => a.march, left: true, c: 'text-slate-200' },
-        { k: 'enemy', l: 'Gegner', v: a => (a.enemy_alliance ? `[${a.enemy_alliance}] ` : '') + (a.enemy_name || ''), left: true, f: a => `${a.enemy_alliance ? `[${esc(a.enemy_alliance)}] ` : ''}${esc(a.enemy_name || '–')}` },
-        { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => a.kp ? fmt(a.kp) : '–', c: gold }, { k: 'dur', l: 'Dauer', v: a => a.sec, f: a => kbDur(a.sec) }, { k: 'troops', l: 'Truppen', v: a => a.sTroops, f: a => short(a.sTroops) },
-        tradeCol, ...lossCols], one, { k: 't', dir: 'desc' }, lim);
+        !pvp ? null : { k: 'enemy', l: 'Gegner', v: a => (a.enemy_alliance ? `[${a.enemy_alliance}] ` : '') + (a.enemy_name || ''), left: true, f: a => `${a.enemy_alliance ? `[${esc(a.enemy_alliance)}] ` : ''}${esc(a.enemy_name || '–')}` },
+        pvp ? { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => a.kp ? fmt(a.kp) : '–', c: gold } : null, { k: 'dur', l: 'Dauer', v: a => a.sec, f: a => kbDur(a.sec) }, { k: 'troops', l: 'Truppen', v: a => a.sTroops, f: a => short(a.sTroops) },
+        pvp ? tradeCol : null, ...lossCols].filter(Boolean), one, { k: 't', dir: 'desc' }, lim);
     }
-    const tabs = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', pvp ? '🎯 Gegner' : '🪓 Ziele'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => segBtn('data-kbtab', k, l, tab === k, 'py-1.5')).join('')}</div>`;
+    const tabs = !pvp ? '<h2 class="font-display text-lg text-gold-300 mb-2">📜 Alle Kämpfe</h2>' : `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', pvp ? '🎯 Gegner' : '🪓 Ziele'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => segBtn('data-kbtab', k, l, tab === k, 'py-1.5')).join('')}</div>`;
     const more = lim && T.n > lim && tab !== 'march' ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(T.n - lim)} weitere)</button>` : '';
-    el.innerHTML = head(filters + info + topBar + cardsBox) + `</section>${extraBox}${pvp ? '' : kxSections()}${trend}${analysis}${pvp ? kxSections() : ''}
+    el.innerHTML = head(filters + info + topBar + cardsBox) + `</section>${extraBox}${pvp ? '' : kxSections()}${trend}${pvp ? analysis + kxSections() : ''}
       <section id="kbTabBox" class="panel rounded-2xl p-5">${tabs}<div class="text-[11px] text-slate-500 mb-2">Zum Sortieren auf eine Spalte klicken.${hint ? ' ' + hint : ''}</div>${T.html}${more}</section>`;
     makeFold($('kbTrendBox'), 'kbtrend'); ['kbFoeBox', 'kbNpcBox'].forEach(id => $(id) && makeFold($(id), id)); makeFold($('kbMarchBox'), 'kbmarch'); ['kxLootBox', 'kxRallyBox'].forEach(id => $(id) && makeFold($(id), id));
-    kbDrawCharts(rows, R0, cards, !!st.cum);
+    kbDrawCharts(rows, R0, cards, !!st.cum, pvp);
     kbBind(el);
   }
-  function kbDrawCharts(rows, R0, cards, cum) {
+  function kbDrawCharts(rows, R0, cards, cum, pvp) {
     if (!window.Chart) return;
+    if (pvp === false) return kbDrawPve(rows, R0, cum);
     const n = Math.min(R0.n, 400), from = new Date(R0.from.getTime() + (R0.n - n) * 86400000);
     const keys = [], labels = [];
     for (let i = 0; i < n; i++) { const d = new Date(from.getTime() + i * 86400000); keys.push(isoDay(d)); labels.push(d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })); }
@@ -341,15 +362,53 @@ window.RokMods.battles = (R) => {
         data: { labels, datasets: ms.map(m => ({ label: m.l, data: series(m), backgroundColor: m.c + (cum ? '22' : 'cc'), borderColor: m.c, borderWidth: cum ? 2 : 0, borderRadius: 3, pointRadius: 0, pointHoverRadius: 4, tension: .25, fill: false, maxBarThickness: 18 })) },
         options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
           plugins: { legend: { display: ms.length > 1, labels: { boxWidth: 10, color: '#94a3b8', font: { size: 10 } } }, tooltip: { callbacks: { label: (x) => `${x.dataset.label}: ${fmt(x.raw)}` } } },
-          scales: { y: { beginAtZero: true, ticks: { callback: (v) => short(v), color: '#64748b' }, grid: { color: 'rgba(148,163,184,.08)' } }, x: { ticks: { maxTicksLimit: 10, color: '#64748b' }, grid: { display: false } } } } })); };
+          scales: { y: { beginAtZero: true, suggestedMax: 1, ticks: { precision: 0, callback: (v) => short(v), color: '#64748b' }, grid: { color: 'rgba(148,163,184,.08)' } }, x: { ticks: { maxTicksLimit: 10, color: '#64748b' }, grid: { display: false } } } } })); };
     if (cards.kp) mk('kbChartKp', KB_METRICS.filter(m => m.k === 'kp'));
     mk('kbChartTr', KB_METRICS.filter(m => m.k !== 'kp' && cards[m.k]));
+  }
+  // PvE-Verlauf: besiegte Ziele pro Tag, gestapelt nach Art
+  var KB_CAT_COL = { barb: '#34d399', maraud: '#a78bfa', fort: '#f5c542', other: '#64748b' };
+  function kbDrawPve(rows, R0, cum) {
+    const c = $('kbChartPve'); if (!c) return;
+    const n = Math.min(R0.n, 400), from = new Date(R0.from.getTime() + (R0.n - n) * 86400000), keys = [], labels = [];
+    for (let i = 0; i < n; i++) { const d = new Date(from.getTime() + i * 86400000); keys.push(isoDay(d)); labels.push(d.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })); }
+    const idx = new Map(keys.map((k, i) => [k, i]));
+    const cats = KB_CATS.filter(([k]) => k !== 'other' || rows.some(r => kbCatOf(r.npc_btype, r.group_size) === 'other'));
+    const data = Object.fromEntries(cats.map(([k]) => [k, keys.map(() => 0)]));
+    rows.forEach(r => { if (!r.battle_start) return; const i = idx.get(isoDay(new Date(r.battle_start))); const k = kbCatOf(r.npc_btype, r.group_size); if (i != null && data[k]) data[k][i]++; });
+    if (cum) Object.values(data).forEach(a => { for (let i = 1; i < a.length; i++) a[i] += a[i - 1]; });
+    kbCharts.push(new Chart(c, { type: cum ? 'line' : 'bar',
+      data: { labels, datasets: cats.map(([k, l]) => ({ label: l, data: data[k], backgroundColor: KB_CAT_COL[k] + (cum ? '22' : 'dd'), borderColor: KB_CAT_COL[k], borderWidth: cum ? 2 : 0, borderRadius: 3, pointRadius: 0, tension: .25, fill: false, maxBarThickness: 22 })) },
+      options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+        plugins: { legend: { labels: { boxWidth: 10, color: '#94a3b8', font: { size: 11 } } }, tooltip: { callbacks: { label: (x) => `${x.dataset.label}: ${fmt(x.raw)}` } } },
+        scales: { x: { stacked: !cum, ticks: { maxTicksLimit: 10, color: '#64748b' }, grid: { display: false } }, y: { stacked: !cum, beginAtZero: true, ticks: { precision: 0, color: '#64748b' }, grid: { color: 'rgba(148,163,184,.08)' } } } } }));
+  }
+  // Heilkosten (Schätzung, ohne Boni) – nur schwer Verwundete kommen ins Lazarett
+  var KB_HEAL = {   // je Truppe: [Nahrung, Holz, Stein, Gold]
+    inf: { 4: [120, 120, 0, 8], 5: [320, 320, 0, 160] },
+    cav: { 4: [120, 0, 90, 8], 5: [320, 0, 240, 160] },
+    arch: { 4: [0, 120, 90, 8], 5: [0, 320, 240, 160] } };
+  function kbHealCost(rows, type) {
+    const per = (t) => type === 'mix' ? [0, 1, 2, 3].map(j => (KB_HEAL.inf[t][j] + KB_HEAL.cav[t][j] + KB_HEAL.arch[t][j]) / 3) : KB_HEAL[type][t];
+    const o = { food: 0, wood: 0, stone: 0, gold: 0 }; let u4 = 0, u5 = 0;
+    rows.forEach(r => { const sev = kbN(r.self_severe), lost = sev + kbN(r.self_dead); if (!sev) return;
+      const pp = lost ? Math.abs(kbN(r.self_power_lost)) / lost : 10, f5 = Math.min(1, Math.max(0, (pp - 10) / 10));   // Power je Truppe: T4 = 10, T5 = 20
+      u4 += sev * (1 - f5); u5 += sev * f5; });
+    const p4 = per(4), p5 = per(5);
+    ['food', 'wood', 'stone', 'gold'].forEach((k, j) => { o[k] = u4 * p4[j] + u5 * p5[j]; });
+    const tot = u4 + u5; o.tier = !tot ? 'T4' : u5 / tot > .95 ? 'T5' : u5 / tot < .05 ? 'T4' : `T4/T5 · ${dec(u5 / tot * 100, 0)} % T5`;
+    return o;
   }
   function kbBind(el) {
     const st = kbSt(), re = () => { kbShow = 50; savePassive(); renderKampf(); };
     $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; st.march = ''; st.enemy = ''; re(); });
+    el.querySelectorAll('[data-kbheal]').forEach(b => b.onclick = () => { st.healType = b.dataset.kbheal; re(); });
+    el.querySelectorAll('[data-kbkvk]').forEach(b => b.onclick = () => { const k = (st.kvks || [])[+b.dataset.kbkvk]; if (!k) return; st.days = 'custom'; st.from = k.from; st.to = k.to; re(); });
+    el.querySelectorAll('[data-kbkvkdel]').forEach(b => b.onclick = () => { (st.kvks || []).splice(+b.dataset.kbkvkdel, 1); re(); });
+    el.querySelector('[data-kbkvksave]')?.addEventListener('click', () => { const n = (el.querySelector('[data-kbkvkname]')?.value || '').trim() || 'KvK';
+      (st.kvks = st.kvks || []).push({ n, from: st.from, to: st.to }); st.kvks.sort((a, b) => a.from.localeCompare(b.from)); re(); });
     el.querySelectorAll('[data-kbcat]').forEach(b => b.onclick = () => { st.cat = b.dataset.kbcat; re(); });
     el.querySelectorAll('[data-kbenemy]').forEach(b => b.onclick = () => { const v = b.dataset.kbenemy; st.enemy = st.enemy === v ? '' : v; re(); });
     el.querySelectorAll('[data-kbnpc]').forEach(s => s.addEventListener('change', () => { const m = (st.npcMap = st.npcMap || {}); m[s.dataset.kbnpc] = s.value; re(); }));
