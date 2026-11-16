@@ -133,7 +133,7 @@ window.RokMods.battles = (R) => {
     try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
       const LC = 'account,mail_id,idx,player_id,got_at,source,event_name,item_type,item_id,amount';
       try { kxLoot = await kxLoadAll(db, 'rok_loot', LC + ',npc_btype,npc_level', 'got_at'); } catch { try { kxLoot = await kxLoadAll(db, 'rok_loot', LC, 'got_at'); } catch { kxLoot = []; } }
-      try { kxRally = await kxLoadAll(db, 'rok_rallies', 'account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp,npc_btype,npc_level', 'battle_start'); } catch { try { kxRally = await kxLoadAll(db, 'rok_rallies', 'account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp', 'battle_start'); } catch { kxRally = []; } }
+      for (const c of ['account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp,npc_btype,npc_level,pos_x,pos_y,map_role', 'account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp,npc_btype,npc_level', 'account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp']) { try { kxRally = await kxLoadAll(db, 'rok_rallies', c, 'battle_start'); break; } catch { kxRally = []; } }   // neueste Spalten zuerst (SQL v9: Ort)
       try { const { data } = await db.from('rok_item_names').select('item_type,item_id,name'); kxNames = {}; (data || []).forEach(r => { kxNames[r.item_type + '_' + r.item_id] = r.name; }); } catch { kxNames = {}; }
     } catch { kxLoot = kxLoot || []; kxRally = kxRally || []; }
     kxLoading = false; if (R.view === 'battles') renderKampf();
@@ -291,10 +291,9 @@ window.RokMods.battles = (R) => {
       kbBind(el); rsDraw(); return;
     }
     if (page === 'heat') {
-      const hr = hmRows(st);   // eigene Auswahl: PvP / Barbaren · Zeitraum im KvK (Ark of Osiris = andere Karte)
       const accSel = accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
-      el.innerHTML = wip + subTabs + hmHtml(hr, st, `<div class="flex flex-wrap items-center gap-2 mb-2">${marchSel}${accSel}<button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button></div>`);
-      kbBind(el); hmBind(el, hr, st); hmDraw(hr, st); return;
+      el.innerHTML = wip + subTabs + hmHtml(st, `<div class="flex flex-wrap items-center gap-2 mb-2">${marchSel}${accSel}<button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button></div>`);
+      kbBind(el); hmBind(el, st); hmDraw(st); return;
     }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
     const nJoin = new Set((pvp ? rallyPvp : rallyPve).map(r => r.mail_id)).size;
@@ -700,12 +699,30 @@ window.RokMods.battles = (R) => {
   }
 
   // ================= Heatmap: wo du kämpfst (Testversion) =================
-  // Kampfort aus dem Bericht (Attacks[].Pos) und deine Stadt (SelfChar.CastlePos) – Spiel-Koordinaten 0 … Kartengröße.
-  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', img: 'icons/map_heroic_anthem.jpg', size: 1200, unit: 6, pad: 1.1 }];   // unit: Bericht rechnet 6 Einheiten pro Feld (1200 Felder = 7200)
-  var HM_W = [['n', '⚔️ Kämpfe'], ['kp', '🏆 Kill Points'], ['loss', '🩸 Eigene Verluste'], ['kill', '💀 Gegner-Verluste']];
-  var HM_SRC = [['pvp', '⚔️ PvP'], ['barb', '🪓 Barbaren'], ['both', '🔀 Beides']];
+  // Kampfort aus dem Bericht (Attacks[].Pos), deine Stadt (SelfChar.CastlePos). Nur die Weltkarte (Role „gsmp“);
+  // „dungeon“ = Instanz/Event-Karte mit eigenen Koordinaten. Bericht rechnet 6 Einheiten pro Feld (1200 Felder = 7200).
+  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', img: 'icons/map_heroic_anthem.jpg', size: 1200, unit: 6, pad: 1.1, zones: {"w":150,"d":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbcccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbaabbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabaaabbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbbbbbbbbbbbbbbbccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbbddbdddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbdddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbdddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaabbbbbbbbdddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeebdddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeedddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeedddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeaaaaaaaeeeeeeeeeeeedddddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeaeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddccccccccccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccccccccccccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccccfffffffffaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccffffffffffaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddcccccccccccccccccccccccccccccffffffffffgggaaagaaagggaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeedddddddddddddddddddddddddddddddddddccccccccccccccccccccccccccccccfffffffffgggggggggggggaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhdddddddddddddddddddddddddddddddddccccccccccccccccccccccccccccccfffffffffgggggggggggggaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhddddddddddddddddddddddddddddddddccccccccccccccccccccccccccccccfffffffffgggggggggggggaaaaaaaaaaaaaaaaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhdddddddddddddddddddddddddddddddccccccccccccccccccccccccccccccfffffffffggggggggggggggggagggggggggggaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeheehhhhhhhhhhhddddddddddddddddddddddddddddddddccdddcccccccccccccfffffcfffffffffffffggggggggggggggggggggggggggggaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhdddddddddddddddddddddddddddddddddddddcccccccccccfffffffffffffffffffffggggggggggggggggggggggggggggaaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddcccccccccccfffffffffffffffffffffgggggggggggggggggggggggggggggaaaaaaaeeeeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddddddcccccccccccfffffffffffffffffffffggggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddccccccccffffffffffffffffffffffffggggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddccccccccffffffffffffffffffffffffggggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddcccccccfffffffffffffffffffffffffggggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddccccccffffffffffffffffffffffffgggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhdddddddddddddddddddddddddddddddddfffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggggggeeeeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddddddddddddddddddddddddddddffffffffffffffffffffffffffffgggggggggggggggggggggggggggggggggggeeejeeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddiiddidddddddddddddddddddddffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjeeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddiiiiiiiiddddddddddddddddddffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjeeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddiiiiiiiiidddddddddddddddddffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjeeeeeeeeeeeeeeeehhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhddddddddiiiiiiiiiiddddddddddddddddffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjjjjjjjjejjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiddidiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffggggggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffgggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiifffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhhhhhhhhhhhhhhhiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjhiiihiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiififfffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiffffffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkffffffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkffffffffffffffffffffffffffffffffggggggggggggggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkffffffffffffffffffffffffffffffffgggggggggllgggggggggggggggggjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkffffffffffffffffffffffffffffggggggggglllllllllllllllgllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkfffffffffffffffkkkfkkkkkkkkkgggggggggllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkfffffffffffffffkkkkkkkkkkkkkgggggggggllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkfffffffffffffffkkkkkkkkkkkkklggggglggllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkffffffffffffkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkffffffffkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkfffffffkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkfffffffkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllljjjjjjjjjjjjjjjjjjjjjjjjjjiiiiiiiiiiiiiiiiiiiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllljjjjljjjjjjjljjmjjjmjjiiiiimiimiiikiiikiiiiikkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkklllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkllllllllllllllllllllllllllllllllllllllllllllllllllmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkkk","n":["Außen 8","Außen 1","Außen 2","Innen 1","Innen 4","Außen 3","Außen 7","Mitte","Innen 2","Innen 3","Außen 4","Außen 6","Außen 5"],"c":[[0.1831,0.1628],[0.5137,0.0745],[0.8225,0.1735],[0.6329,0.3281],[0.3673,0.3212],[0.9089,0.4935],[0.0976,0.4811],[0.4844,0.4583],[0.6367,0.5821],[0.3392,0.5955],[0.8036,0.8127],[0.1755,0.8173],[0.481,0.8888]]} }];
+  var HM_SRC = [['pvp', '⚔️ Kämpfe (KP)', '#ef4444'], ['barb', '🪓 Barbaren', '#3b82f6'], ['fort', '🏰 Forts', '#a855f7']];
   var HM_T = [['kvk', '🏁 Ganzes KvK'], ['d1', '24 h'], ['d3', '3 Tage'], ['d7', '7 Tage'], ['custom', 'Zeitraum']];
-  function hmIsBarb(r) { return !r.is_pvp && kbCatOf(r.npc_btype, r.group_size) === 'barb'; }
+  var HM_W = [['kp', '🏆 Kill Points'], ['n', '⚔️ Anzahl'], ['loss', '🩸 Eigene Verluste'], ['kill', '💀 Gegner-Verluste']];
+  var HM_TRAIL = [[3600e3, '1 h'], [6 * 3600e3, '6 h'], [86400e3, '24 h'], [0, 'alles bis dahin']];
+  var HM_FR_COL = ['#22d3ee', '#f472b6', '#facc15', '#a3e635', '#fb923c', '#c084fc', '#2dd4bf', '#f87171'];
+  var hmFr = null, hmFrLoading = false, hmPlay = null, hmView = { s: 1, x: 0, y: 0 };
+  function hmCfg(st) { const h = (st.heat = st.heat || {}); h.map = h.map || HM_MAPS[0].k; h.w = h.w || 'kp'; h.t = h.t || 'kvk'; h.rot = +h.rot || 0; h.mir = !!h.mir; h.rad = +h.rad || 3;
+    h.show = h.show || { pvp: true, barb: false, fort: false }; if (h.src) { h.show = { pvp: h.src !== 'barb', barb: h.src !== 'pvp', fort: false }; delete h.src; }
+    if (h.zm == null) h.zm = true; if (h.fr == null) h.fr = false; if (h.trail == null) h.trail = 6 * 3600e3; return h; }
+  function hmMap(h) { return HM_MAPS.find(m => m.k === h.map) || HM_MAPS[0]; }
+  function hmTile(v) { const m = hmMap(hmCfg(kbSt())); return v == null ? null : +v / (m.unit || 1); }
+  function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x), b = hmTile(y); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
+  function hmXY(x, y, h, m) {   // Spiel-Einheiten → 0…1 auf dem Bild (Ausrichtung einstellbar)
+    let u = x / (m.unit || 1) / m.size, v = y / (m.unit || 1) / m.size;
+    if (h.mir) u = 1 - u;
+    for (let i = 0; i < h.rot; i++) { const t = u; u = 1 - v; v = t; }
+    const p = (m.pad || 0) / 100; return [p + u * (1 - 2 * p), p + (1 - v) * (1 - 2 * p)];
+  }
+  function hmZoneAt(u, v, m) { const z = m.zones; if (!z) return -1; const x = Math.floor(u * z.w), y = Math.floor(v * z.w); if (x < 0 || y < 0 || x >= z.w || y >= z.w) return -1; return z.d.charCodeAt(y * z.w + x) - 97; }
+  function hmKind(r) { if (r.is_pvp) return kbIsPvp(r) && !kbIsAoo(r) ? 'pvp' : null; const c = kbCatOf(r.npc_btype, r.group_size); return c === 'barb' ? 'barb' : c === 'fort' ? 'fort' : null; }
+  function hmWeight(r, w) { return w === 'kp' ? (+r.kill_points || +r.group_kill_points || 0) : w === 'loss' ? (+r.self_dead || 0) + (+r.self_severe || 0) : w === 'kill' ? (+r.enemy_dead || 0) + (+r.enemy_severe || 0) : 1; }
   function hmRange(h) {   // [von, bis] in ms – null = offen
     const now = Date.now(), ks = h.kvk ? new Date(h.kvk + 'T00:00:00').getTime() : null;
     if (h.t === 'd1' || h.t === 'd3' || h.t === 'd7') return [now - (+h.t.slice(1)) * 86400000, null];
@@ -713,35 +730,35 @@ window.RokMods.battles = (R) => {
     if (h.t === 'custom') return [h.from ? new Date(h.from).getTime() : ks, h.to ? new Date(h.to).getTime() : null];
     return [ks, null];
   }
-  function hmRows(st) {
-    const h = hmCfg(st), [from, to] = hmRange(h);
-    return (kbRows || []).filter(r => { if (!kbMine(r.player_id) || (st.acc && String(r.player_id) !== st.acc)) return false;
-      const p = kbIsPvp(r) && !kbIsAoo(r), b = hmIsBarb(r);
-      if (!((h.src !== 'barb' && p) || (h.src !== 'pvp' && b))) return false;
-      if (st.march && p && kbMarchOf(r) !== st.march) return false;
-      const t = r.battle_start ? Date.parse(r.battle_start) : NaN;
-      if (from != null && !(t >= from)) return false; if (to != null && !(t <= to)) return false; return true; });
+  // Alle Punkte (du + Freunde) mit Ort, Art, Besitzer und Zeit – Timeline schneidet danach zu
+  function hmAll(st) {
+    const h = hmCfg(st), m = hmMap(h), [from, to] = hmRange(h), fr = h.fr && hmFr ? new Map(hmFr.map((f, i) => [f.gid, i])) : new Map();
+    const out = [], own = (pid) => kbMine(pid) && (!st.acc || String(pid) === st.acc);
+    const add = (r, joined) => { const k = hmKind(r); if (!k || !h.show[k]) return;
+      const mine = own(r.player_id), fi = fr.get(String(r.player_id)); if (!mine && fi == null) return;
+      if (mine && st.march && k === 'pvp' && kbMarchOf(r) !== st.march) return;
+      if (!hmIn(r.pos_x, r.pos_y, r.map_role)) return;
+      const t = r.battle_start ? Date.parse(r.battle_start) : NaN; if (from != null && !(t >= from)) return; if (to != null && !(t <= to)) return;
+      const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m);
+      out.push({ r, k, u, v, t, mine, fi: mine ? -1 : fi, z: hmZoneAt(u, v, m), joined }); };
+    (kbRows || []).forEach(r => add(r, false));
+    (kxRally || []).forEach(r => { if (r.pos_x != null) add({ ...r, kill_points: r.group_kill_points }, true); });   // Rallys als Teilnehmer
+    return out.sort((a, b) => a.t - b.t);
   }
-  function hmCfg(st) { const h = (st.heat = st.heat || {}); h.map = h.map || HM_MAPS[0].k; h.w = h.w || 'n'; h.src = h.src || 'pvp'; h.t = h.t || 'kvk'; if (h.src === 'barb' && h.w === 'kp') h.w = 'n'; h.rot = +h.rot || 0; h.mir = !!h.mir; h.rad = +h.rad || 3; h.city = h.city !== false; return h; }
-  function hmMap(h) { return HM_MAPS.find(m => m.k === h.map) || HM_MAPS[0]; }
-  function hmXY(x, y, h, m) {   // Spiel-Koordinate → 0…1 auf dem Bild (Ausrichtung einstellbar, bis die Stadt stimmt)
-    let u = x / (m.unit || 1) / m.size, v = y / (m.unit || 1) / m.size;
-    if (h.mir) u = 1 - u;
-    for (let i = 0; i < h.rot; i++) { const t = u; u = 1 - v; v = t; }
-    const p = (m.pad || 0) / 100; return [p + u * (1 - 2 * p), p + (1 - v) * (1 - 2 * p)];
+  function hmCut(all, h) {   // Timeline: nur bis zum Regler (und Spur-Länge)
+    if (h.tl == null) return all; const end = h.tl, start = h.trail ? end - h.trail : -Infinity; return all.filter(p => p.t <= end && p.t >= start);
   }
-  function hmWeight(r, w) { return w === 'kp' ? (+r.kill_points || 0) : w === 'loss' ? (+r.self_dead || 0) + (+r.self_severe || 0) : w === 'kill' ? (+r.enemy_dead || 0) + (+r.enemy_severe || 0) : 1; }
-  // Nur die Weltkarte (Role „gsmp“) – „dungeon“ = Instanz/Event-Karte mit eigenen Koordinaten. Koordinaten in Feldern (wie im Spiel).
-  function hmTile(v) { const m = hmMap(hmCfg(kbSt())); return v == null ? null : +v / (m.unit || 1); }
-  function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x), b = hmTile(y); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
-  function hmPts(rows) { return rows.filter(r => hmIn(r.pos_x, r.pos_y, r.map_role)); }
-  function hmCity() { return kbRows.find(r => kbMine(r.player_id) && hmIn(r.city_x, r.city_y, r.map_role)); }
-  function hmSpots(rows, h, m) {   // Brennpunkte: Kämpfe in 30er-Feldern zusammenfassen
-    const g = new Map(), cs = 30 * (m.unit || 1);
-    hmPts(rows).forEach(r => { const k = Math.floor(r.pos_x / cs) + ',' + Math.floor(r.pos_y / cs); const o = g.get(k) || { x: 0, y: 0, n: 0, kp: 0, loss: 0, kill: 0, w: 0, last: '', mails: new Set() };
-      o.x += +r.pos_x; o.y += +r.pos_y; o.n++; if (!r.is_pvp) o.b = (o.b || 0) + 1; o.kp += +r.kill_points || 0; o.loss += hmWeight(r, 'loss'); o.kill += hmWeight(r, 'kill'); o.w += hmWeight(r, h.w);
-      if ((r.battle_start || '') > o.last) o.last = r.battle_start || ''; o.mails.add(r.mail_id); g.set(k, o); });
-    return [...g.values()].map(o => ({ ...o, x: o.x / o.n, y: o.y / o.n })).sort((a, b) => b.w - a.w);
+  function hmCity(gid) { const m = hmMap(hmCfg(kbSt())); return (kbRows || []).find(r => (gid ? String(r.player_id) === gid : kbMine(r.player_id)) && hmIn(r.city_x, r.city_y, r.map_role)); }
+  async function hmLoadFriends() {
+    if (hmFrLoading || hmFr) return; hmFrLoading = true;
+    try { const db = RokAuth?.db?.(), me = RokAuth?.userId?.(); if (!db || !me) throw 0;
+      const rel = await db.from('friendships').select('a,b,status').or(`a.eq.${me},b.eq.${me}`); if (rel.error) throw rel.error;
+      const ids = (rel.data || []).filter(x => x.status === 'accepted').map(x => x.a === me ? x.b : x.a);
+      if (!ids.length) hmFr = [];
+      else { const lb = await db.from('leaderboard').select('user_id,username,governor_id').in('user_id', ids); if (lb.error) throw lb.error;
+        hmFr = (lb.data || []).filter(x => x.governor_id).map(x => ({ gid: String(x.governor_id), name: x.username || 'Freund' })); }
+    } catch { hmFr = []; }
+    hmFrLoading = false; if (R.view === 'battles' && kbSt().page === 'heat') renderKampf();
   }
   function hmDays(h) {   // KvK-Tage zum Anklicken (Tag 1 = KvK-Start)
     if (!h.kvk) return ''; const a = new Date(h.kvk + 'T00:00:00'), n = Math.min(90, Math.floor((Date.now() - a.getTime()) / 86400000) + 1); if (n < 1) return '';
@@ -749,15 +766,35 @@ window.RokMods.battles = (R) => {
       out.push(`<button type="button" data-hmday="${k}" aria-pressed="${on}" title="${d.toLocaleDateString('de-DE')}" class="seg-btn rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">${i + 1}</button>`); }
     return `<div class="flex flex-wrap items-center gap-1 mb-2"><span class="text-[11px] text-slate-500 mr-1">KvK-Tag:</span>${out.join('')}</div>`;
   }
-  function hmHtml(rows, st, filters) {
-    const h = hmCfg(st), m = hmMap(h), pts = hmPts(rows), noPos = rows.filter(r => r.pos_x == null).length, inst = rows.filter(r => r.map_role && r.map_role !== 'gsmp').length, outside = rows.length - pts.length - noPos - inst;
-    const spots = hmSpots(rows, h, m).slice(0, 8), mx = spots[0]?.w || 1;
-    const seg = (attr, k, l, on) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${l}</button>`;
-    const city = hmCity();
-    return `<section class="panel rounded-2xl p-5 mt-4"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span> <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span></h2>
-      <p class="text-xs text-slate-400 mb-3">Wo du kämpfst – jeder Kampf aus deinen Berichten an seinem Ort auf der KvK-Karte (1200 × 1200). Ark of Osiris ist ausgeblendet.</p>
+  function hmZoneStats(pts, m) {   // pro Zone: KP, Kämpfe, Barbaren, Forts + Rangliste (du + Freunde) + Gegner-Allianzen
+    const Z = new Map();
+    pts.forEach(p => { if (p.z < 0) return; const o = Z.get(p.z) || { z: p.z, kp: 0, n: 0, barb: 0, fort: 0, loss: 0, kill: 0, who: new Map(), ally: new Map() };
+      const who = p.mine ? 'me' : 'f' + p.fi, w = o.who.get(who) || { kp: 0, n: 0, barb: 0, fort: 0 };
+      if (p.k === 'pvp') { const kp = +p.r.kill_points || 0; w.kp += kp; w.n++; if (p.mine) { o.kp += kp; o.n++; o.loss += hmWeight(p.r, 'loss'); o.kill += hmWeight(p.r, 'kill'); if (p.r.enemy_alliance) o.ally.set(p.r.enemy_alliance, (o.ally.get(p.r.enemy_alliance) || 0) + 1); } }
+      else { w[p.k]++; if (p.mine) o[p.k]++; }
+      o.who.set(who, w); Z.set(p.z, o); });
+    return [...Z.values()].sort((a, b) => b.kp - a.kp || (b.barb + b.fort) - (a.barb + a.fort));
+  }
+  function hmHtml(st, filters) {
+    const h = hmCfg(st), m = hmMap(h), all = hmAll(st), pts = hmCut(all, h);
+    if (h.fr && !hmFr && !hmFrLoading) hmLoadFriends();
+    const seg = (attr, k, l, on, extra) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition" ${extra || ''}>${l}</button>`;
+    const mineAll = (kbRows || []).filter(r => kbMine(r.player_id)), inst = mineAll.filter(r => r.map_role && r.map_role !== 'gsmp' && r.is_pvp).length, noPos = mineAll.filter(r => r.pos_x == null).length;
+    const zs = hmZoneStats(pts, m), city = hmCity();
+    const t0 = all.length ? all[0].t : Date.now(), t1 = all.length ? all[all.length - 1].t : Date.now(), tl = h.tl == null ? t1 : Math.min(t1, Math.max(t0, h.tl));
+    const fmtT = (t) => new Date(t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const frBar = h.fr ? `<div class="flex flex-wrap items-center gap-1.5 text-[11px]">${hmFrLoading ? '<span class="text-slate-500">Lade Freunde …</span>' : !hmFr?.length ? '<span class="text-slate-500">Keine Freunde mit Governor-ID gefunden (Freunde unter Craft → Freunde hinzufügen).</span>'
+      : hmFr.map((f, i) => `<span class="inline-flex items-center gap-1 rounded-md border border-ink-600 px-1.5 py-0.5"><span class="w-2 h-2 rounded-full" style="background:${HM_FR_COL[i % 8]}"></span><span translate="no">${esc(f.name)}</span></span>`).join('')}</div>` : '';
+    const zoneRows = zs.map(o => { const rank = [...o.who.entries()].map(([k, w]) => ({ k, w, name: k === 'me' ? 'Du' : (hmFr?.[+k.slice(1)]?.name || 'Freund'), col: k === 'me' ? '#f5c542' : HM_FR_COL[+k.slice(1) % 8] })).sort((a, b) => b.w.kp - a.w.kp || (b.w.barb + b.w.fort) - (a.w.barb + a.w.fort));
+      return `<button type="button" data-hmzone="${o.z}" class="w-full text-left rounded-xl border ${h.zsel === o.z ? 'border-amber-400' : 'border-ink-700'} bg-ink-950/60 hover:border-amber-500/60 p-2">
+        <div class="flex items-center justify-between text-xs"><span class="font-semibold text-slate-100">📍 ${esc(m.zones.n[o.z])}</span><span class="text-gold-300 font-semibold tabular-nums">${o.kp ? '🏆 ' + short(o.kp) : ''}</span></div>
+        <div class="mt-0.5 text-[11px] text-slate-400 tabular-nums">${[o.n ? `⚔️ ${fmt(o.n)}` : '', o.barb ? `🪓 ${fmt(o.barb)}` : '', o.fort ? `🏰 ${fmt(o.fort)}` : '', o.loss ? `🩸 ${short(o.loss)}` : ''].filter(Boolean).join(' · ')}</div>
+        ${rank.length > 1 || h.zsel === o.z ? `<ol class="mt-1 space-y-0.5 text-[11px]">${rank.map((x, i) => `<li class="flex justify-between gap-2"><span><span class="text-slate-500">${i + 1}.</span> <span class="inline-block w-2 h-2 rounded-full" style="background:${x.col}"></span> <span translate="no">${esc(x.name)}</span></span><span class="tabular-nums text-slate-300">${x.w.kp ? short(x.w.kp) + ' KP' : ''}${x.w.barb ? ' · 🪓' + x.w.barb : ''}${x.w.fort ? ' · 🏰' + x.w.fort : ''}</span></li>`).join('')}</ol>` : ''}
+        ${h.zsel === o.z && o.ally.size ? `<div class="mt-1 text-[10px] text-red-200"><span class="text-slate-500">Gegner-Allianzen:</span> <span translate="no">${[...o.ally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([a, n]) => `[${esc(a)}] ${n}`).join(' · ')}</span></div>` : ''}</button>`; }).join('');
+    return `<section class="panel rounded-2xl p-4 sm:p-5 mt-4"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span> <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span></h2>
+      <p class="text-xs text-slate-400 mb-3">Wo du kämpfst – jeder Kampf aus deinen Berichten an seinem Ort auf der KvK-Karte (1200 × 1200). Ark of Osiris und Event-Instanzen sind ausgeblendet.</p>
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
-        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.map(([k, l]) => seg('data-hmsrc', k, l, h.src === k)).join('')}</div>
+        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.map(([k, l, c]) => seg('data-hmshow', k, `<span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${c}"></span>${l}`, !!h.show[k])).join('')}</div>
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_T.map(([k, l]) => seg('data-hmt', k, l, h.t === k)).join('')}</div>
         <label class="flex items-center gap-1 text-slate-400"><span>KvK-Start</span> <input type="date" data-hmkvk value="${esc(h.kvk || '')}" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-gold-500"></label>
       </div>
@@ -765,81 +802,169 @@ window.RokMods.battles = (R) => {
       ${hmDays(h)}
       ${!h.kvk ? '<div class="mb-2 text-[11px] text-amber-300">Trag den KvK-Start ein – dann zeigt „Ganzes KvK“ nur dieses KvK und du kannst einzelne KvK-Tage anklicken.</div>' : ''}
       ${filters}
-      <div class="flex flex-wrap items-center gap-2 mb-3 text-xs">
-        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_W.filter(([k]) => !(h.src === 'barb' && k === 'kp')).map(([k, l]) => seg('data-hmw', k, l, h.w === k)).join('')}</div>
-        <label class="flex items-center gap-1 text-slate-400"><span>Radius</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label>
-        <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmcity ${h.city ? 'checked' : ''} class="accent-amber-400"> <span>Meine Stadt</span></label>
+      <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+        ${h.show.pvp ? `<div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_W.map(([k, l]) => seg('data-hmw', k, l, h.w === k)).join('')}</div>` : ''}
+        <label class="flex items-center gap-1 text-slate-400"><span>Glühen</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label>
+        <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmzm ${h.zm ? 'checked' : ''} class="accent-amber-400"> <span>Zonen-Marker</span></label>
+        <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmfr ${h.fr ? 'checked' : ''} class="accent-amber-400"> <span>👥 Freunde</span></label>
         <span class="ml-auto flex items-center gap-1 text-slate-500"><span>Karte</span>: <span translate="no" class="text-slate-300">${esc(m.n)}</span>
-          <button type="button" data-hmrot class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="Karte um 90° drehen">⟳ <span>Drehen</span></button>
-          <button type="button" data-hmmir class="px-2 py-1 rounded-lg border ${h.mir ? 'border-gold-500/60 text-gold-200' : 'border-ink-600'} hover:border-gold-500/60" title="Karte spiegeln">⇋ <span>Spiegeln</span></button></span>
+          <button type="button" data-hmrot class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="Karte um 90° drehen">⟳</button>
+          <button type="button" data-hmmir class="px-2 py-1 rounded-lg border ${h.mir ? 'border-gold-500/60 text-gold-200' : 'border-ink-600'} hover:border-gold-500/60" title="Karte spiegeln">⇋</button></span>
       </div>
-      <div class="grid lg:grid-cols-[1fr_18rem] gap-4">
-        <div><div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950">
-          <img src="${esc(m.img)}" alt="" class="absolute inset-0 w-full h-full object-cover select-none" draggable="false" onerror="this.style.display='none';document.getElementById('hmNoImg')?.classList.remove('hidden')">
+      ${frBar}
+      <div id="hmWrap" class="mt-2 bg-ink-950 rounded-xl">
+        <div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950 cursor-grab touch-none select-none">
+          <div id="hmStage" class="absolute inset-0 origin-top-left">
+            <img src="${esc(m.img)}" alt="" class="absolute inset-0 w-full h-full select-none pointer-events-none" draggable="false" onerror="this.style.display='none';document.getElementById('hmNoImg')?.classList.remove('hidden')">
+            <canvas id="hmCanvas" width="1600" height="1600" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
+            <div id="hmMarks" class="absolute inset-0 pointer-events-none"></div>
+          </div>
           <div id="hmNoImg" class="hidden absolute inset-0 grid place-items-center text-sm text-slate-500 p-6 text-center">Kartenbild fehlt: ${esc(m.img)}</div>
-          <canvas id="hmCanvas" width="1000" height="1000" class="absolute inset-0 w-full h-full"></canvas>
-          <div id="hmTip" class="hidden absolute z-10 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
+          <div class="absolute top-2 right-2 flex flex-col gap-1 z-10">
+            ${[['in', '＋', 'Hineinzoomen'], ['out', '－', 'Herauszoomen'], ['fit', '🎯', 'Auf Kämpfe zoomen'], ['reset', '⤢', 'Ganze Karte'], ['full', '⛶', 'Vollbild'], ['png', '📷', 'Als Bild speichern']].map(([k, i, t]) => `<button type="button" data-hmz="${k}" title="${t}" class="w-9 h-9 rounded-lg bg-ink-950/85 border border-ink-600 hover:border-gold-500/60 text-base">${i}</button>`).join('')}
+          </div>
+          <div id="hmTip" class="hidden absolute z-20 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
         </div>
-        <div class="mt-1 text-[11px] text-slate-500">${fmt(pts.filter(r => r.is_pvp).length)} <span>PvP-Kämpfe</span> (⚪) · ${fmt(pts.filter(r => !r.is_pvp).length)} <span>Barbaren</span> (<span class="text-emerald-300">●</span>)${inst ? ` · ${fmt(inst)} <span>in einer Instanz / Event-Karte (nicht auf der KvK-Karte)</span>` : ''}${outside > 0 ? ` · ${fmt(outside)} <span>auf anderen Karten (nicht angezeigt)</span>` : ''}${noPos ? ` · ${fmt(noPos)} <span>ohne Ort (ältere Uploads – der neue Uploader liest sie einmal neu ein)</span>` : ''}${!kbPosCols ? ' · <span class="text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</span>' : ''}</div>
-        <div class="mt-1 text-[11px] text-slate-500">${city ? `🏰 <span>Deine Stadt</span>: X ${Math.round(hmTile(city.city_x))} · Y ${Math.round(hmTile(city.city_y))} – <span>liegt der Punkt auf der Karte falsch, mit „Drehen“ / „Spiegeln“ ausrichten.</span>` : ''}</div></div>
-        <div><h3 class="font-display text-base text-gold-300 mb-2">📍 <span>Brennpunkte</span></h3>
-          ${spots.length ? spots.map((o, i) => `<button type="button" data-hmspot="${i}" class="w-full text-left rounded-xl border border-ink-700 bg-ink-950/60 hover:border-amber-500/60 p-2 mb-1.5">
-            <div class="flex items-center justify-between text-xs"><span class="font-semibold text-slate-100">#${i + 1} · X ${Math.round(hmTile(o.x))} · Y ${Math.round(hmTile(o.y))}</span><span class="text-slate-500">${o.last ? new Date(o.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span></div>
-            <div class="h-1.5 rounded bg-ink-800 mt-1 overflow-hidden"><div class="h-full" style="width:${Math.max(4, o.w / mx * 100)}%;background:linear-gradient(90deg,#f59e0b,#ef4444)"></div></div>
-            <div class="mt-1 text-[11px] text-slate-400 tabular-nums">${[o.n - (o.b || 0) ? `⚔️ ${fmt(o.n - (o.b || 0))}` : '', o.b ? `🪓 ${fmt(o.b)}` : '', o.kp ? `🏆 ${short(o.kp)}` : ''].filter(Boolean).join(' · ')} · 🩸 ${short(o.loss)} · 💀 ${short(o.kill)}</div></button>`).join('')
-            : '<div class="text-xs text-slate-500">Noch keine Kämpfe mit Ort im Filter.</div>'}
-        </div></div></section>`;
+        <div class="mt-2 rounded-xl border border-ink-700 bg-ink-950/70 p-2">
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" data-hmplay class="px-3 py-1 rounded-lg border border-gold-500/50 text-gold-200 hover:bg-gold-500/10 font-semibold">${hmPlay ? '⏸ Pause' : '▶ Abspielen'}</button>
+            <span class="font-semibold text-slate-200 tabular-nums" id="hmTlLabel">${h.tl == null ? '<span>Alles</span>' : fmtT(tl)}</span>
+            <span class="text-slate-500">· <span>Spur</span>:</span>${HM_TRAIL.map(([k, l]) => seg('data-hmtrail', k, l, +h.trail === k)).join('')}
+            ${h.tl != null ? '<button type="button" data-hmtlx class="ml-auto px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60">✕ <span>Timeline aus</span></button>' : ''}
+          </div>
+          <input type="range" data-hmtl min="${t0}" max="${t1}" step="60000" value="${tl}" class="w-full accent-amber-400 mt-1" ${all.length < 2 ? 'disabled' : ''}>
+          <div class="flex justify-between text-[10px] text-slate-500 tabular-nums"><span>${all.length ? fmtT(t0) : ''}</span><span>⏪ <span>Regler ziehen zum Zurückspulen</span></span><span>${all.length ? fmtT(t1) : ''}</span></div>
+        </div>
+      </div>
+      <div class="mt-2 text-[11px] text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
+        <span><span class="inline-block w-2.5 h-2.5 rounded-full align-middle" style="background:#ef4444;box-shadow:0 0 6px #f59e0b"></span> ${fmt(pts.filter(p => p.mine && p.k === 'pvp').length)} <span>Kämpfe</span></span>
+        <span><span class="inline-block w-2.5 h-2.5 rounded-full align-middle bg-blue-500"></span> ${fmt(pts.filter(p => p.mine && p.k === 'barb').length)} <span>Barbaren</span></span>
+        <span><span class="inline-block w-2.5 h-2.5 rounded-full align-middle bg-purple-500"></span> ${fmt(pts.filter(p => p.mine && p.k === 'fort').length)} <span>Forts</span></span>
+        <span><span class="inline-block w-2.5 h-2.5 rounded-full align-middle bg-emerald-400"></span> <span>Deine Stadt</span>${city ? ` X ${Math.round(hmTile(city.city_x))} · Y ${Math.round(hmTile(city.city_y))}` : ''}</span>
+        ${inst ? `<span>${fmt(inst)} <span>PvP-Kämpfe in Ark of Osiris / Instanzen (eigene Karte, hier nicht gezeigt)</span></span>` : ''}
+        ${noPos ? `<span>${fmt(noPos)} <span>ohne Ort (ältere Uploads – der neue Uploader liest sie einmal neu ein)</span></span>` : ''}
+        ${!kbPosCols ? '<span class="text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</span>' : ''}
+      </div>
+      <h3 class="font-display text-base text-gold-300 mt-4 mb-2">📍 <span>Zonen</span> <span class="text-[11px] text-slate-500 font-sans">– <span>anklicken zum Hineinzoomen</span></span></h3>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${zoneRows || '<div class="text-xs text-slate-500">Noch keine Kämpfe mit Ort im Filter.</div>'}</div>
+      </section>`;
   }
-  function hmDraw(rows, st) {
+  function hmApplyView() {
+    const st = $('hmStage'), box = $('hmBox'); if (!st || !box) return; const W = box.clientWidth;
+    hmView.s = Math.min(8, Math.max(1, hmView.s)); const max = W * (hmView.s - 1); hmView.x = Math.min(0, Math.max(-max, hmView.x)); hmView.y = Math.min(0, Math.max(-max, hmView.y));
+    st.style.transform = `translate(${hmView.x}px,${hmView.y}px) scale(${hmView.s})`;
+    document.querySelectorAll('#hmMarks [data-hmmark]').forEach(e => { e.style.transform = `translate(-50%,-50%) scale(${1 / hmView.s})`; });
+  }
+  function hmZoomTo(u0, v0, u1, v1) {   // Bereich (0…1) einpassen
+    const box = $('hmBox'); if (!box) return; const W = box.clientWidth, span = Math.max(.04, u1 - u0, v1 - v0) * 1.25;
+    hmView.s = Math.min(8, Math.max(1, 1 / span)); hmView.x = -((u0 + u1) / 2 * hmView.s - .5) * W; hmView.y = -((v0 + v1) / 2 * hmView.s - .5) * W; hmApplyView();
+  }
+  function hmDraw(st) {
     const cv = $('hmCanvas'); if (!cv) return; const h = hmCfg(st), m = hmMap(h), ctx = cv.getContext('2d'), W = cv.width;
+    const pts = hmCut(hmAll(st), h), mine = pts.filter(p => p.mine);
     ctx.clearRect(0, 0, W, W);
-    const N = 250, grid = new Float32Array(N * N);   // Raster, danach weichzeichnen
-    hmPts(rows).forEach(r => { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); const gx = Math.floor(u * N), gy = Math.floor(v * N);
-      if (gx >= 0 && gy >= 0 && gx < N && gy < N) grid[gy * N + gx] += hmWeight(r, h.w); });
-    const sig = h.rad, R = Math.ceil(sig * 3), ker = []; for (let i = -R; i <= R; i++) ker.push(Math.exp(-(i * i) / (2 * sig * sig)));
-    const tmp = new Float32Array(N * N), out = new Float32Array(N * N);
-    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -R; k <= R; k++) { const xx = x + k; if (xx >= 0 && xx < N) a += grid[y * N + xx] * ker[k + R]; } tmp[y * N + x] = a; }
-    let max = 0; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -R; k <= R; k++) { const yy = y + k; if (yy >= 0 && yy < N) a += tmp[yy * N + x] * ker[k + R]; } out[y * N + x] = a; if (a > max) max = a; }
+    // Glühen: aus deinen Kämpfen (sonst aus Barbaren/Forts) – innen rot, nach außen orange/gelb
+    const src = mine.some(p => p.k === 'pvp') ? mine.filter(p => p.k === 'pvp') : mine;
+    const N = 300, grid = new Float32Array(N * N), w = h.show.pvp ? h.w : 'n';
+    src.forEach(p => { const gx = Math.floor(p.u * N), gy = Math.floor(p.v * N); if (gx >= 0 && gy >= 0 && gx < N && gy < N) grid[gy * N + gx] += p.k === 'pvp' ? Math.max(hmWeight(p.r, w), w === 'n' ? 1 : 0) : 1; });
+    const sig = h.rad * 1.2, Rr = Math.ceil(sig * 3), ker = []; for (let i = -Rr; i <= Rr; i++) ker.push(Math.exp(-(i * i) / (2 * sig * sig)));
+    const tmp = new Float32Array(N * N), out = new Float32Array(N * N); let max = 0;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -Rr; k <= Rr; k++) { const xx = x + k; if (xx >= 0 && xx < N) a += grid[y * N + xx] * ker[k + Rr]; } tmp[y * N + x] = a; }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -Rr; k <= Rr; k++) { const yy = y + k; if (yy >= 0 && yy < N) a += tmp[yy * N + x] * ker[k + Rr]; } out[y * N + x] = a; if (a > max) max = a; }
     if (max > 0) {
-      const img = ctx.createImageData(N, N), stops = [[0, [56, 189, 248]], [.35, [52, 211, 153]], [.6, [250, 204, 21]], [.8, [249, 115, 22]], [1, [239, 68, 68]]];
-      for (let i = 0; i < N * N; i++) { const t = Math.sqrt(out[i] / max); if (t < .04) continue;
-        let j = 1; while (j < stops.length - 1 && t > stops[j][0]) j++; const [t0, c0] = stops[j - 1], [t1, c1] = stops[j], f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
-        img.data[i * 4] = c0[0] + (c1[0] - c0[0]) * f; img.data[i * 4 + 1] = c0[1] + (c1[1] - c0[1]) * f; img.data[i * 4 + 2] = c0[2] + (c1[2] - c0[2]) * f; img.data[i * 4 + 3] = Math.min(225, 60 + t * 200); }
+      const img = ctx.createImageData(N, N), stops = [[0, [253, 224, 71]], [.35, [251, 146, 60]], [.7, [239, 68, 68]], [1, [185, 28, 28]]];
+      for (let i = 0; i < N * N; i++) { const t = Math.pow(out[i] / max, .45); if (t < .05) continue;
+        let j = 1; while (j < stops.length - 1 && t > stops[j][0]) j++; const [a0, c0] = stops[j - 1], [a1, c1] = stops[j], f = Math.min(1, Math.max(0, (t - a0) / (a1 - a0)));
+        img.data[i * 4] = c0[0] + (c1[0] - c0[0]) * f; img.data[i * 4 + 1] = c0[1] + (c1[1] - c0[1]) * f; img.data[i * 4 + 2] = c0[2] + (c1[2] - c0[2]) * f; img.data[i * 4 + 3] = Math.min(215, t * 260); }
       const off = document.createElement('canvas'); off.width = off.height = N; off.getContext('2d').putImageData(img, 0, 0);
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(off, 0, 0, W, W);
     }
-    // einzelne Kämpfe als kleine Punkte
-    hmPts(rows).forEach(r => { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); ctx.fillStyle = r.is_pvp ? 'rgba(255,255,255,.9)' : 'rgba(110,231,183,.95)'; ctx.beginPath(); ctx.arc(u * W, v * W, 2.2, 0, 7); ctx.fill(); });
-    const city = h.city && hmCity();
-    if (city) { const [u, v] = hmXY(+city.city_x, +city.city_y, h, m); ctx.font = '34px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.strokeStyle = '#f5c542'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(u * W, v * W, 24, 0, 7); ctx.stroke(); ctx.fillText('🏰', u * W, v * W); }
-    if (st._hmSel != null) { const o = hmSpots(rows, h, m)[st._hmSel]; if (o) { const [u, v] = hmXY(o.x, o.y, h, m); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(u * W, v * W, 40, 0, 7); ctx.stroke(); ctx.setLineDash([]); } }
+    // Punkte: Kämpfe rot, Barbaren blau, Forts lila, Freunde in ihrer Farbe
+    const col = { pvp: '#ef4444', barb: '#3b82f6', fort: '#a855f7' }, newest = pts.length ? pts[pts.length - 1].t : 0;
+    pts.forEach(p => { const x = p.u * W, y = p.v * W, fresh = h.tl != null && newest - p.t < 15 * 60e3;
+      ctx.beginPath(); ctx.arc(x, y, p.k === 'pvp' ? 3 : 2.6, 0, 7); ctx.fillStyle = p.mine ? col[p.k] : HM_FR_COL[p.fi % 8]; ctx.fill();
+      ctx.lineWidth = fresh ? 2.5 : 1; ctx.strokeStyle = fresh ? '#fff' : 'rgba(0,0,0,.55)'; ctx.stroke(); });
+    // Städte: du grün, Freunde in ihrer Farbe
+    const dot = (c, color, r) => { if (!c) return; const [u, v] = hmXY(+c.city_x, +c.city_y, h, m); ctx.beginPath(); ctx.arc(u * W, v * W, r + 8, 0, 7); ctx.fillStyle = color + '44'; ctx.fill();
+      ctx.beginPath(); ctx.arc(u * W, v * W, r, 0, 7); ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#052e16'; ctx.stroke(); };
+    dot(hmCity(), '#22c55e', 11);
+    if (h.fr && hmFr) hmFr.forEach((f, i) => dot(hmCity(f.gid), HM_FR_COL[i % 8], 7));
+    // Zonen-Marker mit deinen KP (ausblendbar)
+    const mk = $('hmMarks'); if (mk) {
+      mk.innerHTML = !h.zm ? '' : hmZoneStats(pts, m).map(o => { const [u, v] = m.zones.c[o.z];
+        const lab = o.kp ? '🏆 ' + short(o.kp) : [o.barb ? '🪓 ' + o.barb : '', o.fort ? '🏰 ' + o.fort : ''].filter(Boolean).join(' ') || ('⚔️ ' + o.n);
+        return `<div data-hmmark data-hmzone="${o.z}" class="absolute pointer-events-auto cursor-pointer whitespace-nowrap rounded-full border ${h.zsel === o.z ? 'border-white' : 'border-amber-400/80'} bg-ink-950/85 px-2 py-0.5 text-[11px] font-semibold text-gold-200 shadow-lg" style="left:${u * 100}%;top:${v * 100}%;transform:translate(-50%,-50%)" title="${esc(m.zones.n[o.z])}"><span class="text-slate-400 font-normal">${esc(m.zones.n[o.z])}</span> ${lab}</div>`; }).join('');
+      mk.querySelectorAll('[data-hmzone]').forEach(e => e.onclick = (ev) => { ev.stopPropagation(); hmPickZone(st, +e.dataset.hmzone); });
+    }
+    hmApplyView();
   }
-  function hmBind(el, rows, st) {
-    const h = hmCfg(st), re = () => { savePassive(); renderKampf(); };
+  function hmPickZone(st, z) {
+    const h = hmCfg(st), m = hmMap(h); h.zsel = h.zsel === z ? null : z; savePassive();
+    if (h.zsel != null) { const d = m.zones, W = d.w; let x0 = 1, y0 = 1, x1 = 0, y1 = 0;
+      for (let i = 0; i < d.d.length; i++) if (d.d.charCodeAt(i) - 97 === z) { const x = (i % W) / W, y = Math.floor(i / W) / W; x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + 1 / W); y1 = Math.max(y1, y + 1 / W); }
+      renderKampf(); hmZoomTo(x0, y0, x1, y1);
+    } else { renderKampf(); }
+  }
+  function hmBind(el, st) {
+    const h = hmCfg(st), re = () => { savePassive(); renderKampf(); }, redraw = () => { savePassive(); renderKampf(); };
     el.querySelectorAll('[data-hmw]').forEach(b => b.onclick = () => { h.w = b.dataset.hmw; re(); });
-    el.querySelectorAll('[data-hmsrc]').forEach(b => b.onclick = () => { h.src = b.dataset.hmsrc; st._hmSel = null; re(); });
-    el.querySelectorAll('[data-hmt]').forEach(b => b.onclick = () => { h.t = b.dataset.hmt; st._hmSel = null; re(); });
-    el.querySelectorAll('[data-hmday]').forEach(b => b.onclick = () => { if (h.t === 'day' && h.day === b.dataset.hmday) h.t = 'kvk'; else { h.t = 'day'; h.day = b.dataset.hmday; } st._hmSel = null; re(); });
+    el.querySelectorAll('[data-hmshow]').forEach(b => b.onclick = () => { h.show[b.dataset.hmshow] = !h.show[b.dataset.hmshow]; if (!h.show.pvp && !h.show.barb && !h.show.fort) h.show.pvp = true; re(); });
+    el.querySelectorAll('[data-hmt]').forEach(b => b.onclick = () => { h.t = b.dataset.hmt; h.tl = null; re(); });
+    el.querySelectorAll('[data-hmday]').forEach(b => b.onclick = () => { if (h.t === 'day' && h.day === b.dataset.hmday) h.t = 'kvk'; else { h.t = 'day'; h.day = b.dataset.hmday; } h.tl = null; re(); });
     el.querySelector('[data-hmkvk]')?.addEventListener('change', (ev) => { h.kvk = ev.target.value; re(); });
     el.querySelector('[data-hmfrom]')?.addEventListener('change', (ev) => { h.from = ev.target.value; re(); });
     el.querySelector('[data-hmto]')?.addEventListener('change', (ev) => { h.to = ev.target.value; re(); });
-    el.querySelector('[data-hmrad]')?.addEventListener('input', (ev) => { h.rad = +ev.target.value; hmDraw(rows, st); });
+    el.querySelector('[data-hmrad]')?.addEventListener('input', (ev) => { h.rad = +ev.target.value; hmDraw(st); });
     el.querySelector('[data-hmrad]')?.addEventListener('change', () => savePassive());
-    el.querySelector('[data-hmcity]')?.addEventListener('change', (ev) => { h.city = ev.target.checked; savePassive(); hmDraw(rows, st); });
+    el.querySelector('[data-hmzm]')?.addEventListener('change', (ev) => { h.zm = ev.target.checked; savePassive(); hmDraw(st); });
+    el.querySelector('[data-hmfr]')?.addEventListener('change', (ev) => { h.fr = ev.target.checked; re(); });
     el.querySelector('[data-hmrot]')?.addEventListener('click', () => { h.rot = (h.rot + 1) % 4; re(); });
     el.querySelector('[data-hmmir]')?.addEventListener('click', () => { h.mir = !h.mir; re(); });
-    el.querySelectorAll('[data-hmspot]').forEach(b => b.onclick = () => { st._hmSel = st._hmSel === +b.dataset.hmspot ? null : +b.dataset.hmspot; hmDraw(rows, st); });
-    // Tooltip: Kämpfe in der Nähe der Maus
-    const box = $('hmBox'), tip = $('hmTip'), m = hmMap(h);
-    box?.addEventListener('mousemove', (ev) => { const bb = box.getBoundingClientRect(), u = (ev.clientX - bb.left) / bb.width, v = (ev.clientY - bb.top) / bb.height;
-      const near = hmPts(rows).filter(r => { const [a, b] = hmXY(+r.pos_x, +r.pos_y, h, m); return Math.hypot(a - u, b - v) < .02; });
+    el.querySelectorAll('.grid [data-hmzone]').forEach(b => b.onclick = () => hmPickZone(st, +b.dataset.hmzone));
+    // Timeline
+    const tlIn = el.querySelector('[data-hmtl]'), lab = $('hmTlLabel');
+    const fmtT = (t) => new Date(t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    tlIn?.addEventListener('input', () => { h.tl = +tlIn.value; if (lab) lab.textContent = fmtT(h.tl); hmDraw(st); });
+    tlIn?.addEventListener('change', () => re());
+    el.querySelectorAll('[data-hmtrail]').forEach(b => b.onclick = () => { h.trail = +b.dataset.hmtrail; if (h.tl == null && tlIn) h.tl = +tlIn.max; re(); });
+    el.querySelector('[data-hmtlx]')?.addEventListener('click', () => { h.tl = null; if (hmPlay) { clearInterval(hmPlay); hmPlay = null; } re(); });
+    el.querySelector('[data-hmplay]')?.addEventListener('click', () => {
+      if (hmPlay) { clearInterval(hmPlay); hmPlay = null; re(); return; }
+      if (!tlIn || tlIn.disabled) return; const a = +tlIn.min, b = +tlIn.max, step = Math.max(60000, (b - a) / 240);
+      if (h.tl == null || h.tl >= b) h.tl = a;
+      hmPlay = setInterval(() => { const box = $('hmTlLabel'), inp = document.querySelector('[data-hmtl]'); if (!box || !inp) { clearInterval(hmPlay); hmPlay = null; return; }
+        h.tl = Math.min(b, h.tl + step); inp.value = h.tl; box.textContent = fmtT(h.tl); hmDraw(st);
+        if (h.tl >= b) { clearInterval(hmPlay); hmPlay = null; re(); } }, 120);
+      re();
+    });
+    // Zoom / Verschieben
+    const box = $('hmBox'); if (!box) return;
+    box.addEventListener('wheel', (ev) => { ev.preventDefault(); const bb = box.getBoundingClientRect(), mx = ev.clientX - bb.left, my = ev.clientY - bb.top, s0 = hmView.s, s1 = Math.min(8, Math.max(1, s0 * (ev.deltaY < 0 ? 1.25 : .8)));
+      hmView.x = mx - (mx - hmView.x) * s1 / s0; hmView.y = my - (my - hmView.y) * s1 / s0; hmView.s = s1; hmApplyView(); }, { passive: false });
+    let drag = null;
+    box.addEventListener('pointerdown', (ev) => { if (ev.target.closest('button,[data-hmmark]')) return; drag = { x: ev.clientX, y: ev.clientY, vx: hmView.x, vy: hmView.y }; box.setPointerCapture(ev.pointerId); box.style.cursor = 'grabbing'; });
+    box.addEventListener('pointermove', (ev) => { if (drag) { hmView.x = drag.vx + ev.clientX - drag.x; hmView.y = drag.vy + ev.clientY - drag.y; hmApplyView(); } });
+    box.addEventListener('pointerup', () => { drag = null; box.style.cursor = ''; });
+    el.querySelectorAll('[data-hmz]').forEach(b => b.onclick = async () => { const k = b.dataset.hmz, W = box.clientWidth;
+      if (k === 'in' || k === 'out') { const s0 = hmView.s, s1 = Math.min(8, Math.max(1, s0 * (k === 'in' ? 1.5 : 1 / 1.5))); hmView.x = W / 2 - (W / 2 - hmView.x) * s1 / s0; hmView.y = W / 2 - (W / 2 - hmView.y) * s1 / s0; hmView.s = s1; hmApplyView(); }
+      else if (k === 'reset') { hmView = { s: 1, x: 0, y: 0 }; hmApplyView(); }
+      else if (k === 'fit') { const p = hmCut(hmAll(st), h).filter(q => q.mine); if (!p.length) return; hmZoomTo(Math.min(...p.map(q => q.u)), Math.min(...p.map(q => q.v)), Math.max(...p.map(q => q.u)), Math.max(...p.map(q => q.v))); }
+      else if (k === 'full') { const w = $('hmWrap'); try { if (document.fullscreenElement) await document.exitFullscreen(); else await w.requestFullscreen(); } catch {} setTimeout(() => { hmApplyView(); }, 200); }
+      else if (k === 'png') { try { const img = box.querySelector('img'), cv = $('hmCanvas'), o = document.createElement('canvas'); o.width = o.height = 1600; const c = o.getContext('2d'); if (img?.complete && img.naturalWidth) c.drawImage(img, 0, 0, 1600, 1600); c.drawImage(cv, 0, 0);
+        const a = document.createElement('a'); a.download = 'heatmap.png'; a.href = o.toDataURL('image/png'); a.click(); } catch (e) { console.warn(e); } }
+    });
+    // Tooltip
+    const tip = $('hmTip');
+    box.addEventListener('mousemove', (ev) => { if (drag) { tip.classList.add('hidden'); return; } const bb = box.getBoundingClientRect(), u = (ev.clientX - bb.left - hmView.x) / (bb.width * hmView.s), v = (ev.clientY - bb.top - hmView.y) / (bb.height * hmView.s);
+      const near = hmCut(hmAll(st), h).filter(p => Math.hypot(p.u - u, p.v - v) < .012 / Math.sqrt(hmView.s));
       if (!near.length) { tip.classList.add('hidden'); return; }
-      const kp = near.reduce((s, r) => s + (+r.kill_points || 0), 0), en = [...new Set(near.map(r => r.enemy_name).filter(Boolean))].slice(0, 3);
-      const nb = near.filter(r => !r.is_pvp).length;
-      tip.innerHTML = `⚔️ ${fmt(near.length - nb)} <span>PvP</span>${nb ? ` · 🪓 ${fmt(nb)} <span>Barbaren</span>` : ''} · 🏆 ${short(kp)}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].pos_x))} · Y ${Math.round(hmTile(near[0].pos_y))}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}`;
-      tip.style.left = Math.min(bb.width - 170, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
-    box?.addEventListener('mouseleave', () => tip.classList.add('hidden'));
+      const kp = near.reduce((s, p) => s + (p.k === 'pvp' ? +p.r.kill_points || 0 : 0), 0), c = (k) => near.filter(p => p.k === k).length, en = [...new Set(near.filter(p => p.k === 'pvp').map(p => p.r.enemy_name).filter(Boolean))].slice(0, 3);
+      const who = [...new Set(near.map(p => p.mine ? 'Du' : hmFr?.[p.fi]?.name).filter(Boolean))];
+      tip.innerHTML = [c('pvp') ? `⚔️ ${c('pvp')} · 🏆 ${short(kp)}` : '', c('barb') ? `🪓 ${c('barb')}` : '', c('fort') ? `🏰 ${c('fort')}` : ''].filter(Boolean).join(' · ') +
+        `<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].r.pos_x))} · Y ${Math.round(hmTile(near[0].r.pos_y))} · ${new Date(near[near.length - 1].t).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}${who.length > 1 || who[0] !== 'Du' ? `<br><span class="text-cyan-200" translate="no">${who.map(esc).join(', ')}</span>` : ''}`;
+      tip.style.left = Math.min(bb.width - 190, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
+    box.addEventListener('mouseleave', () => tip.classList.add('hidden'));
+    document.addEventListener('fullscreenchange', () => setTimeout(hmApplyView, 100), { once: true });
   }
 
   // ================= Detailansicht eines Kampfes (Ausrüstung, Skills, Rüstung – du und Gegner) =================
