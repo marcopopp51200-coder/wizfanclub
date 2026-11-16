@@ -40,14 +40,15 @@ window.RokMods.battles = (R) => {
   })();
   if (!$('battlesView')) return;
 
-  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true;
+  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true;
   var KB_COLS = 'mail_id,opponent_id,account,player_id,battle_start,battle_end,is_pvp,self_name,self_alliance,self_hero1,self_hero2,self_troops_start,self_wounded,self_severe,self_dead,self_healing,self_power_lost,enemy_name,enemy_alliance,enemy_hero1,enemy_hero2,enemy_troops_start,enemy_wounded,enemy_severe,enemy_dead,enemy_power_lost,kill_points,server_id';
   async function loadBattles(force) {
     if (kbLoading || (kbRows && !force)) return; kbLoading = true; kbProg = 0; kbErr = '';
     try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
       const all = [];
       for (let from = 0; from < 100000; from += 1000) {
-        let q = await db.from('rok_battles').select(KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '')).order('battle_start', { ascending: false }).order('mail_id').order('opponent_id').range(from, from + 999);
+        let q = await db.from('rok_battles').select(KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y' : '')).order('battle_start', { ascending: false }).order('mail_id').order('opponent_id').range(from, from + 999);
+        if (q.error && kbPosCols && /pos_|city_/i.test(q.error.message || '')) { kbPosCols = false; from -= 1000; continue; }   // SQL v9 (Heatmap) noch nicht ausgeführt
         if (q.error && kbNpcCols && /npc_|group_size|column/i.test(q.error.message || '')) { kbNpcCols = false; from -= 1000; continue; }   // SQL v4 noch nicht ausgeführt
         const { data, error } = q;
         if (error) throw error; all.push(...(data || [])); kbProg = all.length;
@@ -281,13 +282,18 @@ window.RokMods.battles = (R) => {
     const filters = catSel + timeRow(modeSel + marchSel + enemyChip);
     // Unterseiten: Battles · Loot · Ressourcen
     const page = st.page || 'battles';
-    const subTabs = `<div class="grid grid-cols-3 gap-3 max-w-2xl mx-auto mt-2" role="tablist">${[['battles', '⚔️', 'Battles', '#f43f5e'], ['loot', '🎁', 'Loot', '#f5c542'], ['res', '🌾', 'Ressourcen', '#34d399']].map(([k, i, l, c]) =>
+    const subTabs = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto mt-2" role="tablist">${[['battles', '⚔️', 'Battles', '#f43f5e'], ['heat', '🔥', 'Heatmap', '#fb923c'], ['loot', '🎁', 'Loot', '#f5c542'], ['res', '🌾', 'Ressourcen', '#34d399']].map(([k, i, l, c]) =>
         `<button type="button" class="hub-tile panel !min-h-[6.5rem] sm:!min-h-[8rem]" data-kbpage="${k}" role="tab" aria-pressed="${page === k}"><span class="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl grid place-items-center text-2xl sm:text-3xl" style="background:linear-gradient(135deg,${c}33,${c}11);border:1px solid ${c}55">${i}</span><span class="font-display text-sm sm:text-lg text-white tracking-wide">${l}</span></button>`).join('')}</div>`;
     const pageHead = (icon, t, sub) => `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">${icon} ${t}</h2><p class="text-xs text-slate-400 mb-3">${sub}</p>`;
     if (page === 'res') {
       if (!rsRows && !rsLoading) loadRes();
       el.innerHTML = wip + subTabs + rsHtml(timeRow('', accsRes));
       kbBind(el); rsDraw(); return;
+    }
+    if (page === 'heat') {
+      const hr = rows.filter(r => !kbIsAoo(r));   // Ark of Osiris = andere Karte
+      el.innerHTML = wip + subTabs + hmHtml(hr, st, timeRow(marchSel + enemyChip));
+      kbBind(el); hmBind(el, hr, st); hmDraw(hr, st); return;
     }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
     const nJoin = new Set((pvp ? rallyPvp : rallyPve).map(r => r.mail_id)).size;
@@ -412,7 +418,9 @@ window.RokMods.battles = (R) => {
         { k: 'march', l: 'Marsch', v: a => a.march, left: true, c: 'text-slate-200' },
         !pvp ? null : { k: 'enemy', l: 'Gegner', v: a => (a.enemy_alliance ? `[${a.enemy_alliance}] ` : '') + (a.enemy_name || ''), left: true, f: a => `${a.enemy_alliance ? `[${esc(a.enemy_alliance)}] ` : ''}${esc(a.enemy_name || '–')}` },
         pvp ? { k: 'kp', l: 'Kill Points', v: a => a.kp, f: a => a.kp ? fmt(a.kp) : '–', c: gold } : null, { k: 'dur', l: 'Dauer', v: a => a.sec, f: a => kbDur(a.sec) }, { k: 'troops', l: 'Truppen', v: a => a.sTroops, f: a => short(a.sTroops) },
-        pvp ? tradeCol : null, ...lossCols].filter(Boolean), one, { k: 't', dir: 'desc' }, lim);
+        pvp ? tradeCol : null, ...lossCols,
+        pvp ? { k: 'det', l: '🔍', v: a => a.t, f: a => `<button type="button" data-kbdetail="${esc(a.mail_id)}|${esc(a.opponent_id)}" title="Details: Ausrüstung, Skills, Rüstung" class="px-2 py-0.5 rounded-lg border border-gold-500/40 text-gold-200 hover:bg-gold-500/10">Details</button>` } : null].filter(Boolean), one, { k: 't', dir: 'desc' }, lim);
+      hint = pvp ? 'Auf „Details“ klicken → Ausrüstung, Skills und Rüstung von dir und dem Gegner.' : hint;
     }
     const tabs = !pvp ? '<h2 class="font-display text-lg text-gold-300 mb-2">📜 Alle Kämpfe</h2>' : `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', pvp ? '🎯 Gegner' : '🪓 Ziele'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => segBtn('data-kbtab', k, l, tab === k, 'py-1.5')).join('')}</div>`;
     const more = lim && T.n > lim && tab !== 'march' ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(T.n - lim)} weitere)</button>` : '';
@@ -687,6 +695,212 @@ window.RokMods.battles = (R) => {
     el.querySelectorAll('[data-kbcum]').forEach(b => b.onclick = () => { st.cum = b.dataset.kbcum === '1'; savePassive(); renderKampf(); });
     el.querySelectorAll('[data-kbmarch]').forEach(sel => sel.addEventListener('change', (ev) => { st.march = ev.target.value; re(); }));
     el.querySelectorAll('[data-kbpick]').forEach(b => b.onclick = () => { st.march = b.dataset.kbpick; savePassive(); renderKampf(); setTimeout(() => $('kbMarchBox')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 0); });
+    el.querySelectorAll('[data-kbdetail]').forEach(b => b.onclick = () => { const [m, o] = b.dataset.kbdetail.split('|'); kdOpen(m, o); });
+  }
+
+  // ================= Heatmap: wo du kämpfst (Testversion) =================
+  // Kampfort aus dem Bericht (Attacks[].Pos) und deine Stadt (SelfChar.CastlePos) – Spiel-Koordinaten 0 … Kartengröße.
+  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', img: 'icons/map_heroic_anthem.jpg', size: 1200, pad: 1.1 }];
+  var HM_W = [['n', '⚔️ Kämpfe'], ['kp', '🏆 Kill Points'], ['loss', '🩸 Eigene Verluste'], ['kill', '💀 Gegner-Verluste']];
+  function hmCfg(st) { const h = (st.heat = st.heat || {}); h.map = h.map || HM_MAPS[0].k; h.w = h.w || 'n'; h.rot = +h.rot || 0; h.mir = !!h.mir; h.rad = +h.rad || 3; h.city = h.city !== false; return h; }
+  function hmMap(h) { return HM_MAPS.find(m => m.k === h.map) || HM_MAPS[0]; }
+  function hmXY(x, y, h, m) {   // Spiel-Koordinate → 0…1 auf dem Bild (Ausrichtung einstellbar, bis die Stadt stimmt)
+    let u = x / m.size, v = y / m.size;
+    if (h.mir) u = 1 - u;
+    for (let i = 0; i < h.rot; i++) { const t = u; u = 1 - v; v = t; }
+    const p = (m.pad || 0) / 100; return [p + u * (1 - 2 * p), p + (1 - v) * (1 - 2 * p)];
+  }
+  function hmWeight(r, w) { return w === 'kp' ? (+r.kill_points || 0) : w === 'loss' ? (+r.self_dead || 0) + (+r.self_severe || 0) : w === 'kill' ? (+r.enemy_dead || 0) + (+r.enemy_severe || 0) : 1; }
+  function hmIn(x, y) { const z = hmMap(hmCfg(kbSt())).size; return x != null && y != null && +x >= 0 && +y >= 0 && +x <= z && +y <= z; }
+  function hmPts(rows) { return rows.filter(r => hmIn(r.pos_x, r.pos_y)); }   // nur Kämpfe auf dieser Karte (andere Karten haben andere Größen)
+  function hmCity() { return kbRows.find(r => kbMine(r.player_id) && hmIn(r.city_x, r.city_y)); }
+  function hmSpots(rows, h, m) {   // Brennpunkte: Kämpfe in 30er-Feldern zusammenfassen
+    const g = new Map(), cs = 30;
+    hmPts(rows).forEach(r => { const k = Math.floor(r.pos_x / cs) + ',' + Math.floor(r.pos_y / cs); const o = g.get(k) || { x: 0, y: 0, n: 0, kp: 0, loss: 0, kill: 0, w: 0, last: '', mails: new Set() };
+      o.x += +r.pos_x; o.y += +r.pos_y; o.n++; o.kp += +r.kill_points || 0; o.loss += hmWeight(r, 'loss'); o.kill += hmWeight(r, 'kill'); o.w += hmWeight(r, h.w);
+      if ((r.battle_start || '') > o.last) o.last = r.battle_start || ''; o.mails.add(r.mail_id); g.set(k, o); });
+    return [...g.values()].map(o => ({ ...o, x: o.x / o.n, y: o.y / o.n })).sort((a, b) => b.w - a.w);
+  }
+  function hmHtml(rows, st, filters) {
+    const h = hmCfg(st), m = hmMap(h), pts = hmPts(rows), noPos = rows.filter(r => r.pos_x == null).length, outside = rows.length - pts.length - noPos;
+    const spots = hmSpots(rows, h, m).slice(0, 8), mx = spots[0]?.w || 1;
+    const seg = (attr, k, l, on) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${l}</button>`;
+    const city = hmCity();
+    return `<section class="panel rounded-2xl p-5 mt-4"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span> <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span></h2>
+      <p class="text-xs text-slate-400 mb-3">Wo du kämpfst – jeder PvP-Kampf aus deinen Berichten an seinem Ort auf der KvK-Karte. Filter (Zeitraum, Account, Marsch) gelten wie bei Battles, Ark of Osiris ist ausgeblendet.</p>
+      ${filters}
+      <div class="flex flex-wrap items-center gap-2 mb-3 text-xs">
+        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_W.map(([k, l]) => seg('data-hmw', k, l, h.w === k)).join('')}</div>
+        <label class="flex items-center gap-1 text-slate-400"><span>Radius</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label>
+        <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmcity ${h.city ? 'checked' : ''} class="accent-amber-400"> <span>Meine Stadt</span></label>
+        <span class="ml-auto flex items-center gap-1 text-slate-500"><span>Karte</span>: <span translate="no" class="text-slate-300">${esc(m.n)}</span>
+          <button type="button" data-hmrot class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="Karte um 90° drehen">⟳ <span>Drehen</span></button>
+          <button type="button" data-hmmir class="px-2 py-1 rounded-lg border ${h.mir ? 'border-gold-500/60 text-gold-200' : 'border-ink-600'} hover:border-gold-500/60" title="Karte spiegeln">⇋ <span>Spiegeln</span></button></span>
+      </div>
+      <div class="grid lg:grid-cols-[1fr_18rem] gap-4">
+        <div><div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950">
+          <img src="${esc(m.img)}" alt="" class="absolute inset-0 w-full h-full object-cover select-none" draggable="false" onerror="this.style.display='none';document.getElementById('hmNoImg')?.classList.remove('hidden')">
+          <div id="hmNoImg" class="hidden absolute inset-0 grid place-items-center text-sm text-slate-500 p-6 text-center">Kartenbild fehlt: ${esc(m.img)}</div>
+          <canvas id="hmCanvas" width="1000" height="1000" class="absolute inset-0 w-full h-full"></canvas>
+          <div id="hmTip" class="hidden absolute z-10 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
+        </div>
+        <div class="mt-1 text-[11px] text-slate-500">${fmt(pts.length)} <span>Kämpfe mit Ort</span>${outside > 0 ? ` · ${fmt(outside)} <span>auf anderen Karten (nicht angezeigt)</span>` : ''}${noPos ? ` · ${fmt(noPos)} <span>ohne Ort (ältere Uploads – der neue Uploader liest sie einmal neu ein)</span>` : ''}${!kbPosCols ? ' · <span class="text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</span>' : ''}</div>
+        <div class="mt-1 text-[11px] text-slate-500">${city ? `🏰 <span>Deine Stadt</span>: X ${Math.round(city.city_x)} · Y ${Math.round(city.city_y)} – <span>liegt der Punkt auf der Karte falsch, mit „Drehen“ / „Spiegeln“ ausrichten.</span>` : ''}</div></div>
+        <div><h3 class="font-display text-base text-gold-300 mb-2">📍 <span>Brennpunkte</span></h3>
+          ${spots.length ? spots.map((o, i) => `<button type="button" data-hmspot="${i}" class="w-full text-left rounded-xl border border-ink-700 bg-ink-950/60 hover:border-amber-500/60 p-2 mb-1.5">
+            <div class="flex items-center justify-between text-xs"><span class="font-semibold text-slate-100">#${i + 1} · X ${Math.round(o.x)} · Y ${Math.round(o.y)}</span><span class="text-slate-500">${o.last ? new Date(o.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span></div>
+            <div class="h-1.5 rounded bg-ink-800 mt-1 overflow-hidden"><div class="h-full" style="width:${Math.max(4, o.w / mx * 100)}%;background:linear-gradient(90deg,#f59e0b,#ef4444)"></div></div>
+            <div class="mt-1 text-[11px] text-slate-400 tabular-nums">⚔️ ${fmt(o.n)} · 🏆 ${short(o.kp)} · 🩸 ${short(o.loss)} · 💀 ${short(o.kill)}</div></button>`).join('')
+            : '<div class="text-xs text-slate-500">Noch keine Kämpfe mit Ort im Filter.</div>'}
+        </div></div></section>`;
+  }
+  function hmDraw(rows, st) {
+    const cv = $('hmCanvas'); if (!cv) return; const h = hmCfg(st), m = hmMap(h), ctx = cv.getContext('2d'), W = cv.width;
+    ctx.clearRect(0, 0, W, W);
+    const N = 250, grid = new Float32Array(N * N);   // Raster, danach weichzeichnen
+    hmPts(rows).forEach(r => { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); const gx = Math.floor(u * N), gy = Math.floor(v * N);
+      if (gx >= 0 && gy >= 0 && gx < N && gy < N) grid[gy * N + gx] += hmWeight(r, h.w); });
+    const sig = h.rad, R = Math.ceil(sig * 3), ker = []; for (let i = -R; i <= R; i++) ker.push(Math.exp(-(i * i) / (2 * sig * sig)));
+    const tmp = new Float32Array(N * N), out = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -R; k <= R; k++) { const xx = x + k; if (xx >= 0 && xx < N) a += grid[y * N + xx] * ker[k + R]; } tmp[y * N + x] = a; }
+    let max = 0; for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -R; k <= R; k++) { const yy = y + k; if (yy >= 0 && yy < N) a += tmp[yy * N + x] * ker[k + R]; } out[y * N + x] = a; if (a > max) max = a; }
+    if (max > 0) {
+      const img = ctx.createImageData(N, N), stops = [[0, [56, 189, 248]], [.35, [52, 211, 153]], [.6, [250, 204, 21]], [.8, [249, 115, 22]], [1, [239, 68, 68]]];
+      for (let i = 0; i < N * N; i++) { const t = Math.sqrt(out[i] / max); if (t < .04) continue;
+        let j = 1; while (j < stops.length - 1 && t > stops[j][0]) j++; const [t0, c0] = stops[j - 1], [t1, c1] = stops[j], f = Math.min(1, Math.max(0, (t - t0) / (t1 - t0)));
+        img.data[i * 4] = c0[0] + (c1[0] - c0[0]) * f; img.data[i * 4 + 1] = c0[1] + (c1[1] - c0[1]) * f; img.data[i * 4 + 2] = c0[2] + (c1[2] - c0[2]) * f; img.data[i * 4 + 3] = Math.min(225, 60 + t * 200); }
+      const off = document.createElement('canvas'); off.width = off.height = N; off.getContext('2d').putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(off, 0, 0, W, W);
+    }
+    // einzelne Kämpfe als kleine Punkte
+    ctx.fillStyle = 'rgba(255,255,255,.85)';
+    hmPts(rows).forEach(r => { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); ctx.beginPath(); ctx.arc(u * W, v * W, 2.2, 0, 7); ctx.fill(); });
+    const city = h.city && hmCity();
+    if (city) { const [u, v] = hmXY(+city.city_x, +city.city_y, h, m); ctx.font = '34px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeStyle = '#f5c542'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(u * W, v * W, 24, 0, 7); ctx.stroke(); ctx.fillText('🏰', u * W, v * W); }
+    if (st._hmSel != null) { const o = hmSpots(rows, h, m)[st._hmSel]; if (o) { const [u, v] = hmXY(o.x, o.y, h, m); ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.arc(u * W, v * W, 40, 0, 7); ctx.stroke(); ctx.setLineDash([]); } }
+  }
+  function hmBind(el, rows, st) {
+    const h = hmCfg(st), re = () => { savePassive(); renderKampf(); };
+    el.querySelectorAll('[data-hmw]').forEach(b => b.onclick = () => { h.w = b.dataset.hmw; re(); });
+    el.querySelector('[data-hmrad]')?.addEventListener('input', (ev) => { h.rad = +ev.target.value; hmDraw(rows, st); });
+    el.querySelector('[data-hmrad]')?.addEventListener('change', () => savePassive());
+    el.querySelector('[data-hmcity]')?.addEventListener('change', (ev) => { h.city = ev.target.checked; savePassive(); hmDraw(rows, st); });
+    el.querySelector('[data-hmrot]')?.addEventListener('click', () => { h.rot = (h.rot + 1) % 4; re(); });
+    el.querySelector('[data-hmmir]')?.addEventListener('click', () => { h.mir = !h.mir; re(); });
+    el.querySelectorAll('[data-hmspot]').forEach(b => b.onclick = () => { st._hmSel = st._hmSel === +b.dataset.hmspot ? null : +b.dataset.hmspot; hmDraw(rows, st); });
+    // Tooltip: Kämpfe in der Nähe der Maus
+    const box = $('hmBox'), tip = $('hmTip'), m = hmMap(h);
+    box?.addEventListener('mousemove', (ev) => { const bb = box.getBoundingClientRect(), u = (ev.clientX - bb.left) / bb.width, v = (ev.clientY - bb.top) / bb.height;
+      const near = hmPts(rows).filter(r => { const [a, b] = hmXY(+r.pos_x, +r.pos_y, h, m); return Math.hypot(a - u, b - v) < .02; });
+      if (!near.length) { tip.classList.add('hidden'); return; }
+      const kp = near.reduce((s, r) => s + (+r.kill_points || 0), 0), en = [...new Set(near.map(r => r.enemy_name).filter(Boolean))].slice(0, 3);
+      tip.innerHTML = `⚔️ ${fmt(near.length)} <span>Kämpfe</span> · 🏆 ${short(kp)}<br><span class="text-slate-400">X ${Math.round(near[0].pos_x)} · Y ${Math.round(near[0].pos_y)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}`;
+      tip.style.left = Math.min(bb.width - 170, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
+    box?.addEventListener('mouseleave', () => tip.classList.add('hidden'));
+  }
+
+  // ================= Detailansicht eines Kampfes (Ausrüstung, Skills, Rüstung – du und Gegner) =================
+  var kdCache = {}, kdCur = null, kdChart = null;
+  var KD_SLOTS = ['', 'Waffe', 'Helm', 'Brust', 'Handschuhe', 'Beine', 'Stiefel', 'Zubehör', 'Zubehör'];
+  var KD_SLOT_ICON = ['', '⚔️', '⛑️', '🛡️', '🧤', '👖', '👢', '💍', '💍'];
+  function kdLang() { try { return window.I18N?.lang?.() === 'en' ? 0 : 1; } catch { return 1; } }
+  function kdNm(en, de, fb) { const l = kdLang(); const v = (l ? de : en) || en || de; return v ? esc(v) : esc(fb); }
+  async function kdOpen(mail, opp) {
+    kdCur = { mail, opp };
+    const key = mail + '|' + opp, row = (kbRows || []).find(r => String(r.mail_id) === mail && String(r.opponent_id) === opp) || {};
+    kdRender(row, kdCache[key], !kdCache[key]);
+    if (kdCache[key] !== undefined) return;
+    try { const db = RokAuth?.db?.(); if (!db) throw new Error('offline');
+      const { data, error } = await db.from('rok_battles').select('detail').eq('mail_id', mail).eq('opponent_id', opp).maybeSingle();
+      if (error) throw error;
+      kdCache[key] = data?.detail || null;
+    } catch (e) { kdCache[key] = { err: /detail/i.test(e?.message || '') ? 'col' : (e?.message || String(e)) }; }
+    if (kdCur && kdCur.mail === mail && kdCur.opp === opp) kdRender(row, kdCache[key], false);
+  }
+  function kdClose() { kdCur = null; try { kdChart?.destroy(); } catch {} kdChart = null; $('kdModal')?.remove(); document.body.style.overflow = ''; }
+  window.addEventListener('langchange', () => { if (kdCur) kdOpen(kdCur.mail, kdCur.opp); });
+  function kdBuffSum(arm) {   // alle Rüstungswerte zusammengezählt
+    const m = new Map();
+    (arm || []).forEach(a => (a[5] || []).forEach(b => { const o = m.get(b[0]) || { v: 0, en: b[2], de: b[3] }; o.v += +b[1] || 0; m.set(b[0], o); }));
+    return [...m.entries()].sort((a, b) => b[1].v - a[1].v);
+  }
+  function kdHero(h, main) {
+    if (!h) return '';
+    const sk = (h.sk || []).map(s => `<span class="inline-flex items-center gap-1 rounded-md border ${s[1] >= 5 ? 'border-gold-500/50 text-gold-200' : 'border-ink-600 text-slate-300'} px-1.5 py-0.5 text-[10px]" title="Skill ${esc(s[0])}"><b class="tabular-nums">${esc(s[1])}</b> <span translate="no">${kdNm(s[2], s[3], 'Skill ' + s[0])}</span></span>`).join(' ');
+    return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 mb-2">
+      <div class="flex items-center justify-between gap-2"><div class="font-semibold text-slate-100"><span>${main ? 'Hauptkommandant' : 'Nebenkommandant'}</span>: <span translate="no" class="text-gold-200">${kdNm(h.n?.[0], h.n?.[1], '#' + h.id)}</span></div>
+      <div class="text-[11px] text-slate-400 whitespace-nowrap"><span>Lv</span> ${esc(h.lv ?? '–')} · ${'★'.repeat(Math.min(+h.st || 0, 6))}${h.aw ? ' · <span class="text-sky-300">erweckt</span>' : ''}</div></div>
+      <div class="mt-2 flex flex-wrap gap-1">${sk || '<span class="text-[11px] text-slate-500">Keine Skills im Bericht.</span>'}</div></div>`;
+  }
+  function kdSide(sd, title, col) {
+    if (!sd) return `<div class="text-sm text-slate-500">Keine Daten.</div>`;
+    const gear = (sd.gear || []).map(g => `<div class="flex items-center gap-2 py-1 border-b border-ink-800/60 last:border-0"><span class="w-6 text-center">${KD_SLOT_ICON[g[0]] || '•'}</span><span class="text-[10px] text-slate-500 w-20 shrink-0">${esc(KD_SLOTS[g[0]] || g[0])}</span><span translate="no" class="text-slate-100 flex-1">${kdNm(g[3], g[4], '#' + g[1])}</span>${g[2] ? `<span class="text-[10px] tabular-nums rounded px-1 border border-ink-600 text-slate-400" title="Zusatzwert aus dem Bericht (vermutlich kritische Werte / Erweckung)">${esc(g[2])}</span>` : ''}</div>`).join('');
+    const arm = (sd.arm || []).map(a => `<div class="py-1.5 border-b border-ink-800/60 last:border-0"><div class="flex flex-wrap items-center gap-1"><span translate="no" class="text-slate-100 font-medium">${kdNm(a[2], a[3], '#' + a[1])}</span>${(a[4] || []).map(x => `<span translate="no" class="rounded-md bg-violet-500/15 border border-violet-500/40 text-violet-200 px-1.5 py-0.5 text-[10px]">${kdNm(x[1], x[2], '#' + x[0])}</span>`).join('')}</div>
+      <div class="text-[11px] text-slate-400 mt-0.5">${(a[5] || []).map(b => `<span translate="no">${kdNm(b[2], b[3], '#' + b[0])}</span> <b class="text-emerald-300 tabular-nums">+${dec((+b[1] || 0) * 100, 1)} %</b>`).join(' · ')}</div></div>`).join('');
+    const sum = kdBuffSum(sd.arm).map(([id, o]) => `<span class="inline-flex gap-1 rounded-md border border-ink-600 px-1.5 py-0.5 text-[10px]"><span translate="no">${kdNm(o.en, o.de, '#' + id)}</span> <b class="text-emerald-300 tabular-nums">+${dec(o.v * 100, 1)} %</b></span>`).join(' ');
+    return `<div class="min-w-0">
+      <div class="flex items-baseline gap-2 mb-2"><h3 class="font-display text-lg" style="color:${col}">${title}</h3><span class="text-sm text-slate-200" translate="no">${sd.abbr ? `[${esc(sd.abbr)}] ` : ''}${esc(sd.name || '–')}</span>${sd.city ? `<span class="text-[11px] text-slate-500"><span>Rathaus</span> ${esc(sd.city)}</span>` : ''}</div>
+      ${kdHero(sd.h1, true)}${kdHero(sd.h2, false)}
+      <div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 mb-2"><div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Ausrüstung</div>${gear || '<div class="text-[11px] text-slate-500">Keine Ausrüstung im Bericht.</div>'}</div>
+      <div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Rüstung &amp; Inschriften</div>${arm || '<div class="text-[11px] text-slate-500">Keine Rüstung im Bericht.</div>'}
+        ${sum ? `<div class="mt-2 pt-2 border-t border-ink-700"><div class="text-[10px] text-slate-500 mb-1">Rüstung gesamt</div><div class="flex flex-wrap gap-1">${sum}</div></div>` : ''}</div></div>`;
+  }
+  function kdStats(d, row) {
+    const o = d.own || {}, p = d.opp || {}, ab = v => Math.abs(+v || 0);
+    const line = (l, a, b, good, fmtf) => { const f = fmtf || fmt; const x = +a || 0, y = +b || 0;
+      const wa = x === y ? null : good === 1 ? x > y : good === -1 ? x < y : null;
+      return `<tr class="border-b border-ink-800/60"><td class="py-1.5 px-2 text-slate-300">${l}</td><td class="py-1.5 px-2 text-right tabular-nums ${wa === true ? 'text-emerald-300' : wa === false ? 'text-red-300' : 'text-slate-200'}">${a == null ? '–' : f(a)}</td><td class="py-1.5 px-2 text-right tabular-nums ${wa === false ? 'text-emerald-300' : wa === true ? 'text-red-300' : 'text-slate-200'}">${b == null ? '–' : f(b)}</td></tr>`; };
+    const pct = (a, t) => t ? dec(a / t * 100, 0) + ' %' : '–';
+    // Schaden, den eine Seite verursacht hat = Machtverlust der anderen Seite (aufgeteilt in Skills und Normalangriff)
+    const dealtMe = ab(p.Power), dealtEn = ab(o.Power);
+    const bar = (sk, at, tot, c) => tot ? `<div class="flex h-2 rounded overflow-hidden bg-ink-800 mt-1"><div style="width:${sk / tot * 100}%;background:${c}"></div><div style="width:${at / tot * 100}%;background:#64748b"></div></div>` : '';
+    return `<div class="overflow-x-auto rounded-lg border border-ink-700"><table class="w-full text-xs"><thead class="text-[10px] uppercase tracking-wider text-slate-400"><tr class="border-b border-ink-700"><th class="py-2 px-2 text-left font-medium">Wert</th><th class="py-2 px-2 text-right font-medium text-gold-300">Du</th><th class="py-2 px-2 text-right font-medium text-red-300">Gegner</th></tr></thead><tbody>
+      ${line('Truppen zu Beginn', o.InitMax, p.InitMax, 0)}
+      ${line('Übrig am Ende', o.Cnt, p.Cnt, 0)}
+      ${line('Verwundet', o.Hurt, p.Hurt, -1)}
+      ${line('Schwer verwundet', o.BadHurt, p.BadHurt, -1)}
+      ${line('Tote', o.Death, p.Death, -1)}
+      ${line('Heilung', o.Healing, p.Healing, 1)}
+      ${line('Kill Points', o.KillScore, p.KillScore, 1)}
+      ${line('Power verloren', ab(o.Power), ab(p.Power), -1)}
+      ${line('… durch Skills', ab(o.SkillPower), ab(p.SkillPower), -1)}
+      ${line('… durch Normalangriffe', ab(o.AtkPower), ab(p.AtkPower), -1)}
+      </tbody></table></div>
+      <div class="grid sm:grid-cols-2 gap-2 mt-3">
+        <div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">Dein Schaden (Power beim Gegner)</div><div class="text-lg font-semibold text-gold-300 tabular-nums">${short(dealtMe)}</div>
+          <div class="text-[11px] text-slate-400"><span>Skills</span> <b class="text-gold-200">${pct(ab(p.SkillPower), dealtMe)}</b> · <span>Normalangriff</span> <b>${pct(ab(p.AtkPower), dealtMe)}</b></div>${bar(ab(p.SkillPower), ab(p.AtkPower), dealtMe, '#f5c542')}</div>
+        <div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">Schaden des Gegners (deine Power)</div><div class="text-lg font-semibold text-red-300 tabular-nums">${short(dealtEn)}</div>
+          <div class="text-[11px] text-slate-400"><span>Skills</span> <b class="text-red-200">${pct(ab(o.SkillPower), dealtEn)}</b> · <span>Normalangriff</span> <b>${pct(ab(o.AtkPower), dealtEn)}</b></div>${bar(ab(o.SkillPower), ab(o.AtkPower), dealtEn, '#f87171')}</div>
+      </div>`;
+  }
+  function kdRender(row, d, loading) {
+    let m = $('kdModal');
+    if (!m) { m = document.createElement('div'); m.id = 'kdModal'; m.className = 'fixed inset-0 z-[80] bg-black/70 backdrop-blur-sm overflow-y-auto p-2 sm:p-6'; document.body.appendChild(m); document.body.style.overflow = 'hidden';
+      m.addEventListener('click', (ev) => { if (ev.target === m || ev.target.closest('[data-kdclose]')) kdClose(); });
+      document.addEventListener('keydown', function esc_(ev) { if (ev.key === 'Escape') { kdClose(); document.removeEventListener('keydown', esc_); } }); }
+    const t = row.battle_start ? new Date(row.battle_start).toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' }) : '';
+    let body;
+    if (loading) body = '<div class="py-10 text-center text-sm text-slate-400">Lade Details …</div>';
+    else if (d && d.err === 'col') body = '<div class="py-8 text-center text-sm text-amber-200">Die Spalte „detail“ fehlt noch in Supabase. Bitte zuerst das neue SQL ausführen.</div>';
+    else if (d && d.err) body = `<div class="py-8 text-center text-sm text-red-300">${esc(d.err)}</div>`;
+    else if (!d) body = '<div class="py-8 text-center text-sm text-slate-400">Für diesen Kampf gibt es noch keine Details. Der neue Uploader liest alle Berichte auf dem PC einmal neu ein – danach sind sie da.</div>';
+    else body = `<div class="grid lg:grid-cols-2 gap-4 mb-4">${kdSide(d.self, 'Du', '#f5c542')}${kdSide(d.enemy, 'Gegner', '#f87171')}</div>
+      <h3 class="font-display text-lg text-gold-300 mb-2">📊 Kampfwerte</h3>${kdStats(d, row)}
+      ${(d.samples || []).length > 2 ? `<h3 class="font-display text-lg text-gold-300 mt-4 mb-1">📉 Deine Truppen im Kampfverlauf</h3><div class="text-[11px] text-slate-500 mb-2">${d.fights > 1 ? `<span>Ganzer Bericht mit</span> ${fmt(d.fights)} <span>Gegnern</span> · ` : ''}<span>Rote Punkte = Zeit gegen diesen Gegner.</span></div><div class="h-48"><canvas id="kdChart"></canvas></div>` : ''}`;
+    m.innerHTML = `<div class="panel rounded-2xl p-4 sm:p-6 max-w-6xl mx-auto">
+      <div class="flex items-start justify-between gap-3 mb-4"><div><h2 class="font-display text-xl text-gold-300">⚔️ Kampfdetails</h2>
+        <div class="text-xs text-slate-400 mt-0.5"><span translate="no">${esc(row.self_name || '')}</span> <span>gegen</span> <span translate="no" class="text-red-200">${row.enemy_alliance ? `[${esc(row.enemy_alliance)}] ` : ''}${esc(row.enemy_name || '')}</span>${t ? ' · ' + esc(t) : ''}</div></div>
+        <button type="button" data-kdclose class="px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-sm">✕ <span>Schließen</span></button></div>${body}</div>`;
+    try { kdChart?.destroy(); } catch {} kdChart = null;
+    const c = $('kdChart');
+    if (c && window.Chart && d?.samples) {
+      const t0 = d.t0, t1 = d.t0 != null && d.ticks != null ? d.t0 + d.ticks : null;
+      kdChart = new Chart(c, { type: 'line', data: { labels: d.samples.map(s => s[0] - d.samples[0][0] + ' s'), datasets: [
+        { label: 'Truppen', data: d.samples.map(s => s[1]), borderColor: '#f5c542', backgroundColor: '#f5c54222', fill: true, tension: .25, pointRadius: d.samples.map(s => t0 != null && s[0] >= t0 && s[0] <= t1 ? 3 : 0), pointBackgroundColor: '#f87171', borderWidth: 2 }] },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (x) => fmt(x.raw) } } },
+          scales: { y: { ticks: { callback: (v) => short(v), color: '#64748b' }, grid: { color: 'rgba(148,163,184,.08)' } }, x: { ticks: { maxTicksLimit: 10, color: '#64748b' }, grid: { display: false } } } } });
+    }
   }
   R.viewHooks.battles = () => renderKampf();
   if (R.view === 'battles') renderKampf();
