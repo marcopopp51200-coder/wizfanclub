@@ -47,7 +47,16 @@
     'Häufigster PvP-Kommandant (ID)': 'Most used PvP commander (ID)', 'Name des Kommandanten (optional)': 'Commander name (optional)',
     'Ark-Spiele': 'Ark games', 'Ark-Siege': 'Ark wins', 'Ark-Bestwert': 'Ark best score', 'Bekommene Menge': 'Amount received',
     'Macht-Zuwachs am stärksten Tag': 'Power gain on the strongest day', 'Kampf': 'Combat', 'PvE': 'PvE', 'Wirtschaft': 'Economy', 'Aktivität': 'Activity', 'Freunde': 'Friends', 'Meilensteine': 'Milestones',
-    '— wählen —': '— choose —', 'Typ': 'Type', 'Mrd.': 'B', 'Mio.': 'M', 'Tsd.': 'K', 'seit': 'since',
+    '— wählen —': '— choose —',
+    'Deine Reise begann am': 'Your journey began on', 'Start-Kultur': 'Starting civilization', 'Start-Königreich': 'Starting kingdom', 'Migrationen': 'Migrations', 'Kulturwechsel': 'Civilization changes',
+    'aller Statthalter': 'of all governors', 'Sammelzüge': 'Gathering trips', 'Meiste Ressource': 'Most gathered resource', 'Edelsteine erhalten': 'Gems received', 'Sammeln': 'Gathering',
+    'Nahrung': 'Food', 'Holz': 'Wood', 'Stein': 'Stone', 'Gold': 'Gold', 'Edelsteine': 'Gems',
+    'Raid-Boss Siege': 'Raid boss wins', 'Gelehrter-Teilnahmen': 'Lyceum participations', 'Raid-Boss Teilnahmen': 'Raid boss participations', 'Unvergleichlicher Gelehrter': 'Lyceum of Wisdom', 'Ark-Durchschnitt': 'Ark average',
+    'Deine Allianz': 'Your alliance', 'Tage Seite an Seite': 'days side by side', 'Zeit für andere gespart': 'Time saved for others', 'Hilfe bekommen': 'Help received',
+    'Allianz mit den meisten Tagen': 'Alliance with the most days', 'Tage in der Allianz': 'Days in the alliance', 'Durch deine Hilfe gespart (Sek.)': 'Saved through your help (sec.)', 'Durch Hilfe bekommen (Sek.)': 'Received through help (sec.)',
+    'Geschickte Menge': 'Amount sent', 'Tägliche Aufgaben': 'Daily quests', 'Tägliche Aufgaben (Ø)': 'Daily quests (avg)', 'Ressourcen in Macht gesteckt': 'Resources invested in power', 'davon gesammelt': 'of it gathered',
+    'Du gehörst zu den Besten': 'You are among the best', 'Ranglisten': 'Rankings', 'Top % Kill-Differenz': 'Top % kill difference', 'Top % Sammeln': 'Top % gathering', 'Top % Edelsteine': 'Top % gems', 'Top % Chat': 'Top % chat', 'Top % Tägliche Aufgaben': 'Top % daily quests',
+    'z. B. 0,027': 'e.g. 0.027', 'Start-Königreich': 'Starting kingdom', 'Typ': 'Type', 'Mrd.': 'B', 'Mio.': 'M', 'Tsd.': 'K', 'seit': 'since',
   };
   function hookI18n() { try { const t = window.I18N?.translations?.en?.texts; if (t) Object.keys(EN).forEach(k => { if (t[k] == null) t[k] = EN[k]; }); } catch {} }
   hookI18n();
@@ -58,13 +67,21 @@
     ['pvp.battles', 'PvP-Kämpfe gesamt', 'int', 'Kampf'], ['pvp.wins', 'davon gewonnen', 'int', 'Kampf'], ['pvp.killDiff', 'Kill-Differenz', 'int', 'Kampf'],
     ['cmd.id', 'Häufigster PvP-Kommandant (ID)', 'text', 'Kampf'], ['cmd.name', 'Name des Kommandanten (optional)', 'text', 'Kampf'],
     ['barb.kills', 'Barbaren getötet', 'int', 'PvE'], ['barb.maxLevel', 'Höchstes Barbaren-Level', 'int', 'PvE'], ['barb.forts', 'Barbarenfestungen', 'int', 'PvE'],
-    ['ark.games', 'Ark-Spiele', 'int', 'PvE'], ['ark.wins', 'Ark-Siege', 'int', 'PvE'], ['ark.best', 'Ark-Bestwert', 'int', 'PvE'],
-    ['res.gathered', 'Ressourcen gesammelt', 'int', 'Wirtschaft'], ['troops.trained', 'Truppen gesamt', 'int', 'Wirtschaft'],
+    ['ark.games', 'Ark-Spiele', 'int', 'PvE'], ['ark.wins', 'Ark-Siege', 'int', 'PvE'], ['ark.best', 'Ark-Bestwert', 'int', 'PvE'], ['ark.avg', 'Ark-Durchschnitt', 'int', 'PvE'],
+    ['raid.joined', 'Raid-Boss Teilnahmen', 'int', 'PvE'], ['raid.won', 'Raid-Boss Siege', 'int', 'PvE'], ['scholar.joined', 'Unvergleichlicher Gelehrter', 'int', 'PvE'],
+    ['res.gathered', 'Ressourcen gesammelt', 'int', 'Wirtschaft'], ['res.trips', 'Sammelzüge', 'int', 'Wirtschaft'], ['res.topType', 'Meiste Ressource', 'res', 'Wirtschaft'], ['res.topSum', 'davon gesammelt', 'int', 'Wirtschaft'],
+    ['res.gems', 'Edelsteine erhalten', 'int', 'Wirtschaft'], ['res.powerInvest', 'Ressourcen in Macht gesteckt', 'int', 'Wirtschaft'], ['troops.trained', 'Truppen gesamt', 'int', 'Wirtschaft'],
     ['troops.topType', 'Meiste Truppenart', 'type', 'Wirtschaft'], ['troops.topCount', 'davon ausgebildet', 'int', 'Wirtschaft'],
-    ['online.hours', 'Stunden online', 'int', 'Aktivität'], ['online.days', 'Login-Tage', 'int', 'Aktivität'], ['online.chat', 'Chatnachrichten', 'int', 'Aktivität'], ['online.vip', 'VIP-Stufe', 'int', 'Aktivität'],
-    ['give.sentTo', 'Meiste Ressourcen geschickt an', 'text', 'Freunde'], ['give.fromName', 'Meiste Ressourcen bekommen von', 'text', 'Freunde'], ['give.fromAmount', 'Bekommene Menge', 'int', 'Freunde'],
-    ['acc.created', 'Account angelegt am', 'date', 'Meilensteine'], ['acc.bestDay', 'Stärkster Tag', 'date', 'Meilensteine'], ['acc.bestGain', 'Macht-Zuwachs am stärksten Tag', 'int', 'Meilensteine'],
+    ['online.hours', 'Stunden online', 'int', 'Aktivität'], ['online.days', 'Login-Tage', 'int', 'Aktivität'], ['online.chat', 'Chatnachrichten', 'int', 'Aktivität'], ['online.vip', 'VIP-Stufe', 'int', 'Aktivität'], ['online.quests', 'Tägliche Aufgaben (Ø)', 'int', 'Aktivität'],
+    ['alliance.name', 'Allianz mit den meisten Tagen', 'text', 'Freunde'], ['alliance.days', 'Tage in der Allianz', 'int', 'Freunde'],
+    ['help.givenSec', 'Durch deine Hilfe gespart (Sek.)', 'int', 'Freunde'], ['help.gotSec', 'Durch Hilfe bekommen (Sek.)', 'int', 'Freunde'],
+    ['give.sentTo', 'Meiste Ressourcen geschickt an', 'text', 'Freunde'], ['give.sentAmount', 'Geschickte Menge', 'int', 'Freunde'], ['give.fromName', 'Meiste Ressourcen bekommen von', 'text', 'Freunde'], ['give.fromAmount', 'Bekommene Menge', 'int', 'Freunde'],
+    ['acc.created', 'Account angelegt am', 'date', 'Meilensteine'], ['acc.civ', 'Start-Kultur', 'text', 'Meilensteine'], ['acc.civChanges', 'Kulturwechsel', 'int', 'Meilensteine'],
+    ['acc.kingdomStart', 'Start-Königreich', 'int', 'Meilensteine'], ['acc.migrations', 'Migrationen', 'int', 'Meilensteine'], ['acc.bestDay', 'Stärkster Tag', 'date', 'Meilensteine'], ['acc.bestGain', 'Macht-Zuwachs am stärksten Tag', 'int', 'Meilensteine'],
+    ['top.killDiff', 'Top % Kill-Differenz', 'top', 'Ranglisten'], ['top.gather', 'Top % Sammeln', 'top', 'Ranglisten'], ['top.gems', 'Top % Edelsteine', 'top', 'Ranglisten'],
+    ['top.chat', 'Top % Chat', 'top', 'Ranglisten'], ['top.quests', 'Top % Tägliche Aufgaben', 'top', 'Ranglisten'],
   ];
+  const RES = { food: ['🌽', 'Nahrung'], wood: ['🪵', 'Holz'], stone: ['🪨', 'Stein'], gold: ['🪙', 'Gold'], gems: ['💎', 'Edelsteine'] };
   const TROOP = { 1: ['🛡️', 'Infanterie'], 2: ['🐎', 'Kavallerie'], 3: ['🏹', 'Bogenschützen'], 4: ['🪨', 'Belagerung'] };
 
   // ---------- Helfer ----------
@@ -78,6 +95,11 @@
   const shortTxt = (n) => { const [a, b] = shortParts(n); return b ? `${a} ${tr(b)}` : a; };
   const dateDe = (iso) => { const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso || ''); };
   const dateIso = (s) => { s = String(s || '').trim(); let m = s.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`; m = s.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : s; };
+  const numDec = (v) => { const n = parseFloat(String(v ?? '').replace(/\s/g, '').replace(',', '.')); return isFinite(n) ? n : 0; };
+  // Anteil der besseren Statthalter (0,00027) → „Top 0,027 %“
+  const topTxt = (v) => { const p = Number(v) * 100; return 'Top ' + de(p, p < 0.1 ? 3 : p < 1 ? 2 : 1) + ' %'; };
+  const hrs = (sec) => de(num(sec) / 3600);
+  const enOr = (de_, en_) => { try { return window.I18N?.lang?.() === 'en' && en_ ? en_ : de_; } catch { return de_; } };
   const has = (v) => v != null && v !== '' && !(typeof v === 'number' && !isFinite(v));
   const daysOfYear = (d) => Math.max(1, num(d?.online?.days) || 365);
 
@@ -103,7 +125,7 @@
       #mwStory .mw-note { font-size:.92rem; opacity:.85; }
       #mwStory .mw-chip { display:flex; flex-direction:column; gap:.1rem; padding:.7rem .8rem; border-radius:1rem; background:rgba(0,0,0,.22); backdrop-filter:blur(4px); }
       #mwStory .mw-chip b { font-size:1.35rem; font-weight:900; letter-spacing:-.02em; }
-      #mwStory .mw-chip span { overflow-wrap:anywhere; font-size:.72rem; font-weight:600; opacity:.8; text-transform:uppercase; letter-spacing:.04em; }
+      #mwStory .mw-chip > span { overflow-wrap:anywhere; font-size:.72rem; font-weight:600; opacity:.8; text-transform:uppercase; letter-spacing:.04em; }
       #mwStory .mw-emoji { position:absolute; font-size:9rem; opacity:.16; right:-1.2rem; bottom:-1rem; transform:rotate(-12deg); pointer-events:none; animation:mwFloat 6s ease-in-out infinite; }
       @keyframes mwFloat { 50% { transform:rotate(-6deg) translateY(-10px); } }
       #mwStory .mw-blob { position:absolute; border-radius:50%; filter:blur(40px); opacity:.55; pointer-events:none; animation:mwBlob 9s ease-in-out infinite alternate; }
@@ -164,6 +186,20 @@
       <div class="mw-sub mw-in mt-4" ${dl(2)}><span>in Rise of Kingdoms</span></div>
       <div class="mw-note mw-in mt-6" ${dl(3)}><span translate="no">${esc(meta.name || '')}</span>${meta.kingdom ? ` · <span>Königreich</span> <span translate="no">#${esc(meta.kingdom)}</span>` : ''}</div>
       <div class="mw-note mw-in mt-10" ${dl(4)}><span>Antippen: rechts weiter, links zurück</span></div>`);
+    // Reise: Start, Kultur, Königreich
+    if (has(d.acc?.created) || has(d.acc?.civ) || has(d.acc?.kingdomStart)) {
+      const since = has(d.acc?.created) ? Math.floor((Date.now() - new Date(dateIso(d.acc.created) + 'T00:00:00').getTime()) / 864e5) : 0;
+      push(BG[10], '🧭', `
+        <div class="mw-kick mw-in" ${dl(0)}><span>Deine Reise begann am</span></div>
+        <div class="mw-big mw-pop mt-2" style="animation-delay:0.37s;font-size:clamp(2rem,10vw,3.1rem)">${esc(dateDe(dateIso(d.acc?.created)))}</div>
+        ${since > 0 ? `<div class="mw-sub mw-in mt-3" ${dl(2)}><b>${de(since)}</b> <span>Tage dabei</span></div>` : ''}
+        <div class="grid grid-cols-2 gap-2 mt-6">
+          ${has(d.acc?.civ) ? chip(`<span translate="no">${esc(enOr(d.acc.civ, d.acc.civ_en))}</span>`, 'Start-Kultur', 3) : ''}
+          ${has(d.acc?.kingdomStart) ? chip('#' + esc(d.acc.kingdomStart), 'Start-Königreich', 4) : ''}
+          ${has(d.acc?.migrations) ? chip(de(d.acc.migrations), 'Migrationen', 5) : ''}
+          ${has(d.acc?.civChanges) ? chip(de(d.acc.civChanges), 'Kulturwechsel', 6) : ''}
+        </div>`);
+    }
     // 2 · Online
     if (has(d.online?.hours)) {
       const h = num(d.online.hours);
@@ -189,14 +225,15 @@
         <div class="grid grid-cols-2 gap-2 mt-5">
           ${has(d.pvp?.wins) ? chip(de(w), 'Siege', 3) : ''}
           ${has(d.pvp?.wins) && b ? chip(de(w / b * 100, 1) + ' %', 'Siegquote', 4) : ''}
-          ${has(d.pvp?.killDiff) ? `<div class="col-span-2">${chip('+' + shortTxt(d.pvp.killDiff), 'Kill-Differenz', 5)}</div>` : ''}
+          ${has(d.pvp?.killDiff) ? `<div class="${has(d.top?.killDiff) ? '' : 'col-span-2'}">${chip('+' + shortTxt(d.pvp.killDiff), 'Kill-Differenz', 5)}</div>` : ''}
+          ${has(d.top?.killDiff) ? chip(topTxt(d.top.killDiff), 'aller Statthalter', 6) : ''}
         </div>`);
     }
     // 4 · Kommandant
     if (has(d.cmd?.id) || has(d.cmd?.name)) {
       push(BG[3], '🗡️', `
         <div class="mw-kick mw-in" ${dl(0)}><span>Dein Partner auf dem Schlachtfeld</span></div>
-        <div class="mw-big mw-pop mt-4" translate="no" style="animation-delay:${(0.15 + 1 * 0.22).toFixed(2)}s;font-size:clamp(2.4rem,11vw,3.6rem)">${has(d.cmd?.name) ? esc(d.cmd.name) : '#' + esc(d.cmd.id)}</div>
+        <div class="mw-big mw-pop mt-4" translate="no" style="animation-delay:${(0.15 + 1 * 0.22).toFixed(2)}s;font-size:clamp(2.4rem,11vw,3.6rem)">${has(d.cmd?.name) ? esc(enOr(d.cmd.name, d.cmd.name_en)) : '#' + esc(d.cmd.id)}</div>
         <div class="mw-sub mw-in mt-4" ${dl(2)}><span>Dein häufigster PvP-Kommandant</span></div>
         ${has(d.cmd?.name) && has(d.cmd?.id) ? `<div class="mw-note mw-in mt-2" ${dl(3)}><span>Kommandant</span> <span translate="no">ID ${esc(d.cmd.id)}</span></div>` : ''}`);
     }
@@ -220,7 +257,13 @@
         <div class="mw-kick mw-in" ${dl(0)}><span>Deine Sammeltrupps waren fleißig</span></div>
         <div class="mw-big mw-pop mt-2" ${dl(1)}>${cnt(g, 'short')}</div>
         <div class="mw-sub mw-in" ${dl(1)}><span>Ressourcen gesammelt</span></div>
-        <div class="mw-note mw-in mt-5" ${dl(2)}><b>≈ ${shortTxt(g / days)}</b> <span>pro Tag – jeden Tag, das ganze Jahr</span></div>`);
+        <div class="mw-note mw-in mt-3" ${dl(2)}><b>≈ ${shortTxt(g / days)}</b> <span>pro Tag – jeden Tag, das ganze Jahr</span></div>
+        <div class="grid grid-cols-2 gap-2 mt-5">
+          ${has(d.res?.trips) ? chip(de(d.res.trips), 'Sammelzüge', 3) : ''}
+          ${RES[d.res?.topType] ? chip(`${RES[d.res.topType][0]} <span>${RES[d.res.topType][1]}</span>`, 'Meiste Ressource', 4) : ''}
+          ${has(d.res?.gems) ? chip(shortTxt(d.res.gems), 'Edelsteine erhalten', 5) : ''}
+          ${has(d.top?.gather) ? chip(topTxt(d.top.gather), 'Sammeln', 6) : ''}
+        </div>`);
     }
     // 7 · Truppen
     if (has(d.troops?.trained)) {
@@ -242,13 +285,27 @@
         <div class="grid grid-cols-2 gap-2 mt-6">
           ${has(d.ark?.wins) ? chip(de(w) + (g ? ` · ${de(w / g * 100)} %` : ''), 'Siege', 2) : ''}
           ${has(d.ark?.best) ? chip(de(d.ark.best), 'Bestwert', 3) : ''}
+          ${has(d.raid?.joined) ? chip(`${de(d.raid.won || 0)} / ${de(d.raid.joined)}`, 'Raid-Boss Siege', 4) : ''}
+          ${has(d.scholar?.joined) ? chip(de(d.scholar.joined), 'Gelehrter-Teilnahmen', 5) : ''}
+        </div>`);
+    }
+    // Allianz & Hilfe
+    if (has(d.alliance?.name) || has(d.help?.givenSec)) {
+      push(BG[6], '🛡️', `
+        <div class="mw-kick mw-in" ${dl(0)}><span>Deine Allianz</span></div>
+        ${has(d.alliance?.name) ? `<div class="mw-big mw-pop mt-3" translate="no" style="animation-delay:0.37s;font-size:clamp(1.9rem,9vw,2.8rem)">${esc(d.alliance.name)}</div>` : ''}
+        ${has(d.alliance?.days) ? `<div class="mw-sub mw-in mt-3" ${dl(2)}><b>${de(d.alliance.days)}</b> <span>Tage Seite an Seite</span></div>` : ''}
+        <div class="grid grid-cols-2 gap-2 mt-6">
+          ${has(d.help?.givenSec) ? chip(hrs(d.help.givenSec) + ' h', 'Zeit für andere gespart', 3) : ''}
+          ${has(d.help?.gotSec) ? chip(hrs(d.help.gotSec) + ' h', 'Hilfe bekommen', 4) : ''}
         </div>`);
     }
     // 9 · Geben und Nehmen
     if (has(d.give?.sentTo) || has(d.give?.fromName)) {
       push(BG[8], '🤝', `
         <div class="mw-big mw-pop" style="animation-delay:${(0.15 + 0 * 0.22).toFixed(2)}s;font-size:clamp(2.2rem,10vw,3.2rem)"><span>Geben und Nehmen</span></div>
-        ${has(d.give?.sentTo) ? `<div class="mw-chip mw-in mt-6" ${dl(1)}><span>Meiste Ressourcen geschickt an</span><b translate="no">${esc(d.give.sentTo)}</b></div>` : ''}
+        ${has(d.give?.sentTo) ? `<div class="mw-chip mw-in mt-6" ${dl(1)}><span>Meiste Ressourcen geschickt an</span><b translate="no">${esc(d.give.sentTo)}</b>
+          ${has(d.give?.sentAmount) ? `<span style="text-transform:none;font-size:.95rem;opacity:1"><b style="display:inline;font-size:1.1rem">${shortTxt(d.give.sentAmount)}</b> <span style="font-size:.95rem;text-transform:none">Ressourcen</span></span>` : ''}</div>` : ''}
         ${has(d.give?.fromName) ? `<div class="mw-chip mw-in mt-3" ${dl(2)}><span>Meiste Ressourcen bekommen von</span><b translate="no">${esc(d.give.fromName)}</b>
           ${has(d.give?.fromAmount) ? `<span style="text-transform:none;font-size:.95rem;opacity:1"><b style="display:inline;font-size:1.1rem">${shortTxt(d.give.fromAmount)}</b> <span style="font-size:.95rem;text-transform:none">Ressourcen</span></span>` : ''}</div>` : ''}`);
     }
@@ -262,16 +319,26 @@
         <div class="grid grid-cols-2 gap-2 mt-6">
           ${chip('≈ ' + de(c / days), 'Nachrichten pro Tag', 2)}
           ${has(d.online?.vip) ? chip('VIP ' + de(d.online.vip), 'VIP-Stufe', 3) : ''}
+          ${has(d.online?.quests) ? chip('Ø ' + de(d.online.quests), 'Tägliche Aufgaben', 4) : ''}
+          ${has(d.top?.chat) ? chip(topTxt(d.top.chat), 'Chat', 5) : ''}
         </div>`);
     }
     // 11 · Stärkster Tag + Account-Alter
-    if (has(d.acc?.bestDay) || has(d.acc?.created)) {
-      const since = has(d.acc?.created) ? Math.floor((Date.now() - new Date(dateIso(d.acc.created) + 'T00:00:00').getTime()) / 864e5) : 0;
+    if (has(d.acc?.bestDay)) {
       push(BG[10], '📈', `
         ${has(d.acc?.bestDay) ? `<div class="mw-kick mw-in" ${dl(0)}><span>Dein stärkster Tag</span></div>
         <div class="mw-big mw-pop mt-2" style="animation-delay:${(0.15 + 1 * 0.22).toFixed(2)}s;font-size:clamp(2rem,10vw,3.1rem)">${esc(dateDe(dateIso(d.acc.bestDay)))}</div>
         ${has(d.acc?.bestGain) ? `<div class="mw-sub mw-in mt-3" ${dl(2)}><b>+${shortTxt(d.acc.bestGain)}</b> <span>Macht an einem Tag</span></div>` : ''}` : ''}
-        ${has(d.acc?.created) ? `<div class="grid grid-cols-2 gap-2 mt-8">${chip(esc(dateDe(dateIso(d.acc.created))), 'Account angelegt am', 3)}${since > 0 ? chip(de(since), 'Tage dabei', 4) : ''}</div>` : ''}`);
+        ${has(d.res?.powerInvest) ? `<div class="grid grid-cols-1 gap-2 mt-8">${chip(shortTxt(d.res.powerInvest), 'Ressourcen in Macht gesteckt', 3)}</div>` : ''}`);
+    }
+    // Ranglisten: Top x % aller Statthalter
+    const tops = [['killDiff', '⚔️', 'Kill-Differenz'], ['gather', '🌾', 'Sammeln'], ['gems', '💎', 'Edelsteine'], ['quests', '📜', 'Tägliche Aufgaben'], ['chat', '💬', 'Chat']].filter(t => has(d.top?.[t[0]]));
+    if (tops.length) {
+      push(BG[0], '🏅', `
+        <div class="mw-kick mw-in" ${dl(0)}><span>Du gehörst zu den Besten</span></div>
+        <div class="mw-big mw-pop mt-2" style="animation-delay:0.37s;font-size:clamp(2.2rem,10vw,3.2rem)">${topTxt(Math.min(...tops.map(t => d.top[t[0]])))}</div>
+        <div class="mw-sub mw-in" ${dl(1)}><span>aller Statthalter</span></div>
+        <div class="space-y-2 mt-5">${tops.map((t, i) => `<div class="mw-chip mw-in" ${dl(i + 2)} style="flex-direction:row;justify-content:space-between;align-items:center"><span style="font-size:.85rem">${t[1]} ${t[2]}</span><b style="font-size:1.1rem">${topTxt(d.top[t[0]])}</b></div>`).join('')}</div>`);
     }
     // 12 · Zusammenfassung
     const ar = archetype(d);
@@ -475,7 +542,7 @@
       const groups = {}; FIELDS.forEach(f => { (groups[f[3]] = groups[f[3]] || []).push(f); });
       return Object.entries(groups).map(([g, fs]) => {
         const items = fs.map(([p, label, kind]) => { const v = get(d, p); if (!has(v)) return '';
-          let out = kind === 'int' ? de(v) : kind === 'date' ? esc(dateDe(dateIso(v))) : kind === 'type' ? (TROOP[num(v)] ? `${TROOP[num(v)][0]} <span>${TROOP[num(v)][1]}</span>` : '<span>Typ</span> ' + esc(v)) : `<span translate="no">${esc(v)}</span>`;
+          let out = kind === 'int' ? de(v) : kind === 'date' ? esc(dateDe(dateIso(v))) : kind === 'type' ? (TROOP[num(v)] ? `${TROOP[num(v)][0]} <span>${TROOP[num(v)][1]}</span>` : '<span>Typ</span> ' + esc(v)) : kind === 'res' ? (RES[v] ? `${RES[v][0]} <span>${RES[v][1]}</span>` : esc(v)) : kind === 'top' ? topTxt(v) : `<span translate="no">${esc(v)}</span>`;
           return `<div class="mw-tile"><b>${out}</b><span>${label}</span></div>`; }).join('');
         return items ? `<div class="mb-4"><div class="text-xs font-bold uppercase tracking-wider text-gold-300/80 mb-2"><span>${g}</span></div><div class="grid grid-cols-2 sm:grid-cols-3 gap-2">${items}</div></div>` : '';
       }).join('');
@@ -497,7 +564,10 @@
         ${Object.entries(groups).map(([g, fs]) => `<div><div class="text-xs font-bold uppercase tracking-wider text-gold-300/80 mb-2"><span>${g}</span></div>
           <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">${fs.map(([p, label, kind]) => { const v = get(data, p);
             const val = kind === 'date' ? dateIso(v ?? '') : (v ?? '');
-            const field = kind === 'type' ? `<select data-p="${p}" data-k="${kind}" class="${inp}"><option value="">— wählen —</option>${Object.entries(TROOP).map(([k, t]) => `<option value="${k}" ${String(v) === k ? 'selected' : ''}>${t[0]} ${t[1]}</option>`).join('')}</select>`
+            const opts = kind === 'type' ? TROOP : kind === 'res' ? RES : null;
+            const field = opts ? `<select data-p="${p}" data-k="${kind}" class="${inp}"><option value="">— wählen —</option>${Object.entries(opts).map(([k, t]) => `<option value="${k}" ${String(v) === k ? 'selected' : ''}>${t[0]} ${t[1]}</option>`).join('')}</select>`
+              : kind === 'top' ? `<input data-p="${p}" data-k="top" type="text" inputmode="decimal" class="${inp}" placeholder="z. B. 0,027" value="${has(v) ? esc(de(Number(v) * 100, 4)) : ''}">`
+              : kind === 'type' ? `<select data-p="${p}" data-k="${kind}" class="${inp}"><option value="">— wählen —</option>${Object.entries(TROOP).map(([k, t]) => `<option value="${k}" ${String(v) === k ? 'selected' : ''}>${t[0]} ${t[1]}</option>`).join('')}</select>`
               : `<input data-p="${p}" data-k="${kind}" type="${kind === 'date' ? 'date' : 'text'}" ${kind === 'int' ? 'inputmode="numeric"' : ''} class="${inp}" value="${esc(kind === 'int' && has(val) ? de(val) : val)}">`;
             return `<label class="text-sm"><span class="block text-xs text-slate-400 mb-1">${label}</span>${field}</label>`; }).join('')}</div></div>`).join('')}
         <div class="flex flex-wrap gap-2 items-center">
@@ -510,12 +580,12 @@
     function readForm() {
       const o = {};
       view.querySelectorAll('[data-p]').forEach((el) => { const v = String(el.value || '').trim(); if (!v) return; const k = el.dataset.k;
-        set(o, el.dataset.p, k === 'int' || k === 'type' ? num(v) : k === 'date' ? dateIso(v) : v); });
+        set(o, el.dataset.p, k === 'int' || k === 'type' ? num(v) : k === 'top' ? numDec(v) / 100 : k === 'date' ? dateIso(v) : v); });
       return o;
     }
     function fillForm(o) {
       view.querySelectorAll('[data-p]').forEach((el) => { const v = get(o, el.dataset.p), k = el.dataset.k;
-        el.value = !has(v) ? '' : k === 'int' ? de(num(v)) : k === 'date' ? dateIso(v) : String(v); });
+        el.value = !has(v) ? '' : k === 'int' ? de(num(v)) : k === 'top' ? de(Number(v) * 100, 4) : k === 'date' ? dateIso(v) : String(v); });
     }
     function bindEditor(d) {
       const box = view.querySelector('#mwJsonBox'), txt = view.querySelector('#mwJsonTxt');
@@ -530,7 +600,9 @@
       view.querySelector('#mwSave').onclick = async () => {
         const y = Math.round(num(view.querySelector('#mwfYear').value)) || new Date().getFullYear();
         const m = view.querySelector('#mwSaveMsg'); m.className = 'text-sm text-slate-400'; m.textContent = '…';
-        try { await save(y, readForm()); editing = false; idx = 0; paused = false; msg = tr('✓ Gespeichert'); render(); setTimeout(() => { msg = ''; }, 2500); }
+        const keep = (cur() && cur().__year === y) ? cur() : {}; const merged = { ...keep, ...readForm() }; delete merged.__year;
+        ['cmd', 'acc'].forEach(k => { if (keep[k]) merged[k] = { ...keep[k], ...(merged[k] || {}) }; });
+        try { await save(y, merged); editing = false; idx = 0; paused = false; msg = tr('✓ Gespeichert'); render(); setTimeout(() => { msg = ''; }, 2500); }
         catch (e) { m.className = 'text-sm text-red-300'; m.textContent = tr('Speichern hat nicht geklappt:') + ' ' + (e?.message || e); }
       };
     }
