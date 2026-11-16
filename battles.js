@@ -47,8 +47,8 @@ window.RokMods.battles = (R) => {
     try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
       const all = [];
       for (let from = 0; from < 100000; from += 1000) {
-        let q = await db.from('rok_battles').select(KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y' : '')).order('battle_start', { ascending: false }).order('mail_id').order('opponent_id').range(from, from + 999);
-        if (q.error && kbPosCols && /pos_|city_/i.test(q.error.message || '')) { kbPosCols = false; from -= 1000; continue; }   // SQL v9 (Heatmap) noch nicht ausgeführt
+        let q = await db.from('rok_battles').select(KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '')).order('battle_start', { ascending: false }).order('mail_id').order('opponent_id').range(from, from + 999);
+        if (q.error && kbPosCols && /pos_|city_|map_role|room_id/i.test(q.error.message || '')) { kbPosCols = false; from -= 1000; continue; }   // SQL v9 (Heatmap) noch nicht ausgeführt
         if (q.error && kbNpcCols && /npc_|group_size|column/i.test(q.error.message || '')) { kbNpcCols = false; from -= 1000; continue; }   // SQL v4 noch nicht ausgeführt
         const { data, error } = q;
         if (error) throw error; all.push(...(data || [])); kbProg = all.length;
@@ -291,8 +291,9 @@ window.RokMods.battles = (R) => {
       kbBind(el); rsDraw(); return;
     }
     if (page === 'heat') {
-      const hr = rows.filter(r => !kbIsAoo(r));   // Ark of Osiris = andere Karte
-      el.innerHTML = wip + subTabs + hmHtml(hr, st, timeRow(marchSel + enemyChip));
+      const hr = hmRows(st);   // eigene Auswahl: PvP / Barbaren · Zeitraum im KvK (Ark of Osiris = andere Karte)
+      const accSel = accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
+      el.innerHTML = wip + subTabs + hmHtml(hr, st, `<div class="flex flex-wrap items-center gap-2 mb-2">${marchSel}${accSel}<button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button></div>`);
       kbBind(el); hmBind(el, hr, st); hmDraw(hr, st); return;
     }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
@@ -700,37 +701,72 @@ window.RokMods.battles = (R) => {
 
   // ================= Heatmap: wo du kämpfst (Testversion) =================
   // Kampfort aus dem Bericht (Attacks[].Pos) und deine Stadt (SelfChar.CastlePos) – Spiel-Koordinaten 0 … Kartengröße.
-  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', img: 'icons/map_heroic_anthem.jpg', size: 1200, pad: 1.1 }];
+  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', img: 'icons/map_heroic_anthem.jpg', size: 1200, unit: 6, pad: 1.1 }];   // unit: Bericht rechnet 6 Einheiten pro Feld (1200 Felder = 7200)
   var HM_W = [['n', '⚔️ Kämpfe'], ['kp', '🏆 Kill Points'], ['loss', '🩸 Eigene Verluste'], ['kill', '💀 Gegner-Verluste']];
-  function hmCfg(st) { const h = (st.heat = st.heat || {}); h.map = h.map || HM_MAPS[0].k; h.w = h.w || 'n'; h.rot = +h.rot || 0; h.mir = !!h.mir; h.rad = +h.rad || 3; h.city = h.city !== false; return h; }
+  var HM_SRC = [['pvp', '⚔️ PvP'], ['barb', '🪓 Barbaren'], ['both', '🔀 Beides']];
+  var HM_T = [['kvk', '🏁 Ganzes KvK'], ['d1', '24 h'], ['d3', '3 Tage'], ['d7', '7 Tage'], ['custom', 'Zeitraum']];
+  function hmIsBarb(r) { return !r.is_pvp && kbCatOf(r.npc_btype, r.group_size) === 'barb'; }
+  function hmRange(h) {   // [von, bis] in ms – null = offen
+    const now = Date.now(), ks = h.kvk ? new Date(h.kvk + 'T00:00:00').getTime() : null;
+    if (h.t === 'd1' || h.t === 'd3' || h.t === 'd7') return [now - (+h.t.slice(1)) * 86400000, null];
+    if (h.t === 'day' && h.day) { const a = new Date(h.day + 'T00:00:00').getTime(); return [a, a + 86400000 - 1]; }
+    if (h.t === 'custom') return [h.from ? new Date(h.from).getTime() : ks, h.to ? new Date(h.to).getTime() : null];
+    return [ks, null];
+  }
+  function hmRows(st) {
+    const h = hmCfg(st), [from, to] = hmRange(h);
+    return (kbRows || []).filter(r => { if (!kbMine(r.player_id) || (st.acc && String(r.player_id) !== st.acc)) return false;
+      const p = kbIsPvp(r) && !kbIsAoo(r), b = hmIsBarb(r);
+      if (!((h.src !== 'barb' && p) || (h.src !== 'pvp' && b))) return false;
+      if (st.march && p && kbMarchOf(r) !== st.march) return false;
+      const t = r.battle_start ? Date.parse(r.battle_start) : NaN;
+      if (from != null && !(t >= from)) return false; if (to != null && !(t <= to)) return false; return true; });
+  }
+  function hmCfg(st) { const h = (st.heat = st.heat || {}); h.map = h.map || HM_MAPS[0].k; h.w = h.w || 'n'; h.src = h.src || 'pvp'; h.t = h.t || 'kvk'; if (h.src === 'barb' && h.w === 'kp') h.w = 'n'; h.rot = +h.rot || 0; h.mir = !!h.mir; h.rad = +h.rad || 3; h.city = h.city !== false; return h; }
   function hmMap(h) { return HM_MAPS.find(m => m.k === h.map) || HM_MAPS[0]; }
   function hmXY(x, y, h, m) {   // Spiel-Koordinate → 0…1 auf dem Bild (Ausrichtung einstellbar, bis die Stadt stimmt)
-    let u = x / m.size, v = y / m.size;
+    let u = x / (m.unit || 1) / m.size, v = y / (m.unit || 1) / m.size;
     if (h.mir) u = 1 - u;
     for (let i = 0; i < h.rot; i++) { const t = u; u = 1 - v; v = t; }
     const p = (m.pad || 0) / 100; return [p + u * (1 - 2 * p), p + (1 - v) * (1 - 2 * p)];
   }
   function hmWeight(r, w) { return w === 'kp' ? (+r.kill_points || 0) : w === 'loss' ? (+r.self_dead || 0) + (+r.self_severe || 0) : w === 'kill' ? (+r.enemy_dead || 0) + (+r.enemy_severe || 0) : 1; }
-  function hmIn(x, y) { const z = hmMap(hmCfg(kbSt())).size; return x != null && y != null && +x >= 0 && +y >= 0 && +x <= z && +y <= z; }
-  function hmPts(rows) { return rows.filter(r => hmIn(r.pos_x, r.pos_y)); }   // nur Kämpfe auf dieser Karte (andere Karten haben andere Größen)
-  function hmCity() { return kbRows.find(r => kbMine(r.player_id) && hmIn(r.city_x, r.city_y)); }
+  // Nur die Weltkarte (Role „gsmp“) – „dungeon“ = Instanz/Event-Karte mit eigenen Koordinaten. Koordinaten in Feldern (wie im Spiel).
+  function hmTile(v) { const m = hmMap(hmCfg(kbSt())); return v == null ? null : +v / (m.unit || 1); }
+  function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x), b = hmTile(y); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
+  function hmPts(rows) { return rows.filter(r => hmIn(r.pos_x, r.pos_y, r.map_role)); }
+  function hmCity() { return kbRows.find(r => kbMine(r.player_id) && hmIn(r.city_x, r.city_y, r.map_role)); }
   function hmSpots(rows, h, m) {   // Brennpunkte: Kämpfe in 30er-Feldern zusammenfassen
-    const g = new Map(), cs = 30;
+    const g = new Map(), cs = 30 * (m.unit || 1);
     hmPts(rows).forEach(r => { const k = Math.floor(r.pos_x / cs) + ',' + Math.floor(r.pos_y / cs); const o = g.get(k) || { x: 0, y: 0, n: 0, kp: 0, loss: 0, kill: 0, w: 0, last: '', mails: new Set() };
-      o.x += +r.pos_x; o.y += +r.pos_y; o.n++; o.kp += +r.kill_points || 0; o.loss += hmWeight(r, 'loss'); o.kill += hmWeight(r, 'kill'); o.w += hmWeight(r, h.w);
+      o.x += +r.pos_x; o.y += +r.pos_y; o.n++; if (!r.is_pvp) o.b = (o.b || 0) + 1; o.kp += +r.kill_points || 0; o.loss += hmWeight(r, 'loss'); o.kill += hmWeight(r, 'kill'); o.w += hmWeight(r, h.w);
       if ((r.battle_start || '') > o.last) o.last = r.battle_start || ''; o.mails.add(r.mail_id); g.set(k, o); });
     return [...g.values()].map(o => ({ ...o, x: o.x / o.n, y: o.y / o.n })).sort((a, b) => b.w - a.w);
   }
+  function hmDays(h) {   // KvK-Tage zum Anklicken (Tag 1 = KvK-Start)
+    if (!h.kvk) return ''; const a = new Date(h.kvk + 'T00:00:00'), n = Math.min(90, Math.floor((Date.now() - a.getTime()) / 86400000) + 1); if (n < 1) return '';
+    const out = []; for (let i = 0; i < n; i++) { const d = new Date(a.getTime() + i * 86400000), k = isoDay(d), on = h.t === 'day' && h.day === k;
+      out.push(`<button type="button" data-hmday="${k}" aria-pressed="${on}" title="${d.toLocaleDateString('de-DE')}" class="seg-btn rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums">${i + 1}</button>`); }
+    return `<div class="flex flex-wrap items-center gap-1 mb-2"><span class="text-[11px] text-slate-500 mr-1">KvK-Tag:</span>${out.join('')}</div>`;
+  }
   function hmHtml(rows, st, filters) {
-    const h = hmCfg(st), m = hmMap(h), pts = hmPts(rows), noPos = rows.filter(r => r.pos_x == null).length, outside = rows.length - pts.length - noPos;
+    const h = hmCfg(st), m = hmMap(h), pts = hmPts(rows), noPos = rows.filter(r => r.pos_x == null).length, inst = rows.filter(r => r.map_role && r.map_role !== 'gsmp').length, outside = rows.length - pts.length - noPos - inst;
     const spots = hmSpots(rows, h, m).slice(0, 8), mx = spots[0]?.w || 1;
     const seg = (attr, k, l, on) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${l}</button>`;
     const city = hmCity();
     return `<section class="panel rounded-2xl p-5 mt-4"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span> <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span></h2>
-      <p class="text-xs text-slate-400 mb-3">Wo du kämpfst – jeder PvP-Kampf aus deinen Berichten an seinem Ort auf der KvK-Karte. Filter (Zeitraum, Account, Marsch) gelten wie bei Battles, Ark of Osiris ist ausgeblendet.</p>
+      <p class="text-xs text-slate-400 mb-3">Wo du kämpfst – jeder Kampf aus deinen Berichten an seinem Ort auf der KvK-Karte (1200 × 1200). Ark of Osiris ist ausgeblendet.</p>
+      <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.map(([k, l]) => seg('data-hmsrc', k, l, h.src === k)).join('')}</div>
+        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_T.map(([k, l]) => seg('data-hmt', k, l, h.t === k)).join('')}</div>
+        <label class="flex items-center gap-1 text-slate-400"><span>KvK-Start</span> <input type="date" data-hmkvk value="${esc(h.kvk || '')}" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-gold-500"></label>
+      </div>
+      ${h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (h.kvk ? h.kvk + 'T00:00' : ''))}" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs"><span class="text-slate-500">(leer = bis jetzt)</span></div>` : ''}
+      ${hmDays(h)}
+      ${!h.kvk ? '<div class="mb-2 text-[11px] text-amber-300">Trag den KvK-Start ein – dann zeigt „Ganzes KvK“ nur dieses KvK und du kannst einzelne KvK-Tage anklicken.</div>' : ''}
       ${filters}
       <div class="flex flex-wrap items-center gap-2 mb-3 text-xs">
-        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_W.map(([k, l]) => seg('data-hmw', k, l, h.w === k)).join('')}</div>
+        <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_W.filter(([k]) => !(h.src === 'barb' && k === 'kp')).map(([k, l]) => seg('data-hmw', k, l, h.w === k)).join('')}</div>
         <label class="flex items-center gap-1 text-slate-400"><span>Radius</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmcity ${h.city ? 'checked' : ''} class="accent-amber-400"> <span>Meine Stadt</span></label>
         <span class="ml-auto flex items-center gap-1 text-slate-500"><span>Karte</span>: <span translate="no" class="text-slate-300">${esc(m.n)}</span>
@@ -744,13 +780,13 @@ window.RokMods.battles = (R) => {
           <canvas id="hmCanvas" width="1000" height="1000" class="absolute inset-0 w-full h-full"></canvas>
           <div id="hmTip" class="hidden absolute z-10 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
         </div>
-        <div class="mt-1 text-[11px] text-slate-500">${fmt(pts.length)} <span>Kämpfe mit Ort</span>${outside > 0 ? ` · ${fmt(outside)} <span>auf anderen Karten (nicht angezeigt)</span>` : ''}${noPos ? ` · ${fmt(noPos)} <span>ohne Ort (ältere Uploads – der neue Uploader liest sie einmal neu ein)</span>` : ''}${!kbPosCols ? ' · <span class="text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</span>' : ''}</div>
-        <div class="mt-1 text-[11px] text-slate-500">${city ? `🏰 <span>Deine Stadt</span>: X ${Math.round(city.city_x)} · Y ${Math.round(city.city_y)} – <span>liegt der Punkt auf der Karte falsch, mit „Drehen“ / „Spiegeln“ ausrichten.</span>` : ''}</div></div>
+        <div class="mt-1 text-[11px] text-slate-500">${fmt(pts.filter(r => r.is_pvp).length)} <span>PvP-Kämpfe</span> (⚪) · ${fmt(pts.filter(r => !r.is_pvp).length)} <span>Barbaren</span> (<span class="text-emerald-300">●</span>)${inst ? ` · ${fmt(inst)} <span>in einer Instanz / Event-Karte (nicht auf der KvK-Karte)</span>` : ''}${outside > 0 ? ` · ${fmt(outside)} <span>auf anderen Karten (nicht angezeigt)</span>` : ''}${noPos ? ` · ${fmt(noPos)} <span>ohne Ort (ältere Uploads – der neue Uploader liest sie einmal neu ein)</span>` : ''}${!kbPosCols ? ' · <span class="text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</span>' : ''}</div>
+        <div class="mt-1 text-[11px] text-slate-500">${city ? `🏰 <span>Deine Stadt</span>: X ${Math.round(hmTile(city.city_x))} · Y ${Math.round(hmTile(city.city_y))} – <span>liegt der Punkt auf der Karte falsch, mit „Drehen“ / „Spiegeln“ ausrichten.</span>` : ''}</div></div>
         <div><h3 class="font-display text-base text-gold-300 mb-2">📍 <span>Brennpunkte</span></h3>
           ${spots.length ? spots.map((o, i) => `<button type="button" data-hmspot="${i}" class="w-full text-left rounded-xl border border-ink-700 bg-ink-950/60 hover:border-amber-500/60 p-2 mb-1.5">
-            <div class="flex items-center justify-between text-xs"><span class="font-semibold text-slate-100">#${i + 1} · X ${Math.round(o.x)} · Y ${Math.round(o.y)}</span><span class="text-slate-500">${o.last ? new Date(o.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span></div>
+            <div class="flex items-center justify-between text-xs"><span class="font-semibold text-slate-100">#${i + 1} · X ${Math.round(hmTile(o.x))} · Y ${Math.round(hmTile(o.y))}</span><span class="text-slate-500">${o.last ? new Date(o.last).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }) : ''}</span></div>
             <div class="h-1.5 rounded bg-ink-800 mt-1 overflow-hidden"><div class="h-full" style="width:${Math.max(4, o.w / mx * 100)}%;background:linear-gradient(90deg,#f59e0b,#ef4444)"></div></div>
-            <div class="mt-1 text-[11px] text-slate-400 tabular-nums">⚔️ ${fmt(o.n)} · 🏆 ${short(o.kp)} · 🩸 ${short(o.loss)} · 💀 ${short(o.kill)}</div></button>`).join('')
+            <div class="mt-1 text-[11px] text-slate-400 tabular-nums">${[o.n - (o.b || 0) ? `⚔️ ${fmt(o.n - (o.b || 0))}` : '', o.b ? `🪓 ${fmt(o.b)}` : '', o.kp ? `🏆 ${short(o.kp)}` : ''].filter(Boolean).join(' · ')} · 🩸 ${short(o.loss)} · 💀 ${short(o.kill)}</div></button>`).join('')
             : '<div class="text-xs text-slate-500">Noch keine Kämpfe mit Ort im Filter.</div>'}
         </div></div></section>`;
   }
@@ -773,8 +809,7 @@ window.RokMods.battles = (R) => {
       ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(off, 0, 0, W, W);
     }
     // einzelne Kämpfe als kleine Punkte
-    ctx.fillStyle = 'rgba(255,255,255,.85)';
-    hmPts(rows).forEach(r => { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); ctx.beginPath(); ctx.arc(u * W, v * W, 2.2, 0, 7); ctx.fill(); });
+    hmPts(rows).forEach(r => { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); ctx.fillStyle = r.is_pvp ? 'rgba(255,255,255,.9)' : 'rgba(110,231,183,.95)'; ctx.beginPath(); ctx.arc(u * W, v * W, 2.2, 0, 7); ctx.fill(); });
     const city = h.city && hmCity();
     if (city) { const [u, v] = hmXY(+city.city_x, +city.city_y, h, m); ctx.font = '34px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.strokeStyle = '#f5c542'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(u * W, v * W, 24, 0, 7); ctx.stroke(); ctx.fillText('🏰', u * W, v * W); }
@@ -783,6 +818,12 @@ window.RokMods.battles = (R) => {
   function hmBind(el, rows, st) {
     const h = hmCfg(st), re = () => { savePassive(); renderKampf(); };
     el.querySelectorAll('[data-hmw]').forEach(b => b.onclick = () => { h.w = b.dataset.hmw; re(); });
+    el.querySelectorAll('[data-hmsrc]').forEach(b => b.onclick = () => { h.src = b.dataset.hmsrc; st._hmSel = null; re(); });
+    el.querySelectorAll('[data-hmt]').forEach(b => b.onclick = () => { h.t = b.dataset.hmt; st._hmSel = null; re(); });
+    el.querySelectorAll('[data-hmday]').forEach(b => b.onclick = () => { if (h.t === 'day' && h.day === b.dataset.hmday) h.t = 'kvk'; else { h.t = 'day'; h.day = b.dataset.hmday; } st._hmSel = null; re(); });
+    el.querySelector('[data-hmkvk]')?.addEventListener('change', (ev) => { h.kvk = ev.target.value; re(); });
+    el.querySelector('[data-hmfrom]')?.addEventListener('change', (ev) => { h.from = ev.target.value; re(); });
+    el.querySelector('[data-hmto]')?.addEventListener('change', (ev) => { h.to = ev.target.value; re(); });
     el.querySelector('[data-hmrad]')?.addEventListener('input', (ev) => { h.rad = +ev.target.value; hmDraw(rows, st); });
     el.querySelector('[data-hmrad]')?.addEventListener('change', () => savePassive());
     el.querySelector('[data-hmcity]')?.addEventListener('change', (ev) => { h.city = ev.target.checked; savePassive(); hmDraw(rows, st); });
@@ -795,7 +836,8 @@ window.RokMods.battles = (R) => {
       const near = hmPts(rows).filter(r => { const [a, b] = hmXY(+r.pos_x, +r.pos_y, h, m); return Math.hypot(a - u, b - v) < .02; });
       if (!near.length) { tip.classList.add('hidden'); return; }
       const kp = near.reduce((s, r) => s + (+r.kill_points || 0), 0), en = [...new Set(near.map(r => r.enemy_name).filter(Boolean))].slice(0, 3);
-      tip.innerHTML = `⚔️ ${fmt(near.length)} <span>Kämpfe</span> · 🏆 ${short(kp)}<br><span class="text-slate-400">X ${Math.round(near[0].pos_x)} · Y ${Math.round(near[0].pos_y)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}`;
+      const nb = near.filter(r => !r.is_pvp).length;
+      tip.innerHTML = `⚔️ ${fmt(near.length - nb)} <span>PvP</span>${nb ? ` · 🪓 ${fmt(nb)} <span>Barbaren</span>` : ''} · 🏆 ${short(kp)}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].pos_x))} · Y ${Math.round(hmTile(near[0].pos_y))}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}`;
       tip.style.left = Math.min(bb.width - 170, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
     box?.addEventListener('mouseleave', () => tip.classList.add('hidden'));
   }
