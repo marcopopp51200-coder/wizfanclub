@@ -738,20 +738,21 @@ window.RokMods.battles = (R) => {
     if (!['pvp', 'barb', 'fort'].includes(h.src) || hmSpect()) h.src = 'pvp';   // Barbaren/Forts bleiben privat
     if (!h.map) h.map = hmCalc()?.layout === 'lk2' ? 'mighty_assembly' : 'heroic_anthem';
     h.t = h.t || 'kvk'; h.rad = +h.rad || 3; h.zn2 = h.zn2 || {}; h.fn = h.fn || {}; h.ak = h.ak || {}; if (h.tlOpen == null) h.tlOpen = true; if (h.liveV !== 1) { h.live = true; h.liveV = 1; } h.speed = +h.speed || 4;
-    if (h.zm == null) h.zm = true; if (h.fr == null) h.fr = false; { const ak = hmAk(h); if (ak.map && HM_MAPS.some(x => x.k === ak.map)) h.map = ak.map; else ak.map = h.map; } if (h.trail == null) h.trail = 6 * 3600e3; if (h.pngMk == null) h.pngMk = true; return h; }
+    if (h.zm == null) h.zm = true; if (h.fr == null) h.fr = false; { const ak = hmAk(h), wi = hmSpect() ? hmWInfoCur(h) : null; if (wi?.map && HM_MAPS.some(x => x.k === wi.map)) h.map = wi.map; else if (ak.map && HM_MAPS.some(x => x.k === ak.map)) h.map = ak.map; else ak.map = h.map; } if (h.trail == null) h.trail = 6 * 3600e3; if (h.pngMk == null) h.pngMk = true; return h; }
   function hmMap(h) { return HM_MAPS.find(m => m.k === h.map) || HM_MAPS[0]; }
   function hmCalc() { try { const s = window.KvKCalc?.getState?.(); return s ? { start: s.startDate || '', end: s.endDate || '', days: +s.mid?.days || 0, layout: s.mid?.layout || '', passAt: s.passAt || {} } : null; } catch { return null; } }
   // ---------- Account + KvK (C-Nummer) – jede ID hat ihr eigenes KvK ----------
-  function hmAcc(h) { const st = kbSt(), ids = [...kbMyIds()], p = kbProfileId(); if (st.heatAcc == null && h.acc) st.heatAcc = h.acc; if (!ids.includes(String(st.heatAcc))) st.heatAcc = p || ids[0] || ''; return String(st.heatAcc || ''); }
+  function hmAcc(h) { if (hmSpect()) return ''; const st = kbSt(), ids = [...kbMyIds()], p = kbProfileId(); if (st.heatAcc == null && h.acc) st.heatAcc = h.acc; if (!ids.includes(String(st.heatAcc))) st.heatAcc = p || ids[0] || ''; return String(st.heatAcc || ''); }
   function hmAccRows(gid) { return (kbRows || []).filter(r => String(r.player_id) === gid && r.map_role === 'gsmp'); }
   function hmGsAuto(gid) { let b = null; hmAccRows(gid).forEach(r => { if (+r.server_id >= 10000 && (!b || (r.battle_start || '') > b.t)) b = { id: +r.server_id, t: r.battle_start || '' }; }); return b ? b.id : null; }   // interne Karten-Nummer aus dem Bericht (GsId) – nicht die C-Nummer
-  function hmAk(h) { const st = kbSt(), g = hmAcc(h); if (!st.accKvk) st.accKvk = { ...(h.ak || {}) }; st.accKvk[g] = st.accKvk[g] || {}; return st.accKvk[g]; }   // pro ID: C-Nummer, Start, Karte (auf jedem Gerät gleich)
+  function hmAk(h) { if (hmSpect()) return (h.wAk = h.wAk || {}); const st = kbSt(), g = hmAcc(h); if (!st.accKvk) st.accKvk = { ...(h.ak || {}) }; st.accKvk[g] = st.accKvk[g] || {}; return st.accKvk[g]; }   // pro ID: C-Nummer, Start, Karte (auf jedem Gerät gleich)
   function hmKvkCode(h) { return hmAk(h).kvk || ''; }   // C-Nummer gibst du selbst ein, sie steht nicht in den Berichten
   function hmSid(h) { return null; }   // nicht mehr nach Karten-Nummer filtern – die wird von mehreren KvKs benutzt; Zeitraum kommt vom KvK-Start   // gefiltert wird über die Karten-Nummer, die beim Eintragen der C-Nummer aktuell war
   function hmIsProf(h) { return hmAcc(h) === kbProfileId(); }
-  function hmStart(h) { const a = hmAk(h); if (a.start) return a.start; const c = hmCalc(); if (c?.start) return c.start;   // KvK-Start aus dem Profil-KvK (C-Nummer ist nur der Name)
-    const lim = new Date(Date.now() - 60 * 864e5).toISOString(); let t = ''; hmAccRows(hmAcc(h)).forEach(r => { if (r.battle_start && r.battle_start >= lim && (!t || r.battle_start < t)) t = r.battle_start; }); return t ? t.slice(0, 10) : ''; }
-  function hmEnd(h) { const s = hmStart(h), c = hmCalc(); if (!s) return null; if (!hmAk(h).start && c?.end && c.end > s) return Date.parse(c.end + 'T23:59:59Z'); return Date.parse(s + 'T00:00:00Z') + 60 * 864e5; }
+  function hmStart(h) { const sp = hmSpect(), a = hmAk(h), wi = sp ? hmWInfoCur(h) : null; if (!sp && a.start) return a.start; if (wi?.start) return String(wi.start).slice(0, 10);
+    const c = hmCalc(); if (c?.start) return c.start;   // sonst KvK-Rechner im Profil
+    const lim = new Date(Date.now() - 50 * 864e5).toISOString(); let t = ''; hmAccRows(hmAcc(h)).forEach(r => { if (r.battle_start && r.battle_start >= lim && (!t || r.battle_start < t)) t = r.battle_start; }); return t ? t.slice(0, 10) : ''; }
+  function hmEnd(h) { const s = hmStart(h); return s ? Date.parse(s + 'T00:00:00Z') + 50 * 864e5 : null; }   // KvK = 50 Tage
   function hmUnit(h, ax) { const m = hmMap(h), v = ax === 'x' ? +h.ux : +h.uy; return v > 0 ? v : (m.unit || 1); }
   function hmTile(v, ax) { return v == null ? null : +v / hmUnit(hmCfg(kbSt()), ax || 'x'); }
   function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x, 'x'), b = hmTile(y, 'y'); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
@@ -784,7 +785,7 @@ window.RokMods.battles = (R) => {
   }
   function hmPoints(st, src, range, withMates) {   // Punkte des gewählten KvK: du + (optional) Freunde/Königreich
     const h = hmCfg(st), m = hmMap(h), sid = hmSid(h), acc = hmAcc(h), [from, to] = range, mates = withMates && hmMates ? new Map(hmMates.map((f, i) => [f.gid, i])) : new Map();
-    const out = [], own = (pid) => acc ? String(pid) === acc : (kbMine(pid) && (!h.watch || String(pid) === h.watch));
+    const sp = hmSpect(), ws = sp ? hmWatchSet(h) : null, out = [], own = (pid) => acc ? String(pid) === acc : sp ? ((!ws || ws.has(String(pid))) && (!h.watch || String(pid) === h.watch)) : kbMine(pid);
     const add = (r, joined) => { const kd = hmKind(r); if (kd !== src) return;
       if (!joined && sid && r.server_id != null && +r.server_id !== sid) return;
       const mine = own(r.player_id), fi = mates.get(String(r.player_id)); if (!mine && fi == null) return;
@@ -826,7 +827,7 @@ window.RokMods.battles = (R) => {
       return { ...f, id, z: zs[0] ? zs[0][0] : -1, auto, live: Date.now() - f.b < 45 * 6e4 };
     });
     const cnt = {}, idx = {}; L.forEach(f => cnt[f.auto] = (cnt[f.auto] || 0) + 1);
-    L.forEach(f => { if (cnt[f.auto] > 1) { idx[f.auto] = (idx[f.auto] || 0) + 1; f.auto += ' ' + idx[f.auto]; } f.name = h.fn[f.id] || f.auto; });   // Altar 1, Altar 2 …
+    L.forEach(f => { f.base = f.auto; if (cnt[f.auto] > 1) { idx[f.auto] = (idx[f.auto] || 0) + 1; f.auto += ' ' + idx[f.auto]; } f.name = h.fn[f.id] || f.auto; });   // Altar 1, Altar 2 …
     return L.reverse();
   }
   // ---------- Freunde, Königreich, Sichtbarkeit ----------
@@ -884,7 +885,6 @@ window.RokMods.battles = (R) => {
       if (o) { o.kp += hmKP(p.r); o.n++; } else M.set(k, { ...p, kp: hmKP(p.r), n: 1 }); }); return [...M.values()]; };
     return { h, m, fights, marches, all0, all, upto, dots, dotsM: merge(dots), t0, t1, cur, zs: hmZoneStats(upto), zsAll: hmZoneStats(all0) };
   }
-  function hmSpect() { return kbMyIds().size === 0; }   // keine eigene ID → Zuschauer
   function hmPName(pid, nm) { return kbIdName(pid) || nm || String(pid); }
   function hmZoneStats(pts) {
     const Z = new Map();
@@ -936,13 +936,12 @@ window.RokMods.battles = (R) => {
     </aside>`;
   }
   function hmIdBar(st, h) {   // Account wählen (Profil-ID + verknüpfte IDs) – jede ID hat ihr eigenes KvK
+    if (hmSpect()) return hmWatchBar(h);
     const pidP = kbProfileId(), ids = [...kbMyIds()], acc = hmAcc(h), names = new Map((kbRows || []).map(r => [String(r.player_id), r.self_name])); if (!kbSiteNames) kbLoadSiteNames();
     const chip = (id) => { const on = id === acc, own = id === pidP; return `<span class="inline-flex items-center rounded-xl border ${on ? 'border-gold-500 bg-gold-500/15 text-gold-200' : 'border-ink-600 text-slate-300 hover:border-gold-500/60'}" translate="no">
       <button type="button" data-hmacc="${esc(id)}" class="px-2.5 py-1 text-xs font-semibold">${own ? '👤' : '🔗'} ${esc(kbIdName(id, names)) || '<span class="text-slate-500">?</span>'} <span class="tabular-nums ${on ? 'text-gold-300/80' : 'text-slate-500'}">${esc(id)}</span></button>${kbSiteNames?.get(id) ? '' : `<button type="button" data-hmidname="${esc(id)}" class="pr-1 text-slate-500 hover:text-gold-300" title="Namen eintragen">✏️</button>`}${own ? '' : `<button type="button" data-kbunlink="${esc(id)}" class="pr-2 text-slate-500 hover:text-red-300" title="Verknüpfung lösen">✕</button>`}</span>`; };
     const ak = hmAk(h), start = hmStart(h);
     return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-2.5 mb-3 flex flex-wrap items-center gap-2">
-      ${!ids.length ? (() => { const P = new Map(); (kbRows || []).forEach(r => { if (r.is_pvp && r.map_role === 'gsmp') { const k = String(r.player_id), o = P.get(k) || P.set(k, { n: r.self_name, kp: 0 }).get(k); o.kp += hmKP(r); } });
-        return `<span class="text-xs text-slate-400">👁️ <span>Zuschauen</span></span><select data-hmwatch class="bg-ink-950 border border-gold-500/50 rounded-xl px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-400"><option value="">👥 Alle Spieler</option>${[...P.entries()].sort((a, b) => b[1].kp - a[1].kp).map(([k, o]) => `<option value="${esc(k)}" ${h.watch === k ? 'selected' : ''}>${esc(hmPName(k, o.n))} · ${short(o.kp)}</option>`).join('')}</select>`; })() : ''}
       <span class="text-xs text-slate-400">🆔</span>${ids.map(chip).join('')}
       <input data-kblinkid inputmode="numeric" placeholder="+ ID" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1 text-xs w-24 text-slate-100 focus:outline-none focus:border-gold-500">
       <span class="w-px h-6 bg-ink-700 mx-1"></span>
@@ -998,14 +997,14 @@ window.RokMods.battles = (R) => {
     const th = (l, r) => `<th class="py-1 pr-2 font-medium ${r ? 'text-right' : 'text-left'}">${l}</th>`;
     const blHead = `<tr class="text-[11px] text-slate-500">${th('Zeit')}${th('Zone')}${th('Marsch')}${pvp ? th('Gegner') + th('🏆 KP', 1) + th('🎖️ Acclaim', 1) + th('⚖️ Trade', 1) + th('💀 Deads', 1) + th('') : th('Kette', 1) + th('Stufe', 1)}</tr>`;
     return `<style>#battlesView:fullscreen{overflow-y:auto;padding:12px;background:#07090f}#battlesView:fullscreen #hmBox{width:min(100%,calc(100vh - 170px));margin:0 auto}</style>
-      <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span></h2><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span><span class="ml-auto">${reload}</span></div>
+      <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span></h2><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span><span class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 ml-2"><button type="button" data-hmmode="my" aria-pressed="${!hmSpect()}" ${kbMyIds().size ? '' : 'disabled'} class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold disabled:opacity-40">🏠 My KvK</button><button type="button" data-hmmode="watch" aria-pressed="${hmSpect()}" class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold">👁️ Watch</button></span><span class="ml-auto">${reload}</span></div>
       ${hmIdBar(st, h)}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.filter(x => !hmSpect() || x[0] === 'pvp').map(([k, l, c]) => seg('data-hmsrc', k, `<span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${c}"></span>${l}`, h.src === k)).join('')}</div>
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_T.map(([k, l]) => seg('data-hmt', k, l, !h.fight && h.t === k)).join('')}</div>
       </div>
       ${!h.fight && h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (start ? start + 'T00:00' : ''))}" class="${sel}"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="${sel}"></div>` : ''}
-      ${hmDays(h)}
+      ${hmDays(h, S)}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmzm ${h.zm ? 'checked' : ''} class="accent-amber-400"> <span>Zonen-Marker</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmfr ${h.fr ? 'checked' : ''} class="accent-amber-400"> <span>👥 Freunde &amp; Königreich</span></label>
@@ -1049,20 +1048,76 @@ window.RokMods.battles = (R) => {
       <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3>${zoneSel(true)}${marchSel}</div>
       <div class="flex flex-wrap gap-1 mt-2 p-1 rounded-xl bg-ink-950 border border-ink-700">${zoneChips}</div>
       <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
+      ${pvp ? hmCompare(h, S) : ''}
       <details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${pvp ? '⚔️ <span>Alle Kämpfe</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '🏰 <span>Alle Forts</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
         <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><thead>${blHead}</thead><tbody>${blRows}</tbody></table>${bl.length > blShow.length ? `<div class="text-[11px] text-slate-500 mt-1">${fmt(blShow.length)} / ${fmt(bl.length)}</div>` : ''}</div></details>
       </section>`;
   }
-  function hmDays(h) {   // KvK-Tage: rot = Kampf-KP, blau = Barbaren, gemischt wenn beides
-    const kv = hmStart(h); if (!kv) return ''; const a = Date.parse(kv + 'T00:00:00Z'), end = hmEnd(h) || Date.now(), n = Math.min(90, Math.floor((Math.min(Date.now(), end) - a) / 864e5) + 1); if (n < 1) return '';
-    const acc = hmAcc(h), sid = hmSid(h), kp = new Array(n).fill(0), bb = new Array(n).fill(0);
-    (kbRows || []).forEach(r => { if ((acc ? String(r.player_id) !== acc : !kbMine(r.player_id)) || r.map_role !== 'gsmp' || (sid && +r.server_id !== sid) || !r.battle_start) return; const i = Math.floor((Date.parse(r.battle_start) - a) / 864e5); if (i < 0 || i >= n) return;
-      if (r.is_pvp) { if (kbIsPvp(r) && !kbIsAoo(r)) kp[i] += hmKP(r); } else if (!hmSpect() && kbCatOf(r.npc_btype, r.group_size) === 'barb') bb[i]++; });
-    const mk = Math.max(1, ...kp), mb = Math.max(1, ...bb), out = [];
-    for (let i = 0; i < n; i++) { const d = new Date(a + i * 864e5), k = d.toISOString().slice(0, 10), on = !h.fight && h.t === 'day' && h.day === k, fr = kp[i] ? .25 + .75 * Math.sqrt(kp[i] / mk) : 0, fb = bb[i] ? .25 + .75 * Math.sqrt(bb[i] / mb) : 0;
-      const w = fr + fb, bg = w ? `background:rgba(${Math.round((239 * fr + 59 * fb) / w)},${Math.round((68 * fr + 130 * fb) / w)},${Math.round((68 * fr + 246 * fb) / w)},${(.2 + .55 * Math.max(fr, fb)).toFixed(2)})` : '';
-      out.push(`<button type="button" data-hmday="${k}" title="${d.toLocaleDateString('de-DE')}${kp[i] ? ' · 🏆 ' + short(kp[i]) : ''}${bb[i] ? ' · 🪓 ' + bb[i] : ''}" style="${bg}" class="min-w-[1.75rem] rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums border ${on ? 'border-gold-400 text-white ring-1 ring-gold-400' : 'border-ink-700 text-slate-200 hover:border-gold-500/60'}">${i + 1}</button>`); }
-    return `<div class="flex flex-wrap items-center gap-1 mb-2"><span class="text-[11px] text-slate-500 mr-1">KvK-Tag:</span>${out.join('')}</div>`;
+  // ---------- My KvK / Watch (Zuschauer) ----------
+  var hmWInfo = {};
+  function hmSpect() { const h = kbSt().heat || {}; return h.mode === 'watch' || kbMyIds().size === 0; }
+  function hmWInfoCur(h) { const c = h.wkvk; if (!c) return null; const i = hmWInfo[c]; if (!i) hmLoadWInfo(c); return i && !i.loading ? i : null; }
+  async function hmLoadWInfo(c) {   // wer ist in diesem KvK (C-Nummer), welche Karte, welcher Start – vom Besitzer der ID gesetzt
+    hmWInfo[c] = { loading: true }; const o = { ids: new Set(), map: null, start: null, err: false };
+    try { const db = RokAuth?.db?.(); if (!db) throw 0; const q = await db.from('rok_kvk_ids').select('governor_id,map,kvk_start').eq('kvk', c); if (q.error) throw q.error;
+      const mc = {}, sc = {}; (q.data || []).forEach(x => { o.ids.add(String(x.governor_id)); if (x.map) mc[x.map] = (mc[x.map] || 0) + 1; if (x.kvk_start) sc[x.kvk_start] = (sc[x.kvk_start] || 0) + 1; });
+      const top = (m) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || null; o.map = top(mc); o.start = top(sc); } catch { o.err = true; }
+    hmWInfo[c] = o; if (R.view === 'battles' && kbSt().page === 'heat') renderKampf();
+  }
+  function hmWatchSet(h) { if (!h.wkvk) return null; const i = hmWInfoCur(h); return i ? i.ids : new Set(); }
+  async function hmSyncKvk(h) {   // deine ID → KvK, Karte, Start für Zuschauer veröffentlichen
+    if (hmSpect()) return; const acc = hmAcc(h), a = hmAk(h); if (!acc || !a.kvk) return; const sig = [a.kvk, a.map || h.map, a.start || hmStart(h) || ''].join('|'); if (a.sync === sig) return;
+    try { const db = RokAuth?.db?.(), uid = RokAuth?.userId?.(); if (!db || !uid) return;
+      const q = await db.from('rok_kvk_ids').upsert({ governor_id: acc, kvk: a.kvk, map: a.map || h.map, kvk_start: a.start || hmStart(h) || null, user_id: uid, updated_at: new Date().toISOString() });
+      if (!q.error) { a.sync = sig; savePassive(); } } catch {}
+  }
+  function hmWatchBar(h) {
+    const ws = hmWatchSet(h), wi = hmWInfoCur(h), P = new Map();
+    (kbRows || []).forEach(r => { if (!r.is_pvp || r.map_role !== 'gsmp') return; const k = String(r.player_id); if (ws && !ws.has(k)) return; const o = P.get(k) || P.set(k, { n: r.self_name, kp: 0 }).get(k); o.kp += hmKP(r); });
+    return `<div class="rounded-xl border border-sky-500/40 bg-sky-500/5 p-2.5 mb-3 flex flex-wrap items-center gap-2">
+      <span class="text-xs text-sky-200 font-semibold">👁️ Watch</span><span class="text-xs text-slate-400">🏁 KvK</span>
+      <input data-hmwkvk value="${esc(h.wkvk || '')}" placeholder="C•••••" maxlength="6" spellcheck="false" class="bg-ink-950 border border-gold-500/50 rounded-xl px-3 py-1 text-sm font-bold tracking-widest text-gold-200 w-28 uppercase focus:outline-none focus:border-gold-400" translate="no">
+      ${h.wkvk ? (wi ? (wi.err ? '<span class="text-xs text-amber-300">SQL für rok_kvk_ids fehlt</span>' : `<span class="text-xs text-slate-400">${fmt(ws.size)} <span>Spieler</span></span>`) : '<span class="text-xs text-slate-500">…</span>') : ''}
+      <select data-hmwatch class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-400"><option value="">👥 Alle Spieler</option>${[...P.entries()].sort((a, b) => b[1].kp - a[1].kp).map(([k, o]) => `<option value="${esc(k)}" ${h.watch === k ? 'selected' : ''}>${esc(hmPName(k, o.n))} · ${short(o.kp)}</option>`).join('')}</select>
+    </div>`;
+  }
+  function hmCompare(h, S) {   // Vergleich: deine Werte gegen andere Spieler im gleichen Zeitraum
+    const [from, to] = hmRange(h, S.fights), ws = hmSpect() ? hmWatchSet(h) : null, P = new Map();
+    (kbRows || []).forEach(r => { if (!kbIsPvp(r) || kbIsAoo(r) || r.map_role !== 'gsmp' || !r.battle_start) return; const t = Date.parse(r.battle_start); if (from != null && t < from) return; if (to != null && t > to) return;
+      const k = String(r.player_id); if (ws && !ws.has(k)) return; (P.get(k) || P.set(k, { n: r.self_name, pts: [] }).get(k)).pts.push({ r, t }); });
+    const all = [...P.entries()].map(([k, o]) => ({ k, name: hmPName(k, o.n), w: hmSum(o.pts), pts: o.pts })).sort((a, b) => b.w.kp - a.w.kp);
+    if (!all.length) return '';
+    const me = hmAcc(h); let ids = (h.cmp || []).filter(k => P.has(k)); if (!ids.length) ids = [...(me && P.has(me) ? [me] : []), ...all.map(x => x.k).filter(k => k !== me)].slice(0, 4);
+    const sel = ids.map(k => all.find(x => x.k === k));
+    const chips = all.slice(0, 20).map(x => `<button type="button" data-hmcmpp="${esc(x.k)}" aria-pressed="${ids.includes(x.k)}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold"><span translate="no">${esc(x.name)}</span> <span class="text-gold-300 tabular-nums">${short(x.w.kp)}</span></button>`).join('');
+    const bm = (x) => hmMarches(x.pts, 'pvp')[0]?.[0] || '–';
+    const R0 = [['🏆 Kill Points', x => x.w.kp, short, 1], ['🏟️ LK-Punkte', x => x.w.lk, short, 1], ['🎖️ Acclaim', x => x.w.acc, v => v ? short(v) : '–', 1], ['⚖️ Trade', x => x.w.trade === Infinity ? 1e9 : (x.w.trade ?? 0), (v, x) => hmTradeTxt(x.w.trade), 1],
+      ['☠️ Gegner-Verluste', x => x.w.eLoss, short, 1], ['💀 Deads', x => x.w.dead, short, 0], ['🩸 Schwer verw.', x => x.w.sev, short, 0], ['💚 Heilung', x => x.w.heal, short, 1],
+      ['⚔️ Kämpfe', x => x.w.n, fmt, 1], ['📈 KP pro Kampf', x => x.w.n ? x.w.kp / x.w.n : 0, short, 1]];
+    const body = R0.map(([l, f, fm, good]) => { const vals = sel.map(f), best = good ? Math.max(...vals) : null;
+      return `<tr class="border-t border-ink-800/60"><td class="py-1.5 pr-3 text-slate-400 whitespace-nowrap">${l}</td>${sel.map((x, i) => `<td class="py-1.5 px-2 text-right tabular-nums ${good && vals[i] === best && sel.length > 1 && best > 0 ? 'text-emerald-300 font-bold' : 'text-slate-100'}">${fm(vals[i], x)}</td>`).join('')}</tr>`; }).join('')
+      + `<tr class="border-t border-ink-800/60"><td class="py-1.5 pr-3 text-slate-400">🥇 <span>Bester Marsch</span></td>${sel.map(x => `<td class="py-1.5 px-2"><div class="flex justify-end items-center gap-1">${String(bm(x)).split(' / ').length > 1 ? `<span class="flex gap-0.5">${hmHeroes(bm(x))}</span>` : ''}<span class="text-[11px] text-slate-300 truncate max-w-[8rem]" translate="no">${esc(bm(x))}</span></div></td>`).join('')}</tr>`;
+    return `<details data-hmcmp ${h.cmpOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">⚖️ <span>Vergleich</span></summary>
+      <div class="px-3 pb-3"><div class="flex flex-wrap gap-1 mb-2">${chips}</div><div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-xs"><th></th>${sel.map(x => `<th class="px-2 py-1 text-right font-semibold ${x.k === me ? 'text-gold-300' : 'text-slate-200'}" translate="no">${esc(x.name)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></div></details>`;
+  }
+  function hmDays(h, S) {   // KvK-Tage (50 Tage ab Start): rot = Kämpfe, blau = Barbaren, beides = diagonal geteilt
+    const kv = hmStart(h); if (!kv) return ''; const a = Date.parse(kv + 'T00:00:00Z'), N = 50, today = Math.floor((Date.now() - a) / 864e5), sp = hmSpect(), acc = hmAcc(h), ws = sp ? hmWatchSet(h) : null;
+    const kp = new Array(N).fill(0), bb = new Array(N).fill(0);
+    (kbRows || []).forEach(r => { const k = String(r.player_id); if (acc ? k !== acc : sp ? ((ws && !ws.has(k)) || (h.watch && k !== h.watch)) : !kbMine(k)) return;
+      if (r.map_role !== 'gsmp' || !r.battle_start) return; const i = Math.floor((Date.parse(r.battle_start) - a) / 864e5); if (i < 0 || i >= N) return;
+      if (r.is_pvp) { if (kbIsPvp(r) && !kbIsAoo(r)) kp[i] += hmKP(r); } else if (!sp && kbCatOf(r.npc_btype, r.group_size) === 'barb') bb[i]++; });
+    const mk = Math.max(1, ...kp), mb = Math.max(1, ...bb), pvpM = h.src === 'pvp', dm = pvpM ? (h.dmode || 'fight') : 'all';
+    const btn = (i, onlyRed) => { const d = new Date(a + i * 864e5), k = d.toISOString().slice(0, 10), on = !h.fight && h.t === 'day' && h.day === k, fut = i > today;
+      const ar = kp[i] ? (.35 + .6 * Math.sqrt(kp[i] / mk)).toFixed(2) : 0, ab = !onlyRed && bb[i] ? (.35 + .6 * Math.sqrt(bb[i] / mb)).toFixed(2) : 0;
+      const bg = ar && ab ? `background:linear-gradient(135deg,rgba(220,38,38,${ar}) 0 50%,rgba(37,99,235,${ab}) 50% 100%)` : ar ? `background:rgba(220,38,38,${ar})` : ab ? `background:rgba(37,99,235,${ab})` : '';
+      return `<button type="button" data-hmday="${k}" ${fut ? 'disabled' : ''} title="${d.toLocaleDateString('de-DE')}${kp[i] ? ' · 🏆 ' + short(kp[i]) : ''}${bb[i] && !onlyRed ? ' · 🪓 ' + bb[i] : ''}" style="${bg}" class="min-w-[1.75rem] rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums border ${fut ? 'opacity-30 border-ink-800 text-slate-500' : on ? 'border-gold-400 text-white ring-1 ring-gold-400' : 'border-ink-700 text-slate-100 hover:border-gold-500/60'}">${i + 1}</button>`; };
+    let rowHtml;
+    if (dm === 'fight') {   // nur Kampftage, gruppiert nach Schlacht: „Zone 4 · 7 8 9“, „Kingsland · 20“
+      const nm = {}; (S.fights || []).forEach(f => { const i = Math.floor((f.a - a) / 864e5); if (i < 0 || i >= N) return; const n = h.fn[f.id] || f.base || f.auto; (nm[i] = nm[i] || {})[n] = (nm[i][n] || 0) + f.kp; });
+      const G = []; for (let i = 0; i < N; i++) { if (!kp[i]) continue; const n = nm[i] ? Object.entries(nm[i]).sort((x, y) => y[1] - x[1])[0][0] : 'Kampf', last = G[G.length - 1]; if (last && last.n === n) last.d.push(i); else G.push({ n, d: [i] }); }
+      rowHtml = G.length ? G.map(g => `<span class="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/5 pl-2 pr-1 py-0.5"><span class="text-[11px] text-red-200 font-semibold mr-0.5" translate="no">${esc(g.n)}</span>${g.d.map(i => btn(i, true)).join('')}</span>`).join('') : '<span class="text-[11px] text-slate-500">Noch keine Kampftage</span>';
+    } else { const out = []; for (let i = 0; i < N; i++) out.push(btn(i, false)); rowHtml = out.join(''); }
+    return `<div class="flex flex-wrap items-center gap-1 mb-2"><span class="text-[11px] text-slate-500 mr-1">KvK-Tag:</span>${pvpM ? `<span class="flex gap-0.5 mr-1 p-0.5 rounded-lg bg-ink-950 border border-ink-700"><button type="button" data-hmdmode="fight" aria-pressed="${dm === 'fight'}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">⚔️ <span>Kampftage</span></button><button type="button" data-hmdmode="all" aria-pressed="${dm === 'all'}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">📅 <span>Ganzes KvK</span></button></span>` : ''}${rowHtml}</div>`;
   }
   // ---------- Zeichnen ----------
   function hmHeat(S) {
@@ -1141,6 +1196,14 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-hmpanel]')?.addEventListener('change', (ev) => { const v = ev.target.value; h.pop = v === '' ? null : +v; re(); if (h.pop != null) hmZoomTo(...hmZoneBox(m, h.pop)); });
     el.querySelectorAll('[data-hmiso2]').forEach(b => b.onclick = () => hmIso(st, +b.dataset.hmiso2));
     el.querySelectorAll('[data-hmzren2]').forEach(b => b.onclick = () => hmRename(st, +b.dataset.hmzren2));
+    el.querySelectorAll('[data-hmmode]').forEach(b => b.onclick = () => { h.mode = b.dataset.hmmode; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; hmView = { s: 1, x: 0, y: 0 }; re(); });
+    el.querySelector('[data-hmwkvk]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, '');
+      if (v && !/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C13340'); ev.target.value = h.wkvk || ''; return; } h.wkvk = v || ''; h.watch = ''; h.fight = null; h.tl = null; h.pop = null; delete hmWInfo[v]; re(); });
+    el.querySelectorAll('[data-hmdmode]').forEach(b => b.onclick = () => { h.dmode = b.dataset.hmdmode; re(); });
+    el.querySelectorAll('[data-hmcmpp]').forEach(b => b.onclick = () => { const k = b.dataset.hmcmpp, cur = [...el.querySelectorAll('[data-hmcmpp][aria-pressed="true"]')].map(x => x.dataset.hmcmpp);
+      h.cmp = cur.includes(k) ? cur.filter(x => x !== k) : [...cur, k].slice(-6); re(); });
+    el.querySelector('[data-hmcmp]')?.addEventListener('toggle', (ev) => { h.cmpOpen = ev.target.open; savePassive(); });
+    hmSyncKvk(h);
     el.querySelectorAll('[data-hmidname]').forEach(b => b.onclick = () => { const id = b.dataset.hmidname, n = (st.idNames || {})[id] || '';
       hmAsk('Name für ' + id, n, (v) => { st.idNames = { ...(st.idNames || {}) }; if (v) st.idNames[id] = v.slice(0, 24); else delete st.idNames[id]; re(); }, '', 'z. B. Farm 1'); });
     el.querySelector('[data-hmkvkcode]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, ''), a = hmAk(h);
