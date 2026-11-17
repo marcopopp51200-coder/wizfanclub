@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 13 (battles.js)
+        "📅 Ganzes KvK": "📅 Whole KvK", "🏁 KvK-Zeitraum": "🏁 KvK period", "🗺️ Alles gesamt": "🗺️ Everything", "(alle)": "(all)",
         // Heatmap 12 (battles.js)
         "Kampftage": "Battle days", "Ganzes KvK": "Whole KvK", "Noch keine Kampftage": "No battle days yet", "Vergleich": "Compare", "Bester Marsch": "Best march", "☠️ Gegner-Verluste": "☠️ Enemy losses", "📈 KP pro Kampf": "📈 KP per battle", "💚 Heilung": "💚 Healing", "🏟️ LK-Punkte": "🏟️ LK points", "SQL für rok_kvk_ids fehlt": "SQL for rok_kvk_ids missing", "Format: C + 5 Ziffern, z. B. C13340": "Format: C + 5 digits, e.g. C13340",
         // Heatmap 11 (battles.js)
