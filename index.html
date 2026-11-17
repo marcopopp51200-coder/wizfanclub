@@ -200,10 +200,11 @@ tailwind.config = {
     </div>
   </header>
 
-  <!-- Reiter: Feed · My Data · Rangliste · Craft · Help Me (eine Reihe) -->
+  <!-- Reiter: Feed · My Data · Memory · Rangliste · Craft · Help Me (eine Reihe) -->
     <nav id="mainNav" class="hidden grid-cols-3 gap-1 p-1 mb-8 rounded-xl bg-ink-950 border border-ink-700" role="tablist" aria-label="Bereiche">
       <button class="main-tab seg-btn rounded-lg px-4 py-2 text-sm font-semibold transition relative" data-view="feed" aria-pressed="false" role="tab">📰 Feed <span data-news-badge style="display:none" title="Neue News" class="absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center"></span></button>
       <button class="main-tab seg-btn rounded-lg px-4 py-2 text-sm font-semibold transition" data-view="battles" aria-pressed="false" role="tab">📊 My Data</button>
+      <button class="main-tab seg-btn rounded-lg px-4 py-2 text-sm font-semibold transition" data-view="memory" aria-pressed="false" role="tab">🎁 Memory</button>
       <button class="main-tab seg-btn rounded-lg px-4 py-2 text-sm font-semibold transition" data-view="rank" aria-pressed="false" role="tab">🏆 Rangliste</button>
       <button id="craftTab" class="main-tab seg-btn rounded-lg px-4 py-2 text-sm font-semibold transition hidden" data-view="craft" aria-pressed="false" role="tab">⚒️ Craft</button>
       <button class="main-tab seg-btn rounded-lg px-4 py-2 text-sm font-semibold transition relative" data-view="help" aria-pressed="false" role="tab">🆘 Help Me <span data-help-badge style="display:none" class="absolute -top-1.5 -right-1.5 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-red-500 text-white text-[10px] font-bold grid place-items-center"></span></button>
@@ -1230,6 +1231,7 @@ tailwind.config = {
   <!-- Neue Bereiche – Inhalt kommt aus feed.js, kingdom.js, helpme.js, showcases.js -->
   <section id="feedView" class="hidden space-y-6"></section>
   <section id="battlesView" class="hidden space-y-6"></section>
+  <section id="memoryView" class="hidden space-y-6"></section>
   <section id="newsView" class="hidden space-y-6"></section>
   <section id="kingdomView" class="hidden space-y-6"></section>
   <section id="helpView" class="hidden space-y-6"></section>
@@ -1293,6 +1295,7 @@ tailwind.config = {
 <script src="news.js"></script>
 <script src="account.js"></script>
 <script src="scanner.js"></script>
+<script src="memory.js"></script>
 <script src="image-utils.js"></script>
 <script src="kvk-calculator.js" defer></script>
 </body>
