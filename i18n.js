@@ -8,6 +8,10 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 9 (battles.js)
+        "Kette": "Chain", "Hauptkommandant": "Primary commander",
+        // Heatmap 8 (battles.js)
+        "Namen eintragen": "Enter name", "KvK-Tag:": "KvK day:",
         // Heatmap 7 (battles.js)
         "🆔": "🆔", "+ ID": "+ ID", "🏁 KvK": "🏁 KvK", "KvK": "KvK", "Format: C + 5 Ziffern, z. B. C16144": "Format: C + 5 digits, e.g. C16144", "Timeline": "Timeline", "Zonen": "Zones", "🗺️ Alle": "🗺️ All", "⚔️ Alle Märsche": "⚔️ All marches", "🏆 KP": "🏆 KP", "🎖️ Acclaim": "🎖️ Acclaim", "⚖️ Trade": "⚖️ Trade", "💀 Deads": "💀 Deads", "🩸 Schwer verw.": "🩸 Severely wnd.", "⚔️ Kämpfe": "⚔️ Battles", "🪓 Barbaren": "🪓 Barbarians", "🏰 Forts": "🏰 Forts", "Alle Kämpfe": "All battles", "Alle Barbaren": "All barbarians", "Alle Forts": "All forts", "Zeit": "Time", "Zone": "Zone", "Marsch": "March", "Gegner": "Enemy", "Stufe": "Level", "Keine Kämpfe im Filter.": "No battles in this filter.", "Niemand sichtbar": "Nobody visible", "Schlacht benennen": "Name battle", "Zone umbenennen": "Rename zone",
         // Heatmap 6 (battles.js)
