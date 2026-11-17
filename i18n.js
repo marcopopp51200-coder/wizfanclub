@@ -8,6 +8,10 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 11 (battles.js)
+        "Werte": "Stats", "Zuschauen": "Watching", "👥 Alle Spieler": "👥 All players", "⚔️ Aktuelle Schlacht": "⚔️ Current battle", "📍 Zone wählen …": "📍 Choose zone …", "Spieler": "Players", "Noch keine Kämpfe.": "No battles yet.",
+        // Heatmap 10 (battles.js)
+        "und": "and", "weitere": "more", "Expertise": "Expertise",
         // Heatmap 9 (battles.js)
         "Kette": "Chain", "Hauptkommandant": "Primary commander",
         // Heatmap 8 (battles.js)
