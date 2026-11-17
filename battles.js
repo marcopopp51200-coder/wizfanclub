@@ -303,7 +303,7 @@ window.RokMods.battles = (R) => {
     }
     if (page === 'heat') {
       const accSel = accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
-      el.innerHTML = wip + subTabs + hmHtml(st, `<div class="flex flex-wrap items-center gap-2 mb-2">${marchSel}${accSel}<button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button></div>`);
+      el.innerHTML = wip + subTabs + hmHtml(st, `<button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>`);
       kbBind(el); hmBind(el, st); hmDraw(st); return;
     }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
@@ -712,8 +712,8 @@ window.RokMods.battles = (R) => {
   // ================= Heatmap: wo du kämpfst (Testversion) =================
   // Kampfort aus dem Bericht (Attacks[].Pos) – unabhängig davon, wo deine Stadt gerade steht. Nur die KvK-Weltkarte (Role „gsmp“),
   // das KvK erkennt man an der Server-Nummer im Bericht (z. B. 16144 → „C16144“). Bericht rechnet ~6 Einheiten pro Feld, X0/Y0 unten links.
-  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', lay: 'lk1', img: 'icons/map_heroic_anthem.jpg', size: 1200, unit: 6, pad: 1.1, zones: {"w":240,"r":"a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a90b1a2b60c3b3c81a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a96b57c87a99b50c91a99b48c93a99b48c93a99b48c93a99b48c93a101b46c93a103b4a4b36c93a111b36c93a111b36c93a111b36c93a111b36c93a111b36c93a111b14d22c93a111b12d24c93a111b12d24c93a111b12d24c93a111b12d24c93a111b12d24c93a101e10b2e2b2d30c93a99e18d30c93a99e18d30c93a99e18d30c93a99e18d30c93a99e18d33c90a70e3a4e40d36c87a69e6a1e41d36c87a69e48d36c87a69e48d36c87a69e48d36c87a69e50d34c87a65e2a2e54d30c87a63e60d30c87a63e60d30c87a63e60d30c87a63e60d30c87a63e60d33c6d3c75a63e60d42c75a63e60d42c75a63e60d42c75a63e60d42c75a63e60d42c75a63e60d44c73a63e60d54c63a63e60d54c63a63e60d54c63a63e60d54c63a63e60d54c63a57e3a3e54f3e3d54c63a57e60f6d2f4d48c49g14a57e60f12d48c48g15a57e60f12d48c48g15a57e60f12d48c48g15a57e60f12d48c48g15a57e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f13d47c48g15h24a18h3a12e60f12d50c46g15h45a12e49i3e4i4f2i10d52c4d4c20g31h45a12e48i6e1i17d54c1d5c18g33h45a12e48i24d60c18g33h45a12e48i24d60c18g33h45a13e47i24d60c18g33h47a10e48i24d60c12g3c3g33h57e44i2e2i25d1i4d54c12g39h57e42i36d54c12g39h57e42i36d54c12g39h57e42i36d54c12g39h57e42i36d54c12g39h57e42i39d1i2d51c9g39h57e37i47d52c2g45h57e36i48d54g45h57e36i48d54g45h57e36i48d54g45h57e37i47d54g45h57e24j3e9i48d12k3d39g45h53l4e2l4e18j12i48d12k10d2m12d18g45h51l12e18j12i48d12k12m12d18g45h51l12e18j12i48d12k12m12d18g45h51l12e18j12i48d12k12m12d18g45h51l12e18j12i48d12k12m12d18g45h51l12e18j12i48d12k12m12d18g45h51l30j12i44k4d2k22m12k18g45h51l30j12i42k30m12k18g45h51l30j12i42k30m12k18g45h51l30j12i42k30m12k18g45h51l30j12i42k30m12k18g45h51l30j12i42k32m10k18g45h46l36j1l10i2l4i36k34m4k2m2k18g45h45l54i36k60g45h45l54i36k60g45h45l54i36k60g45h45l54i36k60g45h45l54i36k63g42h45l54i36k66g39h45l54i36k66g39h45l54i36k66g39h45l54i36k66g39h45l54i36k66g39h45l57i33k66g39h45l60i25k71g39h45l60i24k72g39h45l60i24k72g39h45l60i24k72g39h45l60i24k72g39h45l60i24k72g39h45l70i2k73g50h45l72k72g51h45l72k72g51h45l72k72g51h45l72k73g50h45l72k60n3k9g51h45l72k60n12g51h45l72k60n12g51h45l72k60n12g51h45l72k60n12g51h45l72k60n12g51h15o3h27l72k60n14g49h15o22h4o4l2o4l66k49n29g26n2g3n14h15o24h1o11l66k48n30g24n21h15o36l66k48n30g24n21h15o36l66k48n30g24n21h15o36l66k48n30g24n21h15o39l63k48n32g22n21o57l56p4k2p4k42n36g13n26o57l54p12k42n36g12n27o57l54p12k42n36g12n27o57l54p12k42n36g12n27o57l54p12k42n36g12n27o57l54p12k42n39g9n27o69l42p12k38n79o69l42p12k36n81o69l42p12k36n81o69l42p12k36n81o69l42p12k36n81o69l44p10k36n81o69l46p2k37n86o69l48k36n87o69l48k36n87o69l48k36n87o69l48k36n87o69l48k36n87o75l42k36n87o75l42k36n87o75l42k36n87o75l42k36n87o75l42k36n87o78l39k36n87o91l4o8l2q12k2q14k2n10k4n91o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o101q2o2q30n105o99q36n105o99q36n105o99q36n105o99q36n105o99q36n105o89q46n105o87q48n105o87q48n105o87q48n105o87q48n105o87q51n102o82q59n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o83q60n97o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o82q66n1q4n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o80q72n88o80q72n88o80q72n88o80q72n88o81q72n87o81q72n87","n":["Außen NW","Außen N","Außen NO","Innen NO","Innen NW","Altar N","Außen O","Außen W","Kingsland","Altar W","Innen SO","Innen SW","Altar O","Außen SO","Außen SW","Altar S","Außen S"],"c":[[0.1831,0.1632],[0.5136,0.0747],[0.8225,0.1737],[0.633,0.326],[0.3652,0.3191],[0.5111,0.3376],[0.9088,0.4937],[0.0978,0.4815],[0.4857,0.4611],[0.3618,0.4618],[0.6377,0.5833],[0.3364,0.5964],[0.7123,0.4626],[0.8036,0.813],[0.1756,0.8175],[0.4872,0.6628],[0.4808,0.8891]]} },
-    { k: 'mighty_assembly', n: 'Mighty Assembly', lay: 'lk2', img: 'icons/map_mighty_assembly.jpg', size: 1200, unit: 6, pad: 1.1, zones: {"w":240,"r":"a69b106c65a69b106c65a69b107c64a69b107c64a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a74b37d11b49c4b2c63a75b36d12b48c69a75b36d12b48c69a75b36d12b48c69a75b36d12b48c69a75b35d13b48c69a75d22b4d38b3d29c69a75d24b1d71c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69e6a69d96c24f2c43e13a4e20a4e5a24d101c24f10c4f20c4f7e15a1e23a1e6a23d102c24f12c1f23c1f8e45a24d102c24f45e45a24d102c24f45e45a24d102c24f45e45a4e2a18d102c24f45e51g4a4g10d96h10c4h4f11c1f45e51g18d96h18f57e51g18d96h18f57e51g18d96h18f57e51g18d97h17f57e51g18d4g2d91h17f57e51g24i12d66j5d1j6h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g25i11d66j12h19f56e51g41d60h37f51e51g41d60h37f51e51g42d60h36f51e51g42d60h36f51e51g42d60h36f51e51g42d57h39f51e47g46d54h48f45e45g48d54h48f45e45g48d54h48f45e45g48d54h48f45e45g48d54h48f45e45g48d54h48f45e45g48d54h48f45e45g48d54h48f45e45g48d54h48f45e45g49d53h48f45e45g49d53h48f45e45g49d53h48f45e45g60k11d2k11d1k11h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e46g59k36h54f45e50g55k36h49f50e50g55k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h49f50e51g54k36h49f50e51g54k36h53f46e51g54k36h53f46e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e45g48l24k1l11k1l11h54f45e45g48l48h54f45e45g48l48h54f45e45g48l48h54f45e46g47l48h54f45e46g47l48h54f45e51g42l48h59f40e51g42l48h59f40e51g42l48h60f39e51g42l48h60f39e51g42l48h60f39e51g42l48h60f39e51g30l10g2l49h1l16h42f39e51g30l78h42f39e51g30l78h42f39e51g30l78h42f39e51g31l77h42f39e51g31l77h42f39e51g19m11l78n11h31f39e51g18m12l78n11h31f39e51g18m12l78n12h30f39e51g18m12l78n12h30f39e51g18m12l78n12h30f39e51g18m12l78n12h30f39e51g18m12l78n12h12o4h4o10f39e51g18m12l78n12h12o18f39e51g18m12l78n12h12o18f39e51g18m12l78n12h12o18f39e51g18m12l78n12h12o18f39e51g10p2g6m10l80n5o2n5h12o18f39p7e4p20e3p17g2p2g3p5l102o6h3o27f39p63l102o36f39p63l102o36f39p63l102o36f39p63l102o36f39p63l102o36f39p63l102o40f4o20f4o1f6p63l102o75p63l102o75p63l102o75p63l102o75p63l102o75p63l106o71p63l108o69p63l108o69p63l108o69p63l108o69p63l108o69p63l30q4l4q28l14q2l4q4l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p62q115o63p62q115o63p63q114o63p63q114o63p63q114o63p63q114o63p62q115o63p63q114o63p63q114o63p63q114o63p63q114o63p64q113o63p75q102o63p75q102o63p75q102o63p75q102o63p75q102o63p75q100o65p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p63q3p8q97o69p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p62q115o63p62q115o63p61q116o63p61q116o63p61q116o63p61q116o63","n":["Ecke NW","Zone 5 N","Ecke NO","Innen N","Zone 5 W","Zone 5 O","Innen W","Innen O","Altar NW","Altar NO","Kingsland","Innen S","Altar SW","Altar SO","Ecke SO","Ecke SW","Zone 5 S"],"c":[[0.1498,0.1377],[0.5119,0.1036],[0.8607,0.1381],[0.5023,0.3081],[0.1019,0.489],[0.9015,0.4862],[0.2994,0.5009],[0.71,0.5128],[0.3376,0.3369],[0.6623,0.3376],[0.5121,0.5125],[0.4868,0.7106],[0.3122,0.6875],[0.6866,0.6871],[0.8542,0.8553],[0.1378,0.858],[0.5044,0.9003]]} }];
+  var HM_MAPS = [{ k: 'heroic_anthem', n: 'Heroic Anthem', lay: 'lk1', img: 'icons/map_heroic_anthem.jpg', size: 1200, unit: 6, pad: 1.1, zones: {"w":240,"r":"a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a87b72c81a90b1a2b60c3b3c81a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a93b60c87a96b57c87a99b50c91a99b48c93a99b48c93a99b48c93a99b48c93a101b46c93a103b4a4b36c93a111b36c93a111b36c93a111b36c93a111b36c93a111b36c93a111b14d22c93a111b12d24c93a111b12d24c93a111b12d24c93a111b12d24c93a111b12d24c93a101e10b2e1u1b2u2d28c93a99e15u6d27c93a99e15u6d27c93a99e15u6d27c93a99e15u6d27c93a99e15u6d30c90a70e3a4e37u6d33c87a69e6a1e38u6d33c87a69e45u6d33c87a69e45u10d29c87a69e45u11d28c87a69e45u12d27c87a65e2a2e46u11d27c87a63e53u10d27c87a63e56u7d27c87a63e57u6d27c87a63e57u6d27c87a63e56u7d30c6d3c75a63e56u7d39c75a63e57u6d39c75a63e57u6d39c75a63e57u6d39c75a63e57u6d39c75a63e57u6d41c73a63e57u6d51c63a63e57u6d51c63a63e57u6d51c63a63e57u6d51c63a63e57u6d51c63a57e3a3e54f3u6d51c63a57e60f6u2f4d48c49g14a57e60f12d48c48g15a57e60f12d48c48g15a57e60f12d48c48g15a57e60f12d48c48g15a57e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f12d48c48g15h21a36e60f13d47c48g15h24a18h3a12e60f12d50c46g15h45a12e49i3e4i4f2i10d52c4d4c20g31h45a12e48i6e1i17d54c1d5c18g33h45a12e48i24d60c18g33h45a12e48i24d60c18g33h45a13e47i24d60c18g33h47a10e48i24d60c12g3c3g33h57e44i2e2i25d1i4d54c12g39h57e42i36d54c12g39h57e42i36d54c12g39h57e42i36d54c12g39h57e42i36d54c12g39h57e42i39d1i2d51c9g39h57e37i47d52c2g45h57e36i48d54g45h57e36i48d11s5d38g45h57e2t5e29i48d10s13d31g45h57t8e29i47d9s16d29g45h57t9e15j3e9i48d9s17d28g45h53l1t12e15j12i48d9s15m12d18g45h51l3t12e15j12i48d9s15m12d18g45h51l4t11e15j12i48d9s15m12d18g45h51l5t25j12i48d3s12k6s3m12s18g45h51l9t21j12i48s15k9m12s18g45h51l9t21j12i48s15k9m12s18g45h51l9t21j12i44k1s18k9m12s18g45h51l9t21j12i42k3s17k10m12s18g45h51l10t20j12i42k4s15k11m12s18g45h51l30j12i42k5s3k22m12k18g45h51l30j12i42k30m12k18g45h51l30j12i42k32m10k18g45h46l36j1l10i2l4i36k34m4k2m2k18g45h45l54i36k60g45h45l54i36k60g45h45l54i36k60g45h45l54i36k60g45h45l54i36k63g42h45l54i36k66g39h45l54i36k66g39h45l54i36k66g39h45l54i36k66g39h45l54i36k66g39h45l57i33k66g39h45l60i25k71g39h45l60i24k72g39h45l60i24k72g39h45l60i24k72g39h45l60i24k72g39h45l60i24k72g39h45l69r1i2r2k71g50h45l69r6k69g51h45l69r6k69g51h45l69r6k69g51h45l69r6k70g50h45l69r6k57n3k9g51h45l69r6k57n12g51h45l69r6k57n12g51h45l69r6k57n12g51h45l69r6k57n12g51h45l69r6k57n12g51h15o3h27l69r6k57n14g49h15o22h4o4l2o4l63r6k46n29g26n2g3n14h15o24h1o11l63r6k45n30g24n21h15o36l63r6k45n30g24n21h15o36l63r6k45n30g24n21h15o36l63r6k45n30g24n21h15o39l60r6k45n32g22n21o57l56p4r2p4k42n36g13n26o57l54p12k42n36g12n27o57l54p12k42n36g12n27o57l54p12k42n36g12n27o57l54p12k42n36g12n27o57l54p12k42n39g9n27o69l42p12k38n79o69l42p12k36n81o69l42p12k36n81o69l42p12k36n81o69l42p12k36n81o69l44p10k36n81o69l45r1p2r2k35n86o69l45r6k33n87o69l45r6k33n87o69l45r6k33n87o69l45r6k33n87o69l45r6k33n87o75l39r6k33n87o75l39r6k33n87o75l39r6k33n87o75l39r6k33n87o75l39r6k33n87o78l36r6k33n87o91l4o8l2q12r2q14k2n10k4n91o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o105q30n105o101q2o2q30n105o99q36n105o99q36n105o99q36n105o99q36n105o99q36n105o89q46n105o87q48n105o87q48n105o87q48n105o87q48n105o87q51n102o82q59n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o81q60n99o83q60n97o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o87q60n93o82q66n1q4n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o81q72n87o80q72n88o80q72n88o80q72n88o80q72n88o81q72n87o81q72n87","n":["Zone 4 NW","Zone 5 N","Zone 4 NO","Zone 6 NO","Zone 6 NW","Altar N","Zone 5 O","Zone 5 W","Kingsland","Altar W","Zone 6 SO","Zone 6 SW","Altar O","Zone 4 SO","Zone 4 SW","Altar S","Zone 5 S","Pass 7 S","Pass 7 O","Pass 7 W","Pass 7 N"],"c":[[0.1831,0.1632],[0.5136,0.0747],[0.8225,0.1737],[0.633,0.326],[0.3652,0.3191],[0.5111,0.3376],[0.9088,0.4937],[0.0978,0.4815],[0.4857,0.4611],[0.3618,0.4618],[0.6377,0.5833],[0.3364,0.5964],[0.7123,0.4626],[0.8036,0.813],[0.1756,0.8175],[0.4872,0.6628],[0.4808,0.8891],[0.4867,0.6458],[0.686,0.4545],[0.2805,0.4548],[0.5023,0.249]]} },
+    { k: 'mighty_assembly', n: 'Mighty Assembly', lay: 'lk2', img: 'icons/map_mighty_assembly.jpg', size: 1200, unit: 6, pad: 1.1, zones: {"w":240,"r":"a69b106c65a69b106c65a69b107c64a69b107c64a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a69b108c63a74b37d11b49c4b2c63a75b36d12b48c69a75b36d12b48c69a75b36d12b48c69a75b36d12b48c69a75b35d13b48c69a75d22b4d38b3d29c69a75d24b1d71c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69a75d96c69e6a69d96c24f2c43e13a4e20a4e5a24d101c24f10c4f20c4f7e15a1e23a1e6a23d102c24f12c1f23c1f8e45a24d102c24f45e45a24r1d94s7c24f45e45a24r2d92s8c24f45e45a4e2a18r3d90s9c24f45e51g4a4g7r6d90s12h1c4h4f11c1f45e51g15r6d90s12h9f57e51g15r10d86s11h10f57e51g15r11d85s7h14f57e51g15r12d85s6h14f57e51g15r12d85s6h14f57e51g15r9i12d66j5d1j6s4h14f57e51g15r9i12d66j12s3h15f57e51g16r7g1i12d66j12s2h16f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12d66j12h18f57e51g24i12r6d58s2j12h18f57e51g24i12r7d56s3j12h18f57e51g25i11r8d54s4j12h19f56e51g34r10d54s6h34f51e51g34r10d54s6h34f51e51g35r10d53s7h33f51e51g39r6d49s11h33f51e51g39r6d49s11h33f51e51g39r7d47s12h33f51e47g43r7d47s12h39f45e45g45r6d48s11h40f45e45g45r6d48s6h45f45e45g45r6d48s6h45f45e45g45r6d48s6h45f45e45g45r6d48s6h45f45e45g45r6d48s6h45f45e45g45r6d48s6h45f45e45g45r6d48s6h45f45e45g45r16d34s10h45f45e45g46r16d32s11h45f45e45g46r17d30s12h45f45e45g46r14k11d2k11d1k11s9h45f45e45g47r13k36s8h46f45e45g48r12k36s7h47f45e45g53r2g5k36h54f45e45g60k36h54f45e46g59k36h54f45e50g55k36h49f50e50g55k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h48f51e51g54k36h49f50e51g54k36h49f50e51g54k36h53f46e51g54k36h53f46e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e51g54k36h54f45e45g60k36h54f45e45g60k36h54f45e45g60k36h54f45e45g47t13k36u1h53f45e45g46t14k36u2h52f45e45g45t15k36u2h52f45e45g45t18l9k1l11k1l8u6h51f45e45g45t17l31u6h51f45e45g45t15l33u6h51f45e45g45t6l42u6h51f45e46g44t6l42u6h51f45e46g44t6l42u6h51f45e51g39t6l42u6h56f40e51g39t6l42u6h56f40e51g39t6l42u6h57f39e51g29t16l42u22h41f39e51g28t17l42u23h40f39e51g27t18l42u24h39f39e51g27t18l42u24h39f39e51g27t18l42u24h39f39e51g27t17l44u23h39f39e51g27t7l1t2l3t2l48u3l2u2l4u2l2u6h39f39e51g28t6l71u6h39f39e51g28t6l71u6h39f39e51g19m11t4l71u3n11h31f39e51g18m12t3l73u2n11h31f39e51g18m12t2l75u1n12h30f39e51g18m12l78n12h30f39e51g18m12l78n12h30f39e51g18m12l78n12h30f39e51g18m12l78n12h12o4h4o10f39e51g18m12l78n12h12o18f39e51g18m12l78n12h12o18f39e51g11t7m12l78n12h12o18f39e51g10t8m12l78n12h12o18f39e51g9t1p2t6m10l80n5o2n5h12o18f39p7e4p20e3p17g2p2g3p5t9l93o6h3o27f39p63t9l93o36f39p63t8l94o36f39p63l102o36f39p63l102o36f39p63l102o36f39p63l102o40f4o20f4o1f6p63l102o75p63l102o75p63l102o75p63l102o75p63l102o75p63l106o71p63l108o69p63l108o69p63l108o69p63l108o69p63l108o69p63l30q4l4q28l14q2l4q4l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p63l30q36l12q12l18o69p62q115o63p62q115o63p63q114o63p63q114o63p63q114o63p63q114o63p62q115o63p63q114o63p63q114o63p63q114o63p63q114o63p64q113o63p75q102o63p75q102o63p75q102o63p75q102o63p75q102o63p75q100o65p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p75q96o69p63q3p8q97o69p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p63q114o63p62q115o63p62q115o63p61q116o63p61q116o63p61q116o63p61q116o63","n":["Zone 5 NW","Zone 4 N","Zone 5 NO","Zone 6 N","Zone 4 W","Zone 4 O","Zone 6 W","Zone 6 O","Altar NW","Altar NO","Kingsland","Zone 6 S","Altar SW","Altar SO","Zone 5 SO","Zone 5 SW","Zone 4 S","Pass 7 NW","Pass 7 NO","Pass 7 SW","Pass 7 SO"],"c":[[0.1498,0.1377],[0.5119,0.1036],[0.8607,0.1381],[0.5023,0.3081],[0.1019,0.489],[0.9015,0.4862],[0.2994,0.5009],[0.71,0.5128],[0.3376,0.3369],[0.6623,0.3376],[0.5121,0.5125],[0.4868,0.7106],[0.3122,0.6875],[0.6866,0.6871],[0.8542,0.8553],[0.1378,0.858],[0.5044,0.9003],[0.3661,0.3776],[0.6414,0.3687],[0.3641,0.633],[0.6178,0.6307]]} }];
   HM_MAPS.forEach(m => { const z = m.zones; if (z.d) return; let d = ''; z.r.replace(/([a-z])(\d+)/g, (_, c, n) => { d += c.repeat(+n); return ''; }); z.d = d; });   // Zonen-Raster entpacken
   var HM_ICON = {"Julius Caesar":"caesar","Sun Tzu":"sun","Frederick I":"fred","Minamoto no Yoshitsune":"mina","Yi Seong-Gye":"ysg","Cao Cao":"cc","Richard I":"richard","El Cid":"cid","Hermann":"hermann","Kusunoki Masashige":"kuso","Scipio Africanus":"scipio","Eulji Mundeok":"eulji","Boudica":"boudica","Pelagius":"pelagius","Centurion":"centurion","Hannibal Barca":"barca","Cleopatra VII":"cleo","Constance":"constance","Gaius Marius":"gaius","Tomoe Gozen":"tomoe","Lancelot":"lancelot","Lohar":"lohar","Šárka":"sarka","Belisarius":"beli","Baibars":"baibars","Osman I":"osman","Saladin":"saladin","Mehmed II":"mehmed","Genghis Khan":"khan","Mulan":"mulan","Wu Zetian":"wu","Charlemagne":"charlemagne","Alexander the Great":"alex","Æthelflæd":"aethel","Tomyris":"tomy","Seondeok":"seondeok","Keira":"keira","Keira's Secondary Commander":"keira","Keira's Guard":"keira","Keira's Elite Guard":"keira","Attila":"attila","Takeda Shingen":"takeda","Ishida Mitsunari":"ishida","Theodora":"theo","Guan Yu":"guan","Leonidas I":"leo","Artemisia I":"art","Yi Sun-sin":"yss","Chandragupta Maurya":"chandra","William I":"william","Matilda of Flanders":"matilda","Zenobia":"zeno","Lu Bu":"lubu","Diaochan":"diaochan","Cyrus the Great":"cyrus","Nebuchadnezzar II":"nebu","Moctezuma I":"mocte","Trajan":"trajan","Jadwiga":"jad","Xiang Yu":"xy","Ragnar Lodbrok":"ragnar","Cheok Jun-gyeong":"cj","Gilgamesh":"gilga","Amanitore":"amani","Honda Tadakatsu":"honda","Bertrand du Guesclin":"bert","Alexander Nevsky":"nevsky","Flavius Aetius":"flav","Thutmose III":"thutmose","Imhotep":"imhotep","Henry V":"henry","Lohar's Guard":"lohar","Lohar's Elite Guard":"lohar","Jan Žižka":"jan","Tariq ibn Ziyad":"tariq","Babur":"babur","Heraclius":"hera","Dido":"dido","Zhuge Liang":"zl","Pyrrhus":"pyrrhus","Pericles":"pericles","Huo Qubing":"huo","Justinian I":"justinian","Liu Che":"liu","Ashurbanipal":"ash","Lapulapu":"lapu","Gorgo":"gorgo","Gonzalo de Córdoba":"gonzalo","Gajah Mada":"gajah","Eleanor of Aquitaine":"eleanor","William Wallace":"wallace","Shajar al-Durr":"shajar","Philip II":"philip","Stephen III":"stephen","John Hunyadi":"john","Narses":"narses","Subutai":"subutai","Arthur Pendragon":"arthur","Bai Qi":"bq","Tokugawa Ieyasu":"toku","Shapur I":"shapur","Qin Shi Huang":"qin","Archimedes":"archimedes","Achilles":"achilles","Hector":"hector","Casimir III":"casimir","David IV":"david","Gang Gamchan":"gamchan","Ivar":"ivar","Alp Arslan":"alp","Hayam Wuruk":"hayam","Vercingetorix":"verci","Elizabeth I":"elizabeth","William Marshal":"marshal","Charles Martel":"cm","Constantine the Great":"const","Joan of Arc":"joan","Pakal the Great":"pakal","Ramesses II":"ramesses","Sargon the Great":"sargon","Suleiman I":"suleiman","Edward of Woodstock":"edward","Harald Sigurdsson":"harald","Björn Ironside":"bjorn","Afonso I":"afonso","Pepin the Short":"pepin","Mary I":"mary","Matthias Corvinus":"matthias","Margaret I":"margaret","Tamar":"tamar","Catherine I":"catherine"};   // Kommandanten-Name (Bericht, englisch) → Bild in icons/comander
   var HM_SRC = [['pvp', '⚔️ Kämpfe', '#ef4444'], ['barb', '🪓 Barbaren', '#3b82f6'], ['fort', '🏰 Forts', '#a855f7']];
@@ -722,26 +722,24 @@ window.RokMods.battles = (R) => {
   var HM_COL = ['#22d3ee', '#f472b6', '#facc15', '#a3e635', '#fb923c', '#c084fc', '#2dd4bf', '#f87171', '#60a5fa', '#e879f9'];
   var hmMates = null, hmMatesLoading = false, hmPlay = null, hmView = { s: 1, x: 0, y: 0 }, hmCalMode = false, hmShare = null, hmShareCol = true, hmLiveT = null, hmMaskC = null, hmLast = null;
   function hmCfg(st) { const h = (st.heat = st.heat || {});
-    if (h.v !== 3) { h.rot = 0; h.mir = false; h.zn2 = {}; h.v = 3; }   // neue Zonen (mit Altären) – alte Zonen-Namen passen nicht mehr
+    if (h.v !== 4) { h.rot = 0; h.mir = false; h.zn2 = {}; h.iso = null; h.pop = null; h.v = 4; }   // neue Zonen (Zone 4/5/6, Pass 7, Altar, Kingsland)
     if (!['pvp', 'barb', 'fort'].includes(h.src)) h.src = 'pvp';
     if (!h.map) h.map = hmCalc()?.layout === 'lk2' ? 'mighty_assembly' : 'heroic_anthem';
-    h.t = h.t || 'kvk'; h.rad = +h.rad || 3; h.zn2 = h.zn2 || {}; h.fn = h.fn || {}; h.kv = h.kv || {}; h.speed = +h.speed || 4;
+    h.t = h.t || 'kvk'; h.rad = +h.rad || 3; h.zn2 = h.zn2 || {}; h.fn = h.fn || {}; h.ak = h.ak || {}; if (h.tlOpen == null) h.tlOpen = true; h.speed = +h.speed || 4;
     if (h.zm == null) h.zm = true; if (h.fr == null) h.fr = false; if (h.trail == null) h.trail = 6 * 3600e3; if (h.pngMk == null) h.pngMk = true; return h; }
   function hmMap(h) { return HM_MAPS.find(m => m.k === h.map) || HM_MAPS[0]; }
   function hmCalc() { try { const s = window.KvKCalc?.getState?.(); return s ? { start: s.startDate || '', end: s.endDate || '', days: +s.mid?.days || 0, layout: s.mid?.layout || '', passAt: s.passAt || {} } : null; } catch { return null; } }
-  // ---------- KvK (C-Nummer) ----------
-  function hmKvks() {   // alle KvKs aus deinen Berichten (Weltkarte), neuestes zuerst
-    const M = new Map(), pid = kbProfileId();
-    (kbRows || []).forEach(r => { if (!kbMine(r.player_id) || r.map_role !== 'gsmp' || !(+r.server_id >= 10000)) return; const id = 'C' + r.server_id, o = M.get(id) || { id, n: 0, last: '', prof: false, pids: new Set() };
-      o.n++; if ((r.battle_start || '') > o.last) o.last = r.battle_start || ''; if (pid && String(r.player_id) === pid) o.prof = true; o.pids.add(String(r.player_id)); M.set(id, o); });
-    const list = [...M.values()].sort((a, b) => b.last.localeCompare(a.last)), firstProf = list.find(x => x.prof);
-    list.forEach(x => { x.isProfile = x === firstProf; }); return list;
-  }
-  function hmKvkCur(h) { const L = hmKvks(); if (!L.some(x => x.id === h.kvkId)) h.kvkId = L[0]?.id || null; return L.find(x => x.id === h.kvkId) || null; }
-  function hmKvkName(h, k) { return (k && h.kv[k.id]?.name) || (k ? k.id : 'KvK'); }
-  function hmStart(h) { const k = hmKvkCur(h); return (k && h.kv[k.id]?.start) || ((!k || k.isProfile) ? hmCalc()?.start || '' : ''); }   // Profil-KvK → Start aus dem KvK-Rechner
-  function hmEnd(h) { const s = hmStart(h), c = hmCalc(), k = hmKvkCur(h); if (!s) return null; const a = Date.parse(s + 'T00:00:00Z');
-    if ((!k || k.isProfile) && c?.end && Date.parse(c.end + 'T00:00:00Z') > a) return Date.parse(c.end + 'T00:00:00Z'); return a + Math.max(1, (k?.isProfile && c?.days) || 60) * 864e5; }
+  // ---------- Account + KvK (C-Nummer) – jede ID hat ihr eigenes KvK ----------
+  function hmAcc(h) { const ids = [...kbMyIds()], p = kbProfileId(); if (!ids.includes(String(h.acc))) h.acc = p || ids[0] || ''; return String(h.acc || ''); }
+  function hmAccRows(gid) { return (kbRows || []).filter(r => String(r.player_id) === gid && r.map_role === 'gsmp'); }
+  function hmKvkAuto(gid) { let b = null; hmAccRows(gid).forEach(r => { if (+r.server_id >= 10000 && (!b || (r.battle_start || '') > b.t)) b = { id: 'C' + r.server_id, t: r.battle_start || '' }; }); return b ? b.id : ''; }   // steht im Bericht (Server-Nummer)
+  function hmAk(h) { const g = hmAcc(h); h.ak[g] = h.ak[g] || {}; return h.ak[g]; }
+  function hmKvkCode(h) { return hmAk(h).kvk || hmKvkAuto(hmAcc(h)); }
+  function hmSid(h) { const n = +String(hmKvkCode(h)).slice(1); return n && hmAccRows(hmAcc(h)).some(r => +r.server_id === n) ? n : null; }
+  function hmIsProf(h) { return hmAcc(h) === kbProfileId(); }
+  function hmStart(h) { const a = hmAk(h); if (a.start) return a.start; const c = hmCalc(); if (hmIsProf(h) && c?.start) return c.start;
+    const sid = hmSid(h); let t = ''; hmAccRows(hmAcc(h)).forEach(r => { if ((!sid || +r.server_id === sid) && r.battle_start && (!t || r.battle_start < t)) t = r.battle_start; }); return t ? t.slice(0, 10) : ''; }
+  function hmEnd(h) { const s = hmStart(h), c = hmCalc(); if (!s) return null; if (hmIsProf(h) && !hmAk(h).start && c?.end && c.end > s) return Date.parse(c.end + 'T23:59:59Z'); return null; }
   function hmUnit(h, ax) { const m = hmMap(h), v = ax === 'x' ? +h.ux : +h.uy; return v > 0 ? v : (m.unit || 1); }
   function hmTile(v, ax) { return v == null ? null : +v / hmUnit(hmCfg(kbSt()), ax || 'x'); }
   function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x, 'x'), b = hmTile(y, 'y'); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
@@ -765,12 +763,11 @@ window.RokMods.battles = (R) => {
     return [ks, hmEnd(h)];
   }
   function hmPoints(st, src, range, withMates) {   // Punkte des gewählten KvK: du + (optional) Freunde/Königreich
-    const h = hmCfg(st), m = hmMap(h), k = hmKvkCur(h), sid = k ? +k.id.slice(1) : null, [from, to] = range, mates = withMates && hmMates ? new Map(hmMates.map((f, i) => [f.gid, i])) : new Map();
-    const out = [], own = (pid) => kbMine(pid) && (!st.acc || String(pid) === st.acc);
+    const h = hmCfg(st), m = hmMap(h), sid = hmSid(h), acc = hmAcc(h), [from, to] = range, mates = withMates && hmMates ? new Map(hmMates.map((f, i) => [f.gid, i])) : new Map();
+    const out = [], own = (pid) => acc ? String(pid) === acc : kbMine(pid);
     const add = (r, joined) => { const kd = hmKind(r); if (kd !== src) return;
       if (!joined && sid && r.server_id != null && +r.server_id !== sid) return;
       const mine = own(r.player_id), fi = mates.get(String(r.player_id)); if (!mine && fi == null) return;
-      if (mine && st.march && kd === 'pvp' && !joined && kbMarchOf(r) !== st.march) return;
       if (!hmIn(r.pos_x, r.pos_y, r.map_role)) return;
       const t = r.battle_start ? Date.parse(r.battle_start) : NaN; if (from != null && !(t >= from)) return; if (to != null && !(t <= to)) return;
       const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); out.push({ r, k: kd, u, v, t, mine, fi: mine ? -1 : fi, z: hmZoneAt(u, v, m), joined }); };
@@ -790,14 +787,13 @@ window.RokMods.battles = (R) => {
     if (S.altar) for (let i = 0; i < S.altar.count; i++) ev.push({ kind: 'altar', ts: at[S.altar.from] + S.altar.off + i * S.altar.every * HR });
     return ev;
   }
-  function hmFightName(h, m, zs, a, b) {   // Ort zuerst: Altar-Kästchen, Kingsland, zwei innere Zonen = Pass 7, Zone 5 – sonst Kalender, sonst Zone
+  function hmBaseName(n) { n = n || ''; const m = /^(Zone \d|Pass \d)/.exec(n); return m ? m[1] : /^Altar/.test(n) ? 'Altar' : /^Kingsland/.test(n) ? 'Kingsland' : n; }
+  function hmFightName(h, m, zs, a, b) {   // Ort: Altar-Kästchen, Kingsland, Pass 7 (Grenze Zone 6/Zone 6), Zone 4/5/6 – sonst Kalender
     const n1 = zs[0] ? m.zones.n[zs[0][0]] : '', n2 = zs[1] && zs[1][1] >= zs[0][1] * .3 ? m.zones.n[zs[1][0]] : '';
-    if (/^Altar/.test(n1)) return 'Altar'; if (/^Kingsland/.test(n1)) return 'Kingsland';
-    if (/^Innen/.test(n1) && /^Innen/.test(n2)) return 'Pass 7'; if (/^Zone 5/.test(n1)) return 'Zone 5';
+    if (/^Zone 6/.test(n1) && /^Zone 6/.test(n2)) return 'Pass 7'; if (n1) return hmBaseName(n1);
     const ev = hmSched(h); if (ev.some(e => e.kind === 'altar' && a <= e.ts + 3 * 36e5 && b >= e.ts - 30 * 6e4)) return 'Altar';
     const p = ev.filter(e => e.kind === 'pass' && e.ts <= b + 30 * 6e4 && a - e.ts <= 72 * 36e5).sort((x, y) => y.ts - x.ts)[0];
-    if (p) return ({ 4: 'Zone 4', 7: 'Pass 7', 8: 'Kingsland' })[p.n] || 'Pass ' + p.n;
-    return zs[0] ? hmZName(h, m, zs[0][0]) : 'Kampf';
+    return p ? (({ 4: 'Zone 4', 7: 'Pass 7', 8: 'Kingsland' })[p.n] || 'Pass ' + p.n) : 'Kampf';
   }
   function hmFights(st) {   // Schlachten: deine PvP-Kämpfe im KvK, Pause > 45 min = neue Schlacht
     const h = hmCfg(st), m = hmMap(h), s = hmStart(h), pts = hmPoints(st, 'pvp', [s ? Date.parse(s + 'T00:00:00Z') : null, null], false).filter(p => p.mine), out = []; let cur = null;
@@ -828,8 +824,8 @@ window.RokMods.battles = (R) => {
     finally { if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); } }
   async function hmSetShare(v) { try { const db = RokAuth?.db?.(), me = RokAuth?.userId?.(); if (!db || !me) return; const q = await db.from('leaderboard').update({ heat_share: v }).eq('user_id', me);
       if (q.error) { hmAsk('Sichtbarkeit', '', null, 'Konnte nicht gespeichert werden – fehlt das neue SQL (heat_share)?'); return; } hmShare = v; } catch {} renderKampf(); }
-  function hmCity(gid) { const h = hmCfg(kbSt()), k = hmKvkCur(h), sid = k ? +k.id.slice(1) : null;
-    return (kbRows || []).find(r => (gid ? String(r.player_id) === gid : kbMine(r.player_id)) && (!sid || +r.server_id === sid) && hmIn(r.city_x, r.city_y, r.map_role)); }
+  function hmCity(gid) { const h = hmCfg(kbSt()), sid = gid ? null : hmSid(h), me = hmAcc(h);
+    return (kbRows || []).find(r => (gid ? String(r.player_id) === gid : (me ? String(r.player_id) === me : kbMine(r.player_id))) && (!sid || +r.server_id === sid) && hmIn(r.city_x, r.city_y, r.map_role)); }
   // ---------- schönes Eingabefenster (statt Browser-Prompt) ----------
   function hmAsk(title, value, onOk, msg, ph) {
     document.getElementById('hmAsk')?.remove(); const d = document.createElement('div'); d.id = 'hmAsk'; d.className = 'fixed inset-0 z-[90] grid place-items-center bg-black/60 backdrop-blur-sm p-4';
@@ -863,16 +859,20 @@ window.RokMods.battles = (R) => {
       .sort((a, b) => b.kp - a.kp || b.n - a.n);
   }
   function hmState(st) {
-    const h = hmCfg(st), m = hmMap(h), kvk = hmKvkCur(h), fights = h.src === 'pvp' ? hmFights(st) : [];
+    const h = hmCfg(st), m = hmMap(h), fights = h.src === 'pvp' ? hmFights(st) : [];
     if (h.fight && !fights.some(f => f.id === h.fight)) h.fight = null;
-    const range = hmRange(h, fights), all0 = hmPoints(st, h.src, range, h.fr), all = h.iso != null ? all0.filter(p => p.z === h.iso) : all0;
+    const range = hmRange(h, fights), allA = hmPoints(st, h.src, range, h.fr), mk = (p) => p.joined ? 'Rally (Teilnehmer)' : kbMarchOf(p.r);
+    const marches = [...new Set(allA.filter(p => p.mine).map(mk))].sort(); if (h.march && !marches.includes(h.march)) h.march = '';
+    const all0 = h.march ? allA.filter(p => !p.mine || mk(p) === h.march) : allA, all = h.iso != null ? all0.filter(p => p.z === h.iso) : all0;
     const t0 = all.length ? all[0].t : Date.now(), t1 = all.length ? all[all.length - 1].t : Date.now(), cur = h.tl == null ? null : Math.min(t1, Math.max(t0, h.tl));
     const upto = cur == null ? all : all.filter(p => p.t <= cur), dots = cur == null || !h.trail ? upto : upto.filter(p => p.t >= cur - h.trail);
-    return { h, m, kvk, fights, all0, all, upto, dots, t0, t1, cur, zs: hmZoneStats(upto), zsAll: hmZoneStats(all0) };
+    const merge = (L) => { if (h.src !== 'pvp') return L; const M = new Map(); L.forEach(p => { const k = (p.mine ? 'm' : 'f' + p.fi) + '|' + p.r.mail_id, o = M.get(k);   // ein Bericht = ein Punkt
+      if (o) { o.kp += hmKP(p.r); o.n++; } else M.set(k, { ...p, kp: hmKP(p.r), n: 1 }); }); return [...M.values()]; };
+    return { h, m, fights, marches, all0, all, upto, dots, dotsM: merge(dots), t0, t1, cur, zs: hmZoneStats(upto), zsAll: hmZoneStats(all0) };
   }
   function hmMarkCard(S, o) {   // Marker: Name + seit wann + Werte (immer sichtbar), Klick = Rangliste & Märsche
     const { h, m } = S, pvp = h.src === 'pvp', open = h.pop === o.z;
-    const stat = pvp ? `🏆 <b class="text-gold-200">${short(o.kp)}</b> · ⚖️ <b class="${o.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(o.trade)}</b> · 💀 ${short(o.dead)}${o.acc ? ` · 🎖️ ${short(o.acc)}` : ''}` : `${h.src === 'barb' ? '🪓' : '🏰'} <b class="text-gold-200">${fmt(o.n)}</b>`;
+    const stat = pvp ? `🏆 <b class="text-gold-200">${short(o.kp)}</b> · ⚖️ <b class="${o.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(o.trade)}</b> · 💀 ${short(o.dead)} · 🎖️ ${o.acc ? short(o.acc) : '–'}` : `${h.src === 'barb' ? '🪓' : '🏰'} <b class="text-gold-200">${fmt(o.n)}</b>`;
     let body = '';
     if (open) { const rows = [...o.whoSum.entries()].map(([k, w]) => { const me = k === 'me', mt = me ? null : hmMates?.[+k.slice(1)];
         return { name: me ? 'Du' : (mt?.name || 'Spieler'), tag: me ? '' : mt?.kind === 'k' ? '👑' : '🤝', col: me ? '#f5c542' : HM_COL[+k.slice(1) % HM_COL.length], w }; }).sort((a, b) => b.w.kp - a.w.kp || b.w.n - a.w.n);
@@ -883,7 +883,7 @@ window.RokMods.battles = (R) => {
         <table class="w-full text-[11px]"><tbody>${rows.map((r, i) => `<tr><td class="pr-1 text-slate-500 tabular-nums">${i + 1}.</td><td><span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${r.col}"></span><span translate="no">${esc(r.name)}</span> ${r.tag}</td><td class="text-right tabular-nums text-gold-200">${pvp ? short(r.w.kp) : fmt(r.w.n)}</td>${pvp ? `<td class="pl-1 text-right tabular-nums text-slate-400">${hmTradeTxt(r.w.trade)}</td>` : ''}</tr>`).join('')}</tbody></table>
         <div class="mt-1 text-[9px] uppercase tracking-wider text-slate-500">Märsche</div>${hmMarchTable(hmMarches(o.mine, h.src), h.src, true)}
         ${o.ally.size ? `<div class="mt-1 text-[10px] text-red-200"><span class="text-slate-500">Gegner:</span> <span translate="no">${[...o.ally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5).map(([a, n]) => `[${esc(a)}] ${n}`).join(' · ')}</span></div>` : ''}</div>`; }
-    return `<div class="rounded-xl border ${open ? 'border-white' : 'border-amber-400/70'} bg-ink-950/90 px-2 py-1 shadow-xl text-[11px] text-slate-200 ${open ? 'w-80' : 'max-w-[15rem]'}">
+    return `<div class="rounded-xl border ${open ? 'border-white' : 'border-amber-400/70'} bg-ink-950/90 px-2 py-1 shadow-xl text-[11px] text-slate-200 ${open ? 'w-80 max-h-[26rem] overflow-y-auto' : 'max-w-[17rem]'}">
       <div class="flex items-center justify-between gap-2"><b class="text-gold-300" translate="no">📍 ${esc(hmZName(h, m, o.z))}</b><span class="text-slate-500">${open ? '▴' : '▾'}</span></div>
       <div class="text-[10px] text-slate-500">${pvp ? '<span>erste KP</span>' : '<span>erster Kill</span>'} ${hmWhen(o.first)}</div>
       <div class="whitespace-nowrap">${stat}${o.whoSum.size > 1 ? ` · <span class="text-cyan-300">👥${o.whoSum.size}</span>` : ''}</div>${body}</div>`;
@@ -898,63 +898,83 @@ window.RokMods.battles = (R) => {
       ${!f ? '<div class="text-xs text-slate-500 mt-2">Noch keine Schlacht in diesem KvK. Sobald du kämpfst, erscheinen hier deine Werte.</div>' : `
       <div class="text-xs text-slate-200 mt-0.5 font-semibold" translate="no">⚔️ ${esc(f.name)}</div>
       <div class="text-[10px] text-slate-500 mb-2">${hmWhen(f.a)} – ${new Date(S.cur != null ? Math.min(S.cur, f.b) : f.b).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${fmt(o.n)} <span>Kämpfe</span>${h.lastLive ? ` · <span>aktualisiert</span> ${new Date(h.lastLive).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : ''}</div>
-      <div class="grid grid-cols-2 gap-1.5">${big('🏆 Kill Points', short(o.kp), 'text-gold-200', '<span>wie im Profil</span>')}${big('🏟️ LK-Punkte', short(o.lk), 'text-amber-200', '<span>T4 = 1 · T5 = 5</span>')}
-        ${big('💀 Deads', short(o.dead), 'text-red-300', `${short(o.sev)} <span>schwer verw.</span>`)}${big('⚖️ Trade', hmTradeTxt(o.trade), o.trade >= 1 ? 'text-emerald-300' : 'text-red-300', '<span>Gegner-Verluste ÷ deine</span>')}
-        ${big('🎖️ Verdienst', o.acc ? short(o.acc) : '–', 'text-sky-200', o.acc ? '' : '<span>kommt mit dem neuen Uploader</span>')}${big('💚 Heilung', short(o.heal), 'text-emerald-200', '<span>im Kampf (Skills)</span>')}</div>
+      <div class="grid grid-cols-2 gap-1.5">${big('🏆 Kill Points', short(o.kp), 'text-gold-200')}${big('🏟️ LK-Punkte', short(o.lk), 'text-amber-200')}
+        ${big('💀 Deads', short(o.dead), 'text-red-300')}${big('⚖️ Trade', hmTradeTxt(o.trade), o.trade >= 1 ? 'text-emerald-300' : 'text-red-300')}
+        ${big('🎖️ Verdienst', o.acc ? short(o.acc) : '–', 'text-sky-200')}${big('💚 Heilung', short(o.heal), 'text-emerald-200')}</div>
       <div class="mt-2 text-[10px] uppercase tracking-wider text-slate-500">Märsche</div>${hmMarchTable(hmMarches(pts, 'pvp'), 'pvp', true)}`}
       <div class="mt-2 pt-2 border-t border-ink-700 flex items-center justify-between gap-2 text-[11px]"><span class="text-slate-400">Sichtbarkeit</span>
         <button type="button" data-hmshare class="px-2 py-1 rounded-lg border ${hmShare ? 'border-emerald-500/60 text-emerald-300' : 'border-ink-600 text-slate-300'}">${hmShare == null ? '…' : hmShare ? '👁️ <span>Für Freunde &amp; Königreich sichtbar</span>' : '🔒 <span>Privat</span>'}</button></div>
     </aside>`;
   }
-  function hmIdBar(st) {   // welche Accounts gezeigt werden (Profil-ID + verknüpfte IDs, z. B. dein 2. Account)
-    const pidP = kbProfileId(), links = (st.linkIds || []).map(String), names = new Map((kbRows || []).map(r => [String(r.player_id), r.self_name]));
-    const chip = (id, own) => `<span class="inline-flex items-center gap-1 rounded-lg border ${own ? 'border-gold-500/60 bg-gold-500/10 text-gold-200' : 'border-ink-600 text-slate-300'} px-2 py-0.5" translate="no">${own ? '👤' : '🔗'} ${esc(names.get(id) || '')} <span class="tabular-nums text-slate-400">${esc(id)}</span>${own ? ' <span class="text-[10px] text-slate-500">Profil</span>' : `<button type="button" data-kbunlink="${esc(id)}" class="text-slate-500 hover:text-red-300" title="Verknüpfung lösen">✕</button>`}</span>`;
-    return `<div class="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]"><span class="text-slate-400">🆔 <span>Meine Accounts</span>:</span>${pidP ? chip(pidP, true) : '<span class="text-amber-300">Keine Governor-ID im Profil</span>'}${links.filter(x => x !== pidP).map(x => chip(x, false)).join('')}
-      <input data-kblinkid inputmode="numeric" placeholder="+ ID des 2. Accounts" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-0.5 text-[11px] w-36 text-slate-100 focus:outline-none focus:border-gold-500"></div>`;
+  function hmIdBar(st, h) {   // Account wählen (Profil-ID + verknüpfte IDs) – jede ID hat ihr eigenes KvK
+    const pidP = kbProfileId(), ids = [...kbMyIds()], acc = hmAcc(h), names = new Map((kbRows || []).map(r => [String(r.player_id), r.self_name]));
+    const chip = (id) => { const on = id === acc, own = id === pidP; return `<span class="inline-flex items-center rounded-xl border ${on ? 'border-gold-500 bg-gold-500/15 text-gold-200' : 'border-ink-600 text-slate-300 hover:border-gold-500/60'}" translate="no">
+      <button type="button" data-hmacc="${esc(id)}" class="px-2.5 py-1 text-xs font-semibold">${own ? '👤' : '🔗'} ${esc(names.get(id) || '')} <span class="tabular-nums ${on ? 'text-gold-300/80' : 'text-slate-500'}">${esc(id)}</span></button>${own ? '' : `<button type="button" data-kbunlink="${esc(id)}" class="pr-2 text-slate-500 hover:text-red-300" title="Verknüpfung lösen">✕</button>`}</span>`; };
+    const auto = hmKvkAuto(acc), ak = hmAk(h), start = hmStart(h);
+    return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-2.5 mb-3 flex flex-wrap items-center gap-2">
+      <span class="text-xs text-slate-400">🆔</span>${ids.map(chip).join('')}
+      <input data-kblinkid inputmode="numeric" placeholder="+ ID" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1 text-xs w-24 text-slate-100 focus:outline-none focus:border-gold-500">
+      <span class="w-px h-6 bg-ink-700 mx-1"></span>
+      <span class="text-xs text-slate-400">🏁 KvK</span>
+      <input data-hmkvkcode value="${esc(ak.kvk || auto)}" placeholder="C12345" maxlength="6" spellcheck="false" class="bg-ink-950 border border-gold-500/50 rounded-xl px-3 py-1 text-sm font-bold tracking-widest text-gold-200 w-28 uppercase focus:outline-none focus:border-gold-400" translate="no">
+      <span class="text-xs text-slate-400">📅</span>
+      <input type="date" data-hmkvkstart value="${esc(start)}" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500">
+    </div>`;
   }
-  function hmHtml(st, filters) {
-    const S = hmState(st), { h, m, kvk, fights, all, dots, t0, t1, cur, zs, zsAll } = S;
+  function hmHtml(st, reload) {
+    const S = hmState(st), { h, m, fights, marches, all, t0, t1, cur, zs, zsAll } = S;
     if (h.fr && !hmMates && !hmMatesLoading) hmLoadMates();
     const seg = (attr, k, l, on) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${l}</button>`;
-    const sel = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500';
-    const kvks = hmKvks(), start = hmStart(h), mineAll = (kbRows || []).filter(r => kbMine(r.player_id)), inst = mineAll.filter(r => r.is_pvp && ((r.map_role && r.map_role !== 'gsmp') || kbIsAoo(r))).length, noPos = mineAll.filter(r => r.pos_x == null).length, city = hmCity();
-    const kvkBar = `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">🏁 KvK</span>
-      ${kvks.length ? `<select data-hmkvkid class="${sel}">${kvks.map(k => `<option value="${k.id}" ${kvk?.id === k.id ? 'selected' : ''}>${esc(hmKvkName(h, k))}${h.kv[k.id]?.name ? ' · ' + k.id : ''}${k.isProfile ? ' · Profil' : ''} (${fmt(k.n)})</option>`).join('')}</select>
-        <button type="button" data-hmkvkren class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="KvK benennen">✏️</button>` : '<span class="text-slate-500">Noch kein KvK-Kampf auf der Weltkarte</span>'}
-      <span class="text-slate-500">· <span>Start</span>:</span>${kvk && !kvk.isProfile ? `<input type="date" data-hmkvkstart value="${esc(start)}" class="${sel}">` : `<b class="text-slate-200">${start ? new Date(start + 'T00:00:00Z').toLocaleDateString('de-DE') : '–'}</b> <span class="text-slate-500">(<span>aus deinem Profil-KvK</span>)</span>`}
-      ${!start ? '<span class="text-amber-300">Trag im KvK-Rechner (Profil) das KvK-Startdatum ein.</span>' : ''}</div>`;
-    const fightSel = h.src === 'pvp' ? `<select data-hmfight class="${sel} max-w-[24rem]"><option value="">🎞️ Komplette Timeline</option>${fights.map(f => `<option value="${f.id}" ${h.fight === f.id ? 'selected' : ''}>⚔️ ${esc(f.name)} · ${hmWhen(f.a)}–${new Date(f.b).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${short(f.kp)} KP</option>`).join('')}</select>
-      ${h.fight ? '<button type="button" data-hmfren title="Schlacht umbenennen" class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60">✏️</button>' : ''}<span class="text-[10px] text-slate-500">${fights.length} <span>Schlachten automatisch erkannt</span></span>` : '';
-    const zoneSel = `<select data-hmzsel class="${sel}"><option value="">🗺️ Alle Zonen</option>${zsAll.slice().sort((a, b) => hmZName(h, m, a.z).localeCompare(hmZName(h, m, b.z))).map(o => `<option value="${o.z}" ${h.iso === o.z ? 'selected' : ''}>${esc(hmZName(h, m, o.z))} – ${h.src === 'pvp' ? '🏆 ' + short(o.kp) : (h.src === 'barb' ? '🪓 ' : '🏰 ') + fmt(o.n)}</option>`).join('')}</select>`;
-    const matesBar = h.fr ? `<div class="flex flex-wrap items-center gap-1.5 text-[11px] mb-1">${hmMatesLoading ? '<span class="text-slate-500">Lade Freunde und Königreich …</span>' : !hmMates?.length ? '<span class="text-slate-500">Niemand sichtbar – Freunde und Königreich-Mitglieder erscheinen, wenn sie „sichtbar“ eingeschaltet haben.</span>'
+    const sel = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500', pvp = h.src === 'pvp', start = hmStart(h);
+    const fightSel = pvp ? `<select data-hmfight class="${sel} max-w-[22rem]"><option value="">🎞️ Komplette Timeline</option>${fights.map(f => `<option value="${f.id}" ${h.fight === f.id ? 'selected' : ''}>⚔️ ${esc(f.name)} · ${hmWhen(f.a)}–${new Date(f.b).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${short(f.kp)} KP</option>`).join('')}</select>
+      ${h.fight ? '<button type="button" data-hmfren title="Schlacht umbenennen" class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60">✏️</button>' : ''}` : '';
+    const zOpt = zsAll.slice().sort((a, b) => hmZName(h, m, a.z).localeCompare(hmZName(h, m, b.z), 'de', { numeric: true }));
+    const zoneSel = (big) => `<select data-hmzsel class="${sel} ${big ? 'text-sm py-1.5' : ''}"><option value="">🗺️ Alle Zonen</option>${zOpt.map(o => `<option value="${o.z}" ${h.iso === o.z ? 'selected' : ''}>${esc(hmZName(h, m, o.z))} – ${pvp ? '🏆 ' + short(o.kp) : (h.src === 'barb' ? '🪓 ' : '🏰 ') + fmt(o.n)}</option>`).join('')}</select>`;
+    const marchSel = `<select data-hmmarch class="${sel} text-sm py-1.5"><option value="">⚔️ Alle Märsche</option>${marches.map(x => `<option value="${esc(x)}" ${h.march === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
+    const matesBar = h.fr ? `<div class="flex flex-wrap items-center gap-1.5 text-[11px] mb-1">${hmMatesLoading ? '<span class="text-slate-500">…</span>' : !hmMates?.length ? '<span class="text-slate-500">Niemand sichtbar</span>'
       : hmMates.map((f, i) => `<span class="inline-flex items-center gap-1 rounded-md border border-ink-600 px-1.5 py-0.5"><span class="w-2 h-2 rounded-full" style="background:${HM_COL[i % HM_COL.length]}"></span><span translate="no">${esc(f.name)}</span><span class="text-slate-500">${f.kind === 'k' ? '👑' : '🤝'}</span></span>`).join('')}</div>` : '';
-    const zoneCards = zs.map(o => `<div class="rounded-xl border ${h.pop === o.z ? 'border-amber-400' : 'border-ink-700'} bg-ink-950/60 p-2">
-        <button type="button" data-hmzone="${o.z}" class="w-full text-left"><div class="flex items-center justify-between text-xs"><span class="font-semibold text-slate-100">📍 <span translate="no">${esc(hmZName(h, m, o.z))}</span></span><span class="text-gold-300 font-semibold tabular-nums">${h.src === 'pvp' ? '🏆 ' + short(o.kp) : (h.src === 'barb' ? '🪓 ' : '🏰 ') + fmt(o.n)}</span></div>
-        <div class="text-[10px] text-slate-500">${h.src === 'pvp' ? '<span>erste KP</span>' : '<span>erster Kill</span>'} ${hmWhen(o.first)}${h.src === 'pvp' ? ` · ⚖️ ${hmTradeTxt(o.trade)} · 💀 ${short(o.dead)}${o.acc ? ' · 🎖️ ' + short(o.acc) : ''}` : ''}${o.whoSum.size > 1 ? ` · 👥 ${o.whoSum.size}` : ''}</div></button>
-        ${hmMarchTable(hmMarches(o.mine, h.src), h.src, false)}</div>`).join('');
+    // Märsche groß: zwei Kommandanten-Bilder, Name, Werte
+    const mine = S.upto.filter(p => p.mine), ml = hmMarches(mine, h.src);
+    const icon = (n) => { const id = HM_ICON[n]; return id ? `<img src="/icons/comander/${id}.webp" alt="" title="${esc(n)}" class="w-12 h-12 rounded-xl object-cover border border-ink-600 bg-ink-900" loading="lazy" onerror="this.style.visibility='hidden'">` : `<span class="w-12 h-12 rounded-xl grid place-items-center bg-ink-800 border border-ink-600 text-xs text-slate-300" title="${esc(n)}">${esc(n.slice(0, 2))}</span>`; };
+    const st6 = (l, v, c) => `<div><div class="text-[10px] text-slate-500">${l}</div><div class="font-semibold tabular-nums ${c || 'text-slate-100'}">${v}</div></div>`;
+    const marchCards = ml.map(([k, w]) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 flex items-center gap-3">
+        <div class="flex gap-1 shrink-0">${k.startsWith('Rally') ? '<span class="w-12 h-12 rounded-xl grid place-items-center bg-sky-500/15 border border-sky-500/40 text-xl">🛡️</span>' : String(k).split(' / ').slice(0, 2).map(icon).join('')}</div>
+        <div class="min-w-0 flex-1"><div class="text-sm font-semibold text-slate-100 truncate" translate="no" title="${esc(k)}">${esc(k)}</div>
+          <div class="grid grid-cols-3 gap-x-3 gap-y-1 mt-1 text-sm">${pvp ? st6('🏆 KP', short(w.kp), 'text-gold-200') + st6('🎖️ Acclaim', w.acc ? short(w.acc) : '–', 'text-sky-200') + st6('⚖️ Trade', hmTradeTxt(w.trade), w.trade >= 1 ? 'text-emerald-300' : 'text-red-300')
+            + st6('💀 Deads', short(w.dead), 'text-red-300') + st6('🩸 Schwer verw.', short(w.sev)) + st6('⚔️ Kämpfe', fmt(w.n)) : st6(h.src === 'barb' ? '🪓 Barbaren' : '🏰 Forts', fmt(w.n), 'text-gold-200')}</div></div></div>`).join('');
+    const zoneChips = `<button type="button" data-hmzf="" aria-pressed="${h.iso == null}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold">🗺️ Alle</button>` + zOpt.map(o => `<button type="button" data-hmzf="${o.z}" aria-pressed="${h.iso === o.z}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold"><span translate="no">${esc(hmZName(h, m, o.z))}</span> <span class="text-gold-300 tabular-nums">${pvp ? short(o.kp) : fmt(o.n)}</span></button>`).join('');
+    // Alle Kämpfe (ein Bericht = eine Zeile)
+    const B = new Map(); mine.forEach(p => { const k = p.r.mail_id || p.t + p.r.opponent_id; let o = B.get(k); if (!o) B.set(k, o = { p, pts: [], en: new Set() }); o.pts.push(p); if (p.r.enemy_name) o.en.add((p.r.enemy_alliance ? `[${p.r.enemy_alliance}] ` : '') + p.r.enemy_name); });
+    const bl = [...B.values()].sort((a, b) => b.p.t - a.p.t), blShow = bl.slice(0, 300);
+    const blRows = blShow.map(o => { const w = hmSum(o.pts), r = o.p.r, mk = o.p.joined ? 'Rally (Teilnehmer)' : kbMarchOf(r), en = [...o.en];
+      return `<tr class="border-t border-ink-800/70 hover:bg-ink-900/60"><td class="py-1.5 pr-2 tabular-nums text-slate-400 whitespace-nowrap">${hmWhen(o.p.t)}</td><td class="pr-2 whitespace-nowrap" translate="no">${esc(hmZName(h, m, o.p.z))}</td>
+        <td class="pr-2"><div class="flex items-center gap-1.5 min-w-0">${o.p.joined ? '🛡️' : `<span class="flex gap-0.5 shrink-0">${hmHeroes(mk)}</span>`}<span class="truncate max-w-[10rem]" translate="no">${esc(mk)}</span></div></td>
+        ${pvp ? `<td class="pr-2 text-red-200 truncate max-w-[12rem]" translate="no" title="${esc(en.join(', '))}">${esc(en.slice(0, 2).join(', '))}${en.length > 2 ? ` +${en.length - 2}` : ''}</td><td class="pr-2 text-right tabular-nums text-gold-200">${short(w.kp)}</td><td class="pr-2 text-right tabular-nums text-sky-200">${w.acc ? short(w.acc) : '–'}</td><td class="pr-2 text-right tabular-nums ${w.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(w.trade)}</td><td class="pr-2 text-right tabular-nums text-red-300">${short(w.dead)}</td>
+          <td class="text-right">${o.p.joined ? '' : `<button type="button" data-kbdetail="${esc(r.mail_id)}|${esc(r.opponent_id)}" class="px-2 py-0.5 rounded-lg border border-gold-500/40 text-gold-200 hover:bg-gold-500/10">🔍</button>`}</td>`
+        : `<td class="pr-2 text-right tabular-nums">${r.npc_level ? 'Lv ' + esc(r.npc_level) : ''}</td>`}</tr>`; }).join('');
+    const th = (l, r) => `<th class="py-1 pr-2 font-medium ${r ? 'text-right' : 'text-left'}">${l}</th>`;
+    const blHead = `<tr class="text-[11px] text-slate-500">${th('Zeit')}${th('Zone')}${th('Marsch')}${pvp ? th('Gegner') + th('🏆 KP', 1) + th('🎖️ Acclaim', 1) + th('⚖️ Trade', 1) + th('💀 Deads', 1) + th('') : th('Stufe', 1)}</tr>`;
     return `<style>#battlesView:fullscreen{overflow-y:auto;padding:12px;background:#07090f}#battlesView:fullscreen #hmBox{width:min(100%,calc(100vh - 170px));margin:0 auto}</style>
-      <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span> <span class="ml-1 align-middle text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span></h2>
-      <p class="text-xs text-slate-400 mb-3">Wo du kämpfst – jeder Kampf an dem Ort, an dem er stattfand (unabhängig davon, wo deine Stadt gerade steht). Ark of Osiris ist ausgeblendet.</p>
-      ${kvkBar}${hmIdBar(st)}
+      <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span></h2><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span><span class="ml-auto">${reload}</span></div>
+      ${hmIdBar(st, h)}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.map(([k, l, c]) => seg('data-hmsrc', k, `<span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${c}"></span>${l}`, h.src === k)).join('')}</div>
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_T.map(([k, l]) => seg('data-hmt', k, l, !h.fight && h.t === k)).join('')}</div>
       </div>
-      ${!h.fight && h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (start ? start + 'T00:00' : ''))}" class="${sel}"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="${sel}"><span class="text-slate-500">(leer = bis jetzt)</span></div>` : ''}
+      ${!h.fight && h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (start ? start + 'T00:00' : ''))}" class="${sel}"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="${sel}"></div>` : ''}
       ${hmDays(h)}
-      ${filters}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmzm ${h.zm ? 'checked' : ''} class="accent-amber-400"> <span>Zonen-Marker</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmfr ${h.fr ? 'checked' : ''} class="accent-amber-400"> <span>👥 Freunde &amp; Königreich</span></label>
-        ${zoneSel}
+        ${zoneSel(false)}
         <label class="flex items-center gap-1 text-slate-400"><span>Glühen</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label>
-        <span class="ml-auto flex flex-wrap items-center gap-1 text-slate-500"><span class="flex gap-1 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${HM_MAPS.map(x => `<button type="button" data-hmmap="${x.k}" aria-pressed="${h.map === x.k}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold" translate="no">🗺️ ${esc(x.n)}</button>`).join('')}</span>
+        <span class="ml-auto flex flex-wrap items-center gap-1"><span class="flex gap-1 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${HM_MAPS.map(x => `<button type="button" data-hmmap="${x.k}" aria-pressed="${h.map === x.k}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold" translate="no">🗺️ ${esc(x.n)}</button>`).join('')}</span>
           <button type="button" data-hmcal class="px-2 py-1 rounded-lg border ${hmCalMode ? 'border-emerald-400 text-emerald-300' : 'border-ink-600'} hover:border-gold-500/60" title="Auf die Stelle klicken, an der deine Stadt im Spiel wirklich steht">📍 <span>${hmCalMode ? 'Jetzt auf deine Stadt klicken …' : 'Stadt kalibrieren'}</span></button>
           ${h.ux ? '<button type="button" data-hmcalx class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="Kalibrierung zurücksetzen">↺</button>' : ''}</span>
       </div>
       ${matesBar}
       <div class="grid lg:grid-cols-[minmax(0,1fr)_19rem] gap-3 items-start mt-2"><div id="hmWrap" class="bg-ink-950 rounded-xl">
-        ${h.iso != null ? `<div class="flex items-center gap-2 mb-1 text-xs"><span class="text-amber-300 font-semibold">🔍 <span>Nur</span> <span translate="no">${esc(hmZName(h, m, h.iso))}</span></span><button type="button" data-hmiso="${h.iso}" class="px-2 py-0.5 rounded-lg border border-ink-600 hover:border-gold-500/60">✕ <span>Alle Zonen</span></button></div>` : ''}
+        ${h.iso != null ? `<div class="flex items-center gap-2 mb-1 text-xs"><span class="text-amber-300 font-semibold">🔍 <span translate="no">${esc(hmZName(h, m, h.iso))}</span></span><button type="button" data-hmiso="${h.iso}" class="px-2 py-0.5 rounded-lg border border-ink-600 hover:border-gold-500/60">✕ <span>Alle Zonen</span></button></div>` : ''}
         <div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950 ${hmCalMode ? 'cursor-crosshair' : 'cursor-grab'} touch-none select-none">
           <div id="hmStage" class="absolute inset-0 origin-top-left">
             <img src="${esc(m.img)}" alt="" class="absolute inset-0 w-full h-full select-none pointer-events-none" draggable="false" decoding="async" onerror="this.style.display='none';document.getElementById('hmNoImg')?.classList.remove('hidden')">
@@ -962,36 +982,32 @@ window.RokMods.battles = (R) => {
           </div>
           <canvas id="hmDots" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
           <div id="hmMarks" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
-          <div id="hmNoImg" class="hidden absolute inset-0 grid place-items-center text-sm text-slate-500 p-6 text-center">Kartenbild fehlt: ${esc(m.img)}</div>
+          <div id="hmNoImg" class="hidden absolute inset-0 grid place-items-center text-sm text-slate-500 p-6 text-center">${esc(m.img)}</div>
           <div class="absolute top-2 right-2 flex flex-col gap-1 z-40">
             ${[['in', '＋', 'Hineinzoomen'], ['out', '－', 'Herauszoomen'], ['fit', '🎯', 'Auf Kämpfe zoomen'], ['reset', '⤢', 'Ganze Karte'], ['full', '⛶', 'Vollbild'], ['png', '📷', 'Als Bild speichern']].map(([k, i, t]) => `<button type="button" data-hmz="${k}" title="${t}" class="w-9 h-9 rounded-lg bg-ink-950/85 border border-ink-600 hover:border-gold-500/60 text-base">${i}</button>`).join('')}
           </div>
           <div id="hmTip" class="hidden absolute z-50 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
         </div>
         <div class="mt-2 rounded-xl border border-ink-700 bg-ink-950/70 p-2">
-          <div class="flex flex-wrap items-center gap-2 text-xs mb-1">${fightSel}</div>
-          <div class="flex flex-wrap items-center gap-2 text-xs">
+          <div class="flex flex-wrap items-center gap-2 text-xs"><button type="button" data-hmtlopen class="px-2.5 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 font-semibold text-slate-200">🎞️ <span>Timeline</span> ${h.tlOpen ? '▴' : '▾'}</button>${fightSel}</div>
+          ${h.tlOpen ? `<div class="flex flex-wrap items-center gap-2 text-xs mt-2">
             <button type="button" data-hmplay class="px-3 py-1 rounded-lg border border-gold-500/50 text-gold-200 hover:bg-gold-500/10 font-semibold">${hmPlay ? '⏸ Pause' : '▶ Abspielen'}</button>
             <span class="flex gap-0.5">${[1, 4, 16].map(x => seg('data-hmspeed', x, '×' + x, h.speed === x)).join('')}</span>
             <span class="font-semibold text-slate-200 tabular-nums" id="hmTlLabel">${cur == null ? '<span>Alles</span>' : hmWhen(cur)}</span>
             <span class="text-slate-500">· <span>Spur</span>:</span>${HM_TRAIL.map(([k, l]) => seg('data-hmtrail', k, l, +h.trail === k)).join('')}
             <label class="ml-auto flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmpngmk ${h.pngMk ? 'checked' : ''} class="accent-amber-400"> <span>📷 Marker ins Bild</span></label>
-            ${cur != null ? '<button type="button" data-hmtlx class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60">✕ <span>Timeline aus</span></button>' : ''}
+            ${cur != null ? '<button type="button" data-hmtlx class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60">✕</button>' : ''}
           </div>
           <input type="range" data-hmtl min="${t0}" max="${t1}" step="60000" value="${cur == null ? t1 : cur}" class="w-full accent-amber-400 mt-1" ${all.length < 2 ? 'disabled' : ''}>
-          <div class="flex justify-between text-[10px] text-slate-500 tabular-nums"><span>${all.length ? hmWhen(t0) : ''}</span><span>⏪ <span>Regler ziehen zum Zurückspulen – Marker zeigen den Stand zu diesem Zeitpunkt</span></span><span>${all.length ? hmWhen(t1) : ''}</span></div>
+          <div class="flex justify-between text-[10px] text-slate-500 tabular-nums"><span>${all.length ? hmWhen(t0) : ''}</span><span>${all.length ? hmWhen(t1) : ''}</span></div>` : ''}
         </div>
       </div>${hmLivePanel(S)}</div>
-      <div class="mt-2 text-[11px] text-slate-500 flex flex-wrap gap-x-3 gap-y-1">
-        <span><span class="inline-block w-2.5 h-2.5 rounded-full align-middle" style="background:${HM_SRC.find(x => x[0] === h.src)[2]}"></span> ${fmt(dots.filter(p => p.mine).length)} ${h.src === 'pvp' ? '<span>Kämpfe</span>' : h.src === 'barb' ? '<span>Barbaren</span>' : '<span>Forts</span>'}${h.fr ? ` · ${fmt(dots.filter(p => !p.mine).length)} <span>von Freunden/Königreich</span>` : ''}</span>
-        <span><span class="inline-block w-2.5 h-2.5 rounded-full align-middle bg-emerald-400"></span> <span>Deine Stadt (zuletzt)</span>${city ? ` X ${Math.round(hmTile(city.city_x, 'x'))} · Y ${Math.round(hmTile(city.city_y, 'y'))}` : ''}</span>
-        ${h.ux ? '<span class="text-emerald-300">✓ <span>kalibriert</span></span>' : ''}
-        ${inst ? `<span>${fmt(inst)} <span>PvP-Kämpfe in Ark of Osiris / Instanzen (eigene Karte, hier nicht gezeigt)</span></span>` : ''}
-        ${noPos ? `<span>${fmt(noPos)} <span>ohne Ort (ältere Uploads)</span></span>` : ''}
-        ${!kbPosCols ? '<span class="text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</span>' : ''}
-      </div>
-      <h3 class="font-display text-base text-gold-300 mt-4 mb-2">📍 <span>Zonen</span> <span class="text-[11px] text-slate-500 font-sans">– <span>jeder Marsch mit KP, Verdienst und Trade · anklicken: hineinzoomen</span></span></h3>
-      <div class="grid sm:grid-cols-2 xl:grid-cols-3 gap-2">${zoneCards || '<div class="text-xs text-slate-500">Noch keine Kämpfe mit Ort im Filter.</div>'}</div>
+      ${!kbPosCols ? '<div class="mt-2 text-xs text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</div>' : ''}
+      <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3>${zoneSel(true)}${marchSel}</div>
+      <div class="flex flex-wrap gap-1 mt-2 p-1 rounded-xl bg-ink-950 border border-ink-700">${zoneChips}</div>
+      <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
+      <details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${pvp ? '⚔️ <span>Alle Kämpfe</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '🏰 <span>Alle Forts</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
+        <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><thead>${blHead}</thead><tbody>${blRows}</tbody></table>${bl.length > blShow.length ? `<div class="text-[11px] text-slate-500 mt-1">${fmt(blShow.length)} / ${fmt(bl.length)}</div>` : ''}</div></details>
       </section>`;
   }
   function hmDays(h) {   // KvK-Tage zum Anklicken (Tag 1 = KvK-Start aus dem Profil)
@@ -1003,8 +1019,8 @@ window.RokMods.battles = (R) => {
   // ---------- Zeichnen ----------
   function hmHeat(S) {
     if (hmLast && hmLast.S === S && hmLast.heat) return hmLast.heat;
-    const { h, dots } = S, mine = dots.filter(p => p.mine), N = 300, grid = new Float32Array(N * N);
-    mine.forEach(p => { const gx = Math.floor(p.u * N), gy = Math.floor(p.v * N); if (gx >= 0 && gy >= 0 && gx < N && gy < N) grid[gy * N + gx] += h.src === 'pvp' ? Math.max(1, hmKP(p.r) / 1e4) : 1; });
+    const { h, dotsM } = S, mine = dotsM.filter(p => p.mine), N = 300, grid = new Float32Array(N * N);
+    mine.forEach(p => { const gx = Math.floor(p.u * N), gy = Math.floor(p.v * N); if (gx >= 0 && gy >= 0 && gx < N && gy < N) grid[gy * N + gx] += h.src === 'pvp' ? Math.max(1, (p.kp ?? hmKP(p.r)) / 1e4) : 1; });
     const sig = h.rad * 1.2, Rr = Math.ceil(sig * 3), ker = []; for (let i = -Rr; i <= Rr; i++) ker.push(Math.exp(-(i * i) / (2 * sig * sig)));
     const tmp = new Float32Array(N * N), out = new Float32Array(N * N); let max = 0;
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -Rr; k <= Rr; k++) { const xx = x + k; if (xx >= 0 && xx < N) a += grid[y * N + xx] * ker[k + Rr]; } tmp[y * N + x] = a; }
@@ -1023,7 +1039,7 @@ window.RokMods.battles = (R) => {
     g.putImageData(im, 0, 0); hmMaskC = { key, c }; return c; }
   // Punkte + Städte: scharf, in Bildschirm-Auflösung (nicht mitvergrößert)
   function hmPaintDots(ctx, W, S, map) {   // map(u, v) → [x, y] in Pixeln
-    const { h, m, dots } = S, col = HM_SRC.find(x => x[0] === h.src)[2], dpr = W / 1000 * 1.6;
+    const { h, m, dotsM: dots } = S, col = HM_SRC.find(x => x[0] === h.src)[2], dpr = W / 1000 * 1.6;
     dots.forEach(p => { const [x, y] = map(p.u, p.v); if (x < -10 || y < -10 || x > W + 10 || y > W + 10) return; const fresh = S.cur != null && S.cur - p.t < 5 * 6e4;
       ctx.beginPath(); ctx.arc(x, y, (p.mine ? 3.2 : 2.8) * dpr, 0, 7); ctx.fillStyle = p.mine ? col : HM_COL[p.fi % HM_COL.length]; ctx.fill();
       ctx.lineWidth = (fresh ? 2 : 1) * dpr; ctx.strokeStyle = fresh ? '#fde047' : 'rgba(0,0,0,.7)'; ctx.stroke(); });
@@ -1036,7 +1052,9 @@ window.RokMods.battles = (R) => {
     hmView.s = Math.min(10, Math.max(1, hmView.s)); const max = W * (hmView.s - 1); hmView.x = Math.min(0, Math.max(-max, hmView.x)); hmView.y = Math.min(0, Math.max(-max, hmView.y));
     st.style.transform = `translate(${hmView.x}px,${hmView.y}px) scale(${hmView.s})`;
     const map = (u, v) => [hmView.x + u * W * hmView.s, hmView.y + v * W * hmView.s];
-    document.querySelectorAll('#hmMarks [data-hmmark]').forEach(e => { const [x, y] = map(+e.dataset.u, +e.dataset.v); e.style.left = x + 'px'; e.style.top = y + 'px'; });
+    document.querySelectorAll('#hmMarks [data-hmmark]').forEach(e => { const [x, y] = map(+e.dataset.u, +e.dataset.v); if (x < 0 || y < 0 || x > W || y > W) { e.style.display = 'none'; return; } e.style.display = '';
+      const w = e.offsetWidth, hh = e.offsetHeight, left = x + 14 + w > W - 48 && x - 14 - w >= 0, L = left ? x - 14 - w : x + 14, T = Math.max(4, Math.min(W - hh - 4, y - hh / 2)), ar = e.querySelector('[data-ar]');   // Karte bleibt immer im Bild
+      e.style.left = L + 'px'; e.style.top = T + 'px'; if (ar) { ar.style.top = Math.max(4, Math.min(hh - 12, y - T - 4)) + 'px'; ar.style.left = left ? (w - 2) + 'px' : '-6px'; } });
     const dc = $('hmDots'); if (dc && hmLast?.S) { const dpr = window.devicePixelRatio || 1, px = Math.round(W * dpr); if (dc.width !== px) { dc.width = dc.height = px; }
       const ctx = dc.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, W); hmPaintDots(ctx, W, hmLast.S, map); }
   }
@@ -1051,8 +1069,8 @@ window.RokMods.battles = (R) => {
     ctx.clearRect(0, 0, W, W); const mk = hmMask(h, m); if (mk) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mk, 0, 0, W, W); }
     if (heat) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(heat, 0, 0, W, W); }
     const box = $('hmMarks'); if (box) {
-      box.innerHTML = !h.zm ? '' : zs.map(o => `<div data-hmmark data-hmzone="${o.z}" data-u="${o.mu}" data-v="${o.mv}" class="absolute pointer-events-auto cursor-pointer ${h.pop === o.z ? 'z-30' : 'z-10'}" style="transform:translate(10px,-50%)">
-          <span class="absolute -left-[13px] top-1/2 -translate-y-1/2 w-2 h-2 rotate-45 bg-amber-400/80"></span>${hmMarkCard(S, o)}</div>`).join('');
+      box.innerHTML = !h.zm ? '' : zs.map(o => `<div data-hmmark data-hmzone="${o.z}" data-u="${o.mu}" data-v="${o.mv}" class="absolute pointer-events-auto cursor-pointer ${h.pop === o.z ? 'z-30' : 'z-10'}" style="left:0;top:0">
+          <span data-ar class="absolute w-2 h-2 rotate-45 bg-amber-400"></span>${hmMarkCard(S, o)}</div>`).join('');
       box.querySelectorAll('[data-hmmark]').forEach(e => e.onclick = (ev) => { ev.stopPropagation(); if (ev.target.closest('[data-hmpop]')) return; hmPickZone(st, +e.dataset.hmzone, false); });
       box.querySelectorAll('[data-hmpop]').forEach(e => { e.addEventListener('pointerdown', ev => ev.stopPropagation()); e.addEventListener('wheel', ev => ev.stopPropagation(), { passive: true }); });
       box.querySelectorAll('[data-hmiso]').forEach(b => b.onclick = (ev) => { ev.stopPropagation(); hmIso(st, +b.dataset.hmiso); });
@@ -1063,25 +1081,30 @@ window.RokMods.battles = (R) => {
   function hmIso(st, z) { const h = hmCfg(st), m = hmMap(h); h.iso = h.iso === z || z == null || isNaN(z) ? null : z; h.tl = null; savePassive(); renderKampf();
     if (h.iso != null) hmZoomTo(...hmZoneBox(m, h.iso)); else { hmView = { s: 1, x: 0, y: 0 }; hmApplyView(); } }
   function hmRename(st, z) { const h = hmCfg(st), m = hmMap(h), cur = (h.zn2[m.k] || {})[z] || '';
-    hmAsk('Zone umbenennen', cur, (v) => { h.zn2[m.k] = h.zn2[m.k] || {}; if (v) h.zn2[m.k][z] = v.slice(0, 30); else delete h.zn2[m.k][z]; savePassive(); renderKampf(); }, 'Standard: ' + m.zones.n[z] + ' – leer lassen für Standard', 'z. B. Zone 4, Altar, Kingsland'); }
+    hmAsk('Zone umbenennen', cur, (v) => { h.zn2[m.k] = h.zn2[m.k] || {}; if (v) h.zn2[m.k][z] = v.slice(0, 30); else delete h.zn2[m.k][z]; savePassive(); renderKampf(); }, '', m.zones.n[z]); }
   function hmPickZone(st, z, zoom) { const h = hmCfg(st), m = hmMap(h); h.pop = h.pop === z ? null : z; savePassive(); renderKampf(); if (zoom && h.pop != null) hmZoomTo(...hmZoneBox(m, z)); }
   function hmBind(el, st) {
     const h = hmCfg(st), m = hmMap(h), re = () => { savePassive(); renderKampf(); };
     el.querySelectorAll('[data-hmsrc]').forEach(b => b.onclick = () => { h.src = b.dataset.hmsrc; h.pop = null; h.fight = null; re(); });
     el.querySelectorAll('[data-hmt]').forEach(b => b.onclick = () => { h.t = b.dataset.hmt; h.tl = null; h.fight = null; re(); });
     el.querySelectorAll('[data-hmday]').forEach(b => b.onclick = () => { if (!h.fight && h.t === 'day' && h.day === b.dataset.hmday) h.t = 'kvk'; else { h.t = 'day'; h.day = b.dataset.hmday; } h.tl = null; h.fight = null; re(); });
-    el.querySelector('[data-hmkvkid]')?.addEventListener('change', (ev) => { h.kvkId = ev.target.value; h.fight = null; h.tl = null; h.pop = null; h.iso = null; const mp = h.kv[h.kvkId]?.map; if (mp) h.map = mp; hmView = { s: 1, x: 0, y: 0 }; re(); });
-    el.querySelector('[data-hmkvkren]')?.addEventListener('click', () => { const k = hmKvkCur(h); if (!k) return; hmAsk('KvK benennen', h.kv[k.id]?.name || '', (v) => { h.kv[k.id] = { ...(h.kv[k.id] || {}), name: v || undefined }; re(); }, k.id + ' – z. B. „KvK 3 Main“ oder „C16144 Farm“', k.id); });
-    el.querySelector('[data-hmkvkstart]')?.addEventListener('change', (ev) => { const k = hmKvkCur(h); if (!k) return; h.kv[k.id] = { ...(h.kv[k.id] || {}), start: ev.target.value }; re(); });
+    el.querySelectorAll('[data-hmacc]').forEach(b => b.onclick = () => { h.acc = b.dataset.hmacc; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; const mp = hmAk(h).map; if (mp) h.map = mp; hmView = { s: 1, x: 0, y: 0 }; re(); });
+    el.querySelector('[data-hmkvkcode]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, ''), a = hmAk(h);
+      if (!v) { delete a.kvk; re(); return; } if (!/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C16144'); ev.target.value = hmKvkCode(h); return; } a.kvk = v; h.fight = null; h.tl = null; re(); });
+    el.querySelector('[data-hmkvkstart]')?.addEventListener('change', (ev) => { const a = hmAk(h); if (ev.target.value) a.start = ev.target.value; else delete a.start; h.fight = null; h.tl = null; re(); });
+    el.querySelectorAll('[data-hmmarch]').forEach(x => x.addEventListener('change', (ev) => { h.march = ev.target.value; h.tl = null; re(); }));
+    el.querySelector('[data-hmtlopen]')?.addEventListener('click', () => { h.tlOpen = !h.tlOpen; if (!h.tlOpen && hmPlay) { clearInterval(hmPlay); hmPlay = null; } re(); });
+    el.querySelectorAll('[data-hmzf]').forEach(b => b.onclick = () => { const z = b.dataset.hmzf === '' ? null : +b.dataset.hmzf; if (z == null) hmIso(st, null); else if (h.iso !== z) hmIso(st, z); });
+    el.querySelector('[data-hmbl]')?.addEventListener('toggle', (ev) => { h.blOpen = ev.target.open; savePassive(); });
     el.querySelector('[data-hmfrom]')?.addEventListener('change', (ev) => { h.from = ev.target.value; re(); });
     el.querySelector('[data-hmto]')?.addEventListener('change', (ev) => { h.to = ev.target.value; re(); });
     el.querySelector('[data-hmrad]')?.addEventListener('input', (ev) => { h.rad = +ev.target.value; hmLast = null; hmDraw(st); });
     el.querySelector('[data-hmrad]')?.addEventListener('change', () => savePassive());
     el.querySelector('[data-hmzm]')?.addEventListener('change', (ev) => { h.zm = ev.target.checked; savePassive(); hmDraw(st); });
     el.querySelector('[data-hmfr]')?.addEventListener('change', (ev) => { h.fr = ev.target.checked; re(); });
-    el.querySelector('[data-hmzsel]')?.addEventListener('change', (ev) => hmIso(st, ev.target.value === '' ? null : +ev.target.value));
+    el.querySelectorAll('[data-hmzsel]').forEach(x => x.addEventListener('change', (ev) => hmIso(st, ev.target.value === '' ? null : +ev.target.value)));
     el.querySelector('[data-hmpngmk]')?.addEventListener('change', (ev) => { h.pngMk = ev.target.checked; savePassive(); });
-    el.querySelectorAll('[data-hmmap]').forEach(b => b.onclick = () => { h.map = b.dataset.hmmap; const k = hmKvkCur(h); if (k) h.kv[k.id] = { ...(h.kv[k.id] || {}), map: h.map }; h.pop = null; h.iso = null; h.fight = null; hmView = { s: 1, x: 0, y: 0 }; re(); });
+    el.querySelectorAll('[data-hmmap]').forEach(b => b.onclick = () => { h.map = b.dataset.hmmap; hmAk(h).map = h.map; h.pop = null; h.iso = null; h.fight = null; hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelectorAll('#hmWrap > div > [data-hmiso]').forEach(b => b.onclick = () => hmIso(st, null));
     el.querySelectorAll('[data-hmzone]:not([data-hmmark])').forEach(b => b.onclick = () => hmPickZone(st, +b.dataset.hmzone, true));
     el.querySelector('[data-hmshare]')?.addEventListener('click', () => { if (hmShare != null) hmSetShare(!hmShare); });
@@ -1092,7 +1115,7 @@ window.RokMods.battles = (R) => {
     if (h.live && !hmLiveT) hmLiveT = setInterval(liveTick, 60000);
     el.querySelector('[data-hmfight]')?.addEventListener('change', (ev) => { h.fight = ev.target.value || null; h.tl = null; h.pop = null; re();
       const f = h.fight && hmFights(st).find(x => x.id === h.fight); if (f) hmZoomTo(f.u0, f.v0, f.u1, f.v1); else { hmView = { s: 1, x: 0, y: 0 }; hmApplyView(); } });
-    el.querySelector('[data-hmfren]')?.addEventListener('click', () => { const f = hmFights(st).find(x => x.id === h.fight); if (!f) return; hmAsk('Schlacht benennen', h.fn[f.id] || '', (v) => { if (v) h.fn[f.id] = v.slice(0, 40); else delete h.fn[f.id]; re(); }, 'Automatisch: ' + f.auto + ' – leer lassen für automatisch', 'z. B. Pass 7, Zone 4, Altar, Kingsland'); });
+    el.querySelector('[data-hmfren]')?.addEventListener('click', () => { const f = hmFights(st).find(x => x.id === h.fight); if (!f) return; hmAsk('Schlacht benennen', h.fn[f.id] || '', (v) => { if (v) h.fn[f.id] = v.slice(0, 40); else delete h.fn[f.id]; re(); }, '', f.auto); });
     // Timeline
     const tlIn = el.querySelector('[data-hmtl]'), lab = $('hmTlLabel');
     tlIn?.addEventListener('input', () => { h.tl = +tlIn.value; if (lab) lab.textContent = hmWhen(h.tl); hmDraw(st); });
@@ -1140,9 +1163,9 @@ window.RokMods.battles = (R) => {
     });
     const tip = $('hmTip');
     box.addEventListener('mousemove', (ev) => { if (drag || hmCalMode || ev.target.closest('[data-hmmark]')) { tip.classList.add('hidden'); return; } const bb = box.getBoundingClientRect(), u = (ev.clientX - bb.left - hmView.x) / (bb.width * hmView.s), v = (ev.clientY - bb.top - hmView.y) / (bb.height * hmView.s);
-      const near = (hmLast?.S || hmState(st)).dots.filter(p => Math.hypot(p.u - u, p.v - v) < .012 / Math.sqrt(hmView.s));
+      const near = (hmLast?.S || hmState(st)).dotsM.filter(p => Math.hypot(p.u - u, p.v - v) < .012 / Math.sqrt(hmView.s));
       if (!near.length) { tip.classList.add('hidden'); return; }
-      const kp = near.reduce((s, p) => s + hmKP(p.r), 0), en = [...new Set(near.map(p => p.r.enemy_name).filter(Boolean))].slice(0, 3), who = [...new Set(near.map(p => p.mine ? 'Du' : hmMates?.[p.fi]?.name).filter(Boolean))];
+      const kp = near.reduce((s, p) => s + (p.kp ?? hmKP(p.r)), 0), en = [...new Set(near.map(p => p.r.enemy_name).filter(Boolean))].slice(0, 3), who = [...new Set(near.map(p => p.mine ? 'Du' : hmMates?.[p.fi]?.name).filter(Boolean))];
       tip.innerHTML = `${h.src === 'pvp' ? `⚔️ ${near.length} · 🏆 ${short(kp)}` : (h.src === 'barb' ? '🪓 ' : '🏰 ') + near.length}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].r.pos_x, 'x'))} · Y ${Math.round(hmTile(near[0].r.pos_y, 'y'))} · ${hmWhen(near[near.length - 1].t)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}${who.length > 1 || who[0] !== 'Du' ? `<br><span class="text-cyan-200" translate="no">${who.map(esc).join(', ')}</span>` : ''}`;
       tip.style.left = Math.min(bb.width - 190, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
     box.addEventListener('mouseleave', () => tip.classList.add('hidden'));
