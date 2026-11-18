@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 14 (battles.js)
+        "🔁 KP-Trade": "🔁 KP trade", "🗡️ Gegner-KP": "🗡️ Enemy KP",
         // Heatmap 13 (battles.js)
         "📅 Ganzes KvK": "📅 Whole KvK", "🏁 KvK-Zeitraum": "🏁 KvK period", "🗺️ Alles gesamt": "🗺️ Everything", "(alle)": "(all)",
         // Heatmap 12 (battles.js)
