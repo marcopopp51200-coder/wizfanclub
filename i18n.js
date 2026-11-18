@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 15 (battles.js)
+        "Link teilen": "Share link", "🔗 Link zur Heatmap": "🔗 Link to the heatmap",
         // Heatmap 14 (battles.js)
         "🔁 KP-Trade": "🔁 KP trade", "🗡️ Gegner-KP": "🗡️ Enemy KP",
         // Heatmap 13 (battles.js)
