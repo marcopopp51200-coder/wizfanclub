@@ -39,6 +39,12 @@ window.RokMods.battles = (R) => {
     } catch (e) { console.warn(e); }
   })();
   if (!$('battlesView')) return;
+  (() => {   // ?heat=C13340&p=<ID> → direkt in die Heatmap (Watch)
+    let q; try { q = new URLSearchParams(location.search); } catch { return; } const k = q.get('heat'); if (!k) return;
+    try { const st = kbSt(), h = (st.heat = st.heat || {}); st.page = 'heat'; h.mode = 'watch'; h.wkvk = /^C\d{5}$/i.test(k) ? k.toUpperCase() : ''; h.watch = /^\d+$/.test(q.get('p') || '') ? q.get('p') : ''; h.src = 'pvp'; h.fight = null; h.pop = null; h.iso = null; h.tl = null; savePassive(); } catch {}
+    try { const u = new URL(location.href); u.searchParams.delete('heat'); u.searchParams.delete('p'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch {}
+    setTimeout(() => { R.view = 'battles'; R.applyView?.(); window.scrollTo({ top: 0 }); }, 400);
+  })();
 
   var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true, kbAccCols = true;
   function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : ''); }
@@ -916,7 +922,7 @@ window.RokMods.battles = (R) => {
     const names = ppl.slice(0, 2).map(x => esc(x.name)).join(', ') + (ppl.length > 2 ? ` +${ppl.length - 2}` : '');
     return `<div class="rounded-xl border ${sel ? 'border-white ring-2 ring-amber-400' : 'border-amber-400/70'} bg-ink-950/90 px-2 py-1 shadow-xl text-[11px] text-slate-200 max-w-[16rem]">
       <div class="flex items-center gap-1.5 whitespace-nowrap"><b class="text-gold-300" translate="no">📍 ${esc(hmZName(h, m, o.z))}</b><span class="text-cyan-200 truncate" translate="no">· ${names}</span></div>
-      <div class="whitespace-nowrap">${pvp ? `🏆 <b class="text-gold-200">${short(o.kp)}</b> · ⚖️ <b class="${o.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(o.trade)}</b>` : `${h.src === 'barb' ? '🪓' : '🏰'} <b class="text-gold-200">${fmt(o.n)}</b>`}</div></div>`;
+      <div class="whitespace-nowrap">${pvp ? `🏆 <b class="text-gold-200">${short(o.kp)}</b> · ⚖️ <b class="${o.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(o.trade)}</b> · 🔁 <b class="${o.kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmKptTxt(o.kpt).replace(' : ', ':')}</b>` : `${h.src === 'barb' ? '🪓' : '🏰'} <b class="text-gold-200">${fmt(o.n)}</b>`}</div></div>`;
   }
   function hmLivePanel(S) {   // rechts: gewählte Zone (Marker anklicken oder Auswahl) – sonst die aktuelle Schlacht
     const { h, m, fights, zs } = S, pvp = h.src === 'pvp' || h.src === 'all', zo = h.pop != null ? zs.find(o => o.z === h.pop) : null, spect = hmSpect();
@@ -1009,7 +1015,7 @@ window.RokMods.battles = (R) => {
     const th = (l, r) => `<th class="py-1 pr-2 font-medium ${r ? 'text-right' : 'text-left'}">${l}</th>`;
     const blHead = `<tr class="text-[11px] text-slate-500">${th('Zeit')}${th('Zone')}${th('Marsch')}${pvp ? th('Gegner') + th('🏆 KP', 1) + th('🎖️ Acclaim', 1) + th('⚖️ Trade', 1) + th('🔁 KP-Trade', 1) + th('💀 Deads', 1) + th('') : th('Kette', 1) + th('Stufe', 1)}</tr>`;
     return `<style>#battlesView:fullscreen{overflow-y:auto;padding:12px;background:#07090f}#battlesView:fullscreen #hmBox{width:min(100%,calc(100vh - 170px));margin:0 auto}</style>
-      <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span></h2><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span><span class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 ml-2"><button type="button" data-hmmode="my" aria-pressed="${!hmSpect()}" ${kbMyIds().size ? '' : 'disabled'} class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold disabled:opacity-40">🏠 My KvK</button><button type="button" data-hmmode="watch" aria-pressed="${hmSpect()}" class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold">👁️ Watch</button></span><span class="ml-auto">${reload}</span></div>
+      <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span></h2><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span><span class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 ml-2"><button type="button" data-hmmode="my" aria-pressed="${!hmSpect()}" ${kbMyIds().size ? '' : 'disabled'} class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold disabled:opacity-40">🏠 My KvK</button><button type="button" data-hmmode="watch" aria-pressed="${hmSpect()}" class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold">👁️ Watch</button></span><button type="button" data-hmlink class="ml-2 px-3 py-1 rounded-xl border border-gold-500/50 text-gold-200 hover:bg-gold-500/10 text-xs font-semibold">🔗 <span>Link teilen</span></button><span class="ml-auto">${reload}</span></div>
       ${hmIdBar(st, h)}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.filter(x => !hmSpect() || x[0] === 'pvp').map(([k, l, c]) => seg('data-hmsrc', k, `<span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${c}"></span>${l}`, h.src === k)).join('')}</div>
@@ -1215,6 +1221,12 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-hmpanel]')?.addEventListener('change', (ev) => { const v = ev.target.value; h.pop = v === '' ? null : +v; re(); if (h.pop != null) hmZoomTo(...hmZoneBox(m, h.pop)); });
     el.querySelectorAll('[data-hmiso2]').forEach(b => b.onclick = () => hmIso(st, +b.dataset.hmiso2));
     el.querySelectorAll('[data-hmzren2]').forEach(b => b.onclick = () => hmRename(st, +b.dataset.hmzren2));
+    el.querySelector('[data-hmlink]')?.addEventListener('click', async () => {   // Link: öffnet direkt die Heatmap (Watch) mit KvK und Spieler
+      const sp = hmSpect(), kvk = sp ? h.wkvk : hmKvkCode(h), pid = sp ? h.watch : hmAcc(h), u = new URL(location.origin + location.pathname);
+      u.searchParams.set('heat', kvk || '1'); if (pid) u.searchParams.set('p', pid); const url = u.toString();
+      let ok = false; try { await navigator.clipboard.writeText(url); ok = true; } catch {}
+      hmAsk('🔗 Link zur Heatmap', url, () => {}, (ok ? 'In die Zwischenablage kopiert. ' : '') + (kvk ? 'Öffnet die Heatmap für ' + kvk + (pid ? ' mit diesem Spieler' : '') + '.' : 'Tipp: zuerst die C-Nummer eintragen, dann sehen andere das ganze KvK.'));
+      setTimeout(() => { const i = document.getElementById('hmAskIn'); if (i) { i.readOnly = true; i.select(); } const b = document.querySelector('#hmAsk [data-ok]'); if (b) b.textContent = 'OK'; }, 30); });
     el.querySelectorAll('[data-hmmode]').forEach(b => b.onclick = () => { h.mode = b.dataset.hmmode; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelector('[data-hmwkvk]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, '');
       if (v && !/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C13340'); ev.target.value = h.wkvk || ''; return; } h.wkvk = v || ''; h.watch = ''; h.fight = null; h.tl = null; h.pop = null; delete hmWInfo[v]; re(); });
