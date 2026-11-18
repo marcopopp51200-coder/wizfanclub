@@ -762,10 +762,16 @@ window.RokMods.battles = (R) => {
   function hmTile(v, ax) { return v == null ? null : +v / hmUnit(hmCfg(kbSt()), ax || 'x'); }
   function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x, 'x'), b = hmTile(y, 'y'); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
   function hmXY(x, y, h, m) { const u = x / hmUnit(h, 'x') / m.size, v = y / hmUnit(h, 'y') / m.size, p = (m.pad || 0) / 100; return [p + u * (1 - 2 * p), p + (1 - v) * (1 - 2 * p)]; }
+  function hmNearPass(m) {   // für jedes Feld: nächster Pass-7-Bereich (einmal pro Karte berechnet)
+    if (m._np) return m._np; const z = m.zones, W = z.w, N = W * W, out = new Int16Array(N).fill(-1), q = new Int32Array(N); let qh = 0, qt = 0;
+    for (let i = 0; i < N; i++) { const k = z.d.charCodeAt(i) - 97; if (/^Pass/.test(z.n[k] || '')) { out[i] = k; q[qt++] = i; } }
+    while (qh < qt) { const i = q[qh++], x = i % W, y = (i / W) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= W) continue; const j = yy * W + xx; if (out[j] < 0) { out[j] = out[i]; q[qt++] = j; } } }
+    return (m._np = out); }
   function hmZoneAt(u, v, m, noPass) { const z = m.zones, x = Math.floor(u * z.w), y = Math.floor(v * z.w); if (x < 0 || y < 0 || x >= z.w || y >= z.w) return -1; const k = z.d.charCodeAt(y * z.w + x) - 97;
     if (!noPass) {   // Kämpfe direkt am Altar-Kästchen (bis ~15 Felder davor) zählen zum Altar
       if (/^Altar/.test(z.n[k] || '')) return k;
       for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= z.w || yy >= z.w) continue; const j = z.d.charCodeAt(yy * z.w + xx) - 97; if (/^Altar/.test(z.n[j] || '')) return j; }
+      if (/^Zone 6/.test(z.n[k] || '')) { const np = hmNearPass(m)[y * z.w + x]; if (np >= 0) return np; }   // in Zone 6 wird nicht gekämpft → nächster Pass 7
       return k; }
     if (!/^Pass/.test(z.n[k] || '')) return k;
     for (let r = 1; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= z.w || yy >= z.w) continue;
