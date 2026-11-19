@@ -46,8 +46,8 @@ window.RokMods.battles = (R) => {
     setTimeout(() => { R.view = 'battles'; R.applyView?.(); window.scrollTo({ top: 0 }); }, 400);
   })();
 
-  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true, kbAccCols = true;
-  function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : ''); }
+  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true, kbAccCols = true, kbParCols = true;
+  function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : '') + (kbParCols ? ',parent_id' : ''); }
   var KB_COLS = 'mail_id,opponent_id,account,player_id,battle_start,battle_end,is_pvp,self_name,self_alliance,self_hero1,self_hero2,self_troops_start,self_wounded,self_severe,self_dead,self_healing,self_power_lost,enemy_name,enemy_alliance,enemy_hero1,enemy_hero2,enemy_troops_start,enemy_wounded,enemy_severe,enemy_dead,enemy_power_lost,kill_points,enemy_kill_points,server_id';
   async function loadBattles(force) {
     if (kbLoading || (kbRows && !force)) return; kbLoading = true; kbProg = 0; kbErr = '';
@@ -55,6 +55,7 @@ window.RokMods.battles = (R) => {
       const all = [];
       for (let from = 0; from < 100000; from += 1000) {
         let q = await db.from('rok_battles').select(kbSel()).order('battle_start', { ascending: false }).order('mail_id').order('opponent_id').range(from, from + 999);
+        if (q.error && kbParCols && /parent_id/i.test(q.error.message || '')) { kbParCols = false; from -= 1000; continue; }   // SQL v17 (Battle Streak) noch nicht ausgeführt
         if (q.error && kbAccCols && /acclaim/i.test(q.error.message || '')) { kbAccCols = false; from -= 1000; continue; }   // SQL v11 (Verdienst) noch nicht ausgeführt
         if (q.error && kbPosCols && /pos_|city_|map_role|room_id/i.test(q.error.message || '')) { kbPosCols = false; from -= 1000; continue; }   // SQL v9 (Heatmap) noch nicht ausgeführt
         if (q.error && kbNpcCols && /npc_|group_size|column/i.test(q.error.message || '')) { kbNpcCols = false; from -= 1000; continue; }   // SQL v4 noch nicht ausgeführt
@@ -520,6 +521,8 @@ window.RokMods.battles = (R) => {
       }
       rsRows = all.map(r => { let c = r.content; if (typeof c === 'string') { try { c = JSON.parse(c); } catch { c = {}; } } c = (c && (c.content || c)) || {};
         return { id: r.mail_id, pid: r.player_id, acc: r.account, t: r.sent_at, type: +c.ResType || 0, val: +c.ResValue || 0, talent: +c.talentAdd || 0, lvl: +c.Level || 0, crystal: +c.ResCollectCrystal || 0 }; });
+      try { const agg = []; for (let f = 0; f < 200000; f += 1000) { const { data, error } = await db.from('rok_res_daily').select('player_id,account,day,res_type,total,cnt,talent,crystal').order('day', { ascending: false }).range(f, f + 999); if (error) break; agg.push(...(data || [])); if (!data || data.length < 1000) break; }
+        agg.forEach(a => rsRows.push({ id: 'agg' + a.player_id + a.day + a.res_type, pid: a.player_id, acc: a.account, t: a.day + 'T12:00:00Z', type: +a.res_type || 0, val: +a.total || 0, talent: +a.talent || 0, lvl: 0, crystal: +a.crystal || 0, cnt: +a.cnt || 1, agg: true })); } catch {}
     } catch (e) { rsRows = rsRows || []; rsErr = e?.message || String(e); }
     rsLoading = false; if (R.view === 'battles' && kbSt().page === 'res') renderKampf();
   }
@@ -532,12 +535,12 @@ window.RokMods.battles = (R) => {
   function rsHtml(timeBar) {
     if (!rsRows) return '<section class="panel rounded-2xl p-6 text-center text-sm text-slate-400">Lade Sammel-Mails …</section>';
     const st = kbSt(), rows = rsFiltered(), by = {};
-    rows.forEach(r => { const o = by[r.type] || (by[r.type] = { val: 0, n: 0, talent: 0 }); o.val += r.val; o.n++; o.talent += r.talent; });
+    rows.forEach(r => { const o = by[r.type] || (by[r.type] = { val: 0, n: 0, talent: 0 }); o.val += r.val; o.n += r.cnt || 1; o.talent += r.talent; });
     const types = Object.keys(by).map(Number).sort((a, b) => a - b), tot = rows.reduce((a, r) => a + r.val, 0), cry = rows.reduce((a, r) => a + r.crystal, 0);
     const tile = (icon, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/70 p-4"><div class="flex items-center gap-2 text-xs text-slate-400"><span class="text-lg leading-none">${icon}</span><span>${l}</span></div><div class="font-display text-2xl tabular-nums" style="color:${c}">${short(v)}</div><div class="text-[11px] text-slate-500">${sub}</div></div>`;
     const shown = types.length ? types : [1, 2, 3, 4];
     const tiles = `<div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-        ${tile('📦', 'Gesamt', tot, `${fmt(rows.length)}× <span>gesammelt</span>`, '#ffffff')}
+        ${tile('📦', 'Gesamt', tot, `${fmt(rows.reduce((a, r) => a + (r.cnt || 1), 0))}× <span>gesammelt</span>`, '#ffffff')}
         ${shown.map(t => { const [i, l, c] = rsType(t), o = by[t] || { val: 0, n: 0, talent: 0 }; return tile(i, l, o.val, `${fmt(o.n)}× · <span>Talent</span> +${short(o.talent)}`, c); }).join('')}
         ${cry ? tile('🔷', 'Kristalle', cry, '<span>aus Kristallminen</span>', '#38bdf8') : ''}</div>`;
     const err = rsErr ? `<div class="mb-2 text-[11px] text-red-400">Laden hat nicht geklappt: ${esc(rsErr)}</div>` : '';
@@ -567,8 +570,8 @@ window.RokMods.battles = (R) => {
     const seg = (attr, cur, vals, suf) => `<div class="flex items-center gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${vals.map(n => `<button type="button" ${attr}="${n}" aria-pressed="${String(cur) === String(n)}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${n}${suf ? ' <span>' + suf + '</span>' : ''}</button>`).join('')}</div>`;
     const kvkSel = `<div class="flex items-center gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700"><button type="button" data-rshz="kvk" aria-pressed="${hzKey === 'kvk'}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">🏁 <span>bis KvK</span></button><input type="date" data-rskvk value="${esc(st.rsKvk || '')}" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-0.5 text-xs text-slate-100" title="Start des nächsten KvK"></div>`;
     // Sammelzüge: was bringt 1×–5× Rausschicken pro Tag (Ø pro Zug je Farm aus denselben Tagen)
-    const trip = new Map(); base.forEach(r => { const k = String(r.pid); const o = trip.get(k) || { n: 0, v: 0 }; o.n++; o.v += r.val; trip.set(k, o); });
-    const perTrip = [...trip.values()].reduce((a, o) => a + o.v / o.n, 0), farms = trip.size, nowTrips = farms ? base.length / avgD / farms : 0;
+    const trip = new Map(); base.forEach(r => { const k = String(r.pid); const o = trip.get(k) || { n: 0, v: 0 }; o.n += r.cnt || 1; o.v += r.val; trip.set(k, o); });
+    const perTrip = [...trip.values()].reduce((a, o) => a + o.v / o.n, 0), farms = trip.size, nowTrips = farms ? base.reduce((a, r) => a + (r.cnt || 1), 0) / avgD / farms : 0;
     const tripBox = `<section id="rsTripBox" class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300 mb-1">🚚 Wie oft rausschicken?</h2>
       <p class="text-xs text-slate-400 mb-3"><span>Ø pro Sammelzug aus den letzten</span> ${fmt(avgD)} <span>Tagen</span> · ${fmt(farms)} <span>Farmen</span> · <span>jetzt Ø</span> ${dec(nowTrips, 1)}× <span>pro Farm und Tag</span></p>
       ${farms ? `<div class="grid grid-cols-2 sm:grid-cols-5 gap-2">${[1, 2, 3, 4, 5].map(n => card('🚚', `${n}× <span>pro Tag</span>`, short(perTrip * n), `<span>in</span> ${fmt(hz)} <span>Tagen</span>: <b class="text-gold-300">${short(perTrip * n * hz)}</b>`, Math.abs(n - nowTrips) < .5 ? '#facc15' : '#ffffff')).join('')}</div>
@@ -584,7 +587,7 @@ window.RokMods.battles = (R) => {
     // Pro Account: sortierbar, Bearbeiten-Modus, Summe oder Ø pro Tag
     const td = 'py-1 px-2 text-right tabular-nums', inp = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs w-28 focus:outline-none focus:border-gold-500';
     const accRows = rsFiltered(true).filter(r => !st.acc || String(r.pid) === st.acc), per = new Map();
-    (rsRows || []).filter(r => kxInRange(r.t)).forEach(r => { const k = String(r.pid); const o = per.get(k) || { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }; o.n++; o.v[r.type] = (o.v[r.type] || 0) + r.val; o.tot += r.val; o.last = Math.max(o.last, Date.parse(r.t || 0) || 0); per.set(k, o); });
+    (rsRows || []).filter(r => kxInRange(r.t)).forEach(r => { const k = String(r.pid); const o = per.get(k) || { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }; o.n += r.cnt || 1; o.v[r.type] = (o.v[r.type] || 0) + r.val; o.tot += r.val; o.last = Math.max(o.last, Date.parse(r.t || 0) || 0); per.set(k, o); });
     (rsRows || []).forEach(r => { const k = String(r.pid); if (!per.has(k)) per.set(k, { pid: k, acc: r.acc, n: 0, v: {}, tot: 0, last: 0 }); });   // auch ohne Mails im Zeitraum zuordnen können
     const cols = [1, 2, 3, 4, ...[...new Set(accRows.map(r => r.type))].filter(t => t > 4).sort()];
     const editA = !!st.rsEditAcc, mode = ['sum', 'avg', '7', '14', '30'].includes(st.rsAccMode) ? st.rsAccMode : 'sum', dDays = Math.max(1, kbRange(rows.map(r => ({ battle_start: r.t }))).n);
@@ -629,7 +632,7 @@ window.RokMods.battles = (R) => {
         ${per.map(p => `<tr class="border-b border-ink-800/60"><td class="py-2 px-2 font-semibold text-slate-200"><span>Letzte</span> ${p.d} <span>Tage</span></td>${show.map(t => { const x = p.o[t]; const [, , c] = rsType(t); return `<td class="${td}">${x ? `<b style="color:${c}">${fmt(x.n)}×</b><div class="text-[10px] text-slate-500">${short(x.v)}</div>` : '<span class="text-slate-600">–</span>'}</td>`; }).join('')}<td class="${td}"><b class="text-gold-300">${fmt(p.rr.length)}×</b><div class="text-[10px] text-slate-500">${short(p.rr.reduce((a, r) => a + r.val, 0))}</div></td></tr>`).join('')}</tbody></table></div>`;
     })();
     // Letzte 7 Tage, Mails je Account zu „Runden“ zusammengefasst (alles innerhalb von 2 Std. nach der ersten Mail)
-    const week = lbase.filter(r => now - new Date(r.t) <= 7 * DAY).sort((a, b) => new Date(a.t) - new Date(b.t));
+    const week = lbase.filter(r => !r.agg && now - new Date(r.t) <= 7 * DAY).sort((a, b) => new Date(a.t) - new Date(b.t));
     const runs = [], open = new Map();
     week.forEach(r => { const t = +new Date(r.t), cur = open.get(r.pid); if (cur && t - cur.start <= 2 * 3600000) cur.rows.push(r); else { const n = { pid: r.pid, start: t, rows: [r] }; open.set(r.pid, n); runs.push(n); } });
     runs.forEach(x => { x.end = Math.max(...x.rows.map(r => +new Date(r.t))); x.rows.reverse(); });
@@ -739,14 +742,14 @@ window.RokMods.battles = (R) => {
     const norm = (x) => x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
     if (!HM_ICONN) { HM_ICONN = new Map(); Object.entries(HM_ICON).forEach(([k, v]) => { HM_ICONN.set(norm(k), v); HM_ICONN.set(norm(k.split(/[ .]/)[0]), HM_ICONN.get(norm(k.split(/[ .]/)[0])) || v); }); }
     const k = norm(n); return HM_ICONN.get(k) || HM_ICONN.get(norm(n.split(/[ .]/)[0])) || HM_ICONN.get(k.replace(/w/g, 'v')) || (k.length >= 5 ? [...HM_ICONN].find(([x]) => x.length >= 5 && (x.startsWith(k.slice(0, 6)) || k.startsWith(x.slice(0, 6))))?.[1] : null) || null; }
-  var HM_SRC = [['pvp', '⚔️ Kämpfe', '#ef4444'], ['barb', '🪓 Barbaren', '#3b82f6'], ['fort', '🏰 Forts', '#a855f7'], ['all', '📅 Ganzes KvK', '#f5c542']];
+  var HM_SRC = [['pvp', '⚔️ Kämpfe', '#ef4444'], ['barb', '🪓 Barbaren', '#3b82f6'], ['fort', '👹 Kahar', '#a855f7'], ['rally', '🛡️ Rally+Garnison', '#38bdf8'], ['all', '📅 Ganzes KvK', '#f5c542']];
   var HM_T = [['kvk', '🏁 KvK-Zeitraum'], ['d1', '24 h'], ['d3', '3 Tage'], ['d7', '7 Tage'], ['custom', 'Zeitraum']];
   var HM_TRAIL = [[3600e3, '1 h'], [6 * 3600e3, '6 h'], [86400e3, '24 h'], [0, 'alles bis dahin']];
   var HM_COL = ['#22d3ee', '#f472b6', '#facc15', '#a3e635', '#fb923c', '#c084fc', '#2dd4bf', '#f87171', '#60a5fa', '#e879f9'];
   var hmSubOpen = new Set(), hmMates = null, hmMatesLoading = false, hmPlay = null, hmView = { s: 1, x: 0, y: 0 }, hmCalMode = false, hmShare = null, hmShareCol = true, hmLiveT = null, hmMaskC = null, hmLast = null;
   function hmCfg(st) { const h = (st.heat = st.heat || {});
     if (h.v !== 4) { h.rot = 0; h.mir = false; h.zn2 = {}; h.iso = null; h.pop = null; h.v = 4; }   // neue Zonen (Zone 4/5/6, Pass 7, Altar, Kingsland)
-    if (!['pvp', 'barb', 'fort', 'all'].includes(h.src) || hmSpect()) h.src = 'pvp';   // Barbaren/Forts bleiben privat
+    if (!['pvp', 'barb', 'fort', 'all', 'rally'].includes(h.src) || hmSpect()) h.src = 'pvp';   // Barbaren/Forts bleiben privat
     if (!h.map) h.map = hmCalc()?.layout === 'lk2' ? 'mighty_assembly' : 'heroic_anthem';
     h.t = h.t || 'kvk'; h.rad = +h.rad || 3; h.zn2 = h.zn2 || {}; h.fn = h.fn || {}; h.ak = h.ak || {}; if (h.tlOpen == null) h.tlOpen = true; if (h.liveV !== 1) { h.live = true; h.liveV = 1; } h.speed = +h.speed || 4;
     if (h.zm == null) h.zm = true; if (h.fr == null) h.fr = false; { const ak = hmAk(h), wi = hmSpect() ? hmWInfoCur(h) : null; if (wi?.map && HM_MAPS.some(x => x.k === wi.map)) h.map = wi.map; else if (ak.map && HM_MAPS.some(x => x.k === ak.map)) h.map = ak.map; else ak.map = h.map; } if (h.trail == null) h.trail = 6 * 3600e3; if (h.pngMk == null) h.pngMk = true; return h; }
@@ -773,24 +776,40 @@ window.RokMods.battles = (R) => {
     for (let i = 0; i < N; i++) { const k = z.d.charCodeAt(i) - 97; if (/^Pass/.test(z.n[k] || '')) { out[i] = k; q[qt++] = i; } }
     while (qh < qt) { const i = q[qh++], x = i % W, y = (i / W) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= W || yy >= W) continue; const j = yy * W + xx; if (out[j] < 0) { out[j] = out[i]; q[qt++] = j; } } }
     return (m._np = out); }
-  function hmZoneAt(u, v, m, noPass) { const z = m.zones, x = Math.floor(u * z.w), y = Math.floor(v * z.w); if (x < 0 || y < 0 || x >= z.w || y >= z.w) return -1; const k = z.d.charCodeAt(y * z.w + x) - 97;
-    if (!noPass) {   // Kämpfe direkt am Altar-Kästchen (bis ~15 Felder davor) zählen zum Altar
+  var hmPT = { p7: null, kl: null };
+  function hmPhaseTimes(h) {   // ab wann gilt alles als Pass 7 / Kingsland: eigene Eingabe → Zuschauer-Daten → KvK-Rechner
+    const a = hmSpect() ? (hmWInfoCur(h) || {}) : hmAk(h), ev = hmSched(h), pt = (v) => v ? Date.parse(String(v).length <= 16 ? v + (String(v).includes('T') ? '' : 'T00:00') : v) : null;
+    const s7 = ev.find(e => e.kind === 'pass' && e.n === 7)?.ts ?? null, s8 = ev.find(e => e.kind === 'pass' && e.n === 8)?.ts ?? null;
+    return { p7: pt(a.p7) ?? s7, kl: pt(a.kl) ?? s8 };
+  }
+  function hmIdxOf(m, re) { m._ix = m._ix || {}; if (m._ix[re] == null) m._ix[re] = m.zones.n.findIndex(n => new RegExp(re).test(n || '')); return m._ix[re]; }
+  function hmZoneAt(u, v, m, noPass, t) { const z = m.zones, x = Math.floor(u * z.w), y = Math.floor(v * z.w); if (x < 0 || y < 0 || x >= z.w || y >= z.w) return -1; const k = z.d.charCodeAt(y * z.w + x) - 97;
+    if (!noPass) {   // Kämpfe: Altar-Kästchen (bis ~15 Felder davor) = Altar · alle Pass-7-Bereiche = ein „Pass 7“ · ab Kingsland-Start alles Kingsland
+      const p7 = hmIdxOf(m, '^Pass'), kl = hmIdxOf(m, '^Kingsland');
+      if (t != null && hmPT.kl && t >= hmPT.kl && kl >= 0) return kl;
       if (/^Altar/.test(z.n[k] || '')) return k;
       for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= z.w || yy >= z.w) continue; const j = z.d.charCodeAt(yy * z.w + xx) - 97; if (/^Altar/.test(z.n[j] || '')) return j; }
-      if (/^Zone 6/.test(z.n[k] || '')) { const np = hmNearPass(m)[y * z.w + x]; if (np >= 0) return np; }   // in Zone 6 wird nicht gekämpft → nächster Pass 7
+      if (t != null && hmPT.p7 && t >= hmPT.p7 && p7 >= 0) return p7;   // ab Pass-7-Start: alles Pass 7
+      if (/^Zone 6|^Pass/.test(z.n[k] || '') && p7 >= 0) return p7;   // in Zone 6 wird nicht gekämpft → Pass 7
       return k; }
     if (!/^Pass/.test(z.n[k] || '')) return k;
     for (let r = 1; r < 12; r++) for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) { if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue; const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= z.w || yy >= z.w) continue;
       const j = z.d.charCodeAt(yy * z.w + xx) - 97; if (!/^Pass/.test(z.n[j] || '')) return j; }   // nächste echte Zone
     return k; }
-  function hmZName(h, m, z) { return (h.zn2[m.k] || {})[z] || m.zones.n[z] || '–'; }
+  function hmZName(h, m, z) { const n = m.zones.n[z] || '–'; return (h.zn2[m.k] || {})[z] || (/^Pass 7/.test(n) ? 'Pass 7' : n); }
   function hmKind(r) { if (r.is_pvp) return kbIsPvp(r) && !kbIsAoo(r) ? 'pvp' : null; const c = kbCatOf(r.npc_btype, r.group_size); return c === 'barb' ? 'barb' : c === 'fort' ? 'fort' : null; }
   function hmKP(r) { return +r.kill_points || +r.group_kill_points || 0; }
   // Lost-Kingdom-Kill-Punkte: T4 = 1, T5 = 5 je schwer verwundeter/getöteter Gegner-Einheit – aus Profil-KP (T4 = 10, T5 = 20) zurückgerechnet
   function hmLK(r) { const n = (+r.enemy_severe || 0) + (+r.enemy_dead || 0), kp = +r.kill_points || 0; if (!n) return 0; const t5 = Math.min(n, Math.max(0, (kp - 10 * n) / 10)); return Math.round((n - t5) + 5 * t5); }
-  function hmSum(pts) { const o = { n: 0, ekp: 0, kp: 0, lk: 0, dead: 0, sev: 0, eLoss: 0, acc: 0, heal: 0, first: null };
-    pts.forEach(p => { const r = p.r; o.n++; o.kp += hmKP(r); o.lk += hmLK(r); o.dead += +r.self_dead || 0; o.sev += +r.self_severe || 0; o.eLoss += (+r.enemy_dead || 0) + (+r.enemy_severe || 0); o.acc += +r.acclaim || 0; o.ekp += +r.enemy_kill_points || 0; o.heal += +r.self_healing || 0; if (o.first == null || p.t < o.first) o.first = p.t; });
-    o.kpt = o.ekp > 0 ? o.kp / o.ekp : (o.kp ? Infinity : null);   // KP-Trade: deine KP ÷ KP des Gegners
+  // eigene Verluste: T5-Anteil aus den KP, die der Gegner an dir gemacht hat (T4 = 10, T5 = 20 KP je Einheit)
+  function hmOwnT5(r) { const n = (+r.self_severe || 0) + (+r.self_dead || 0), ekp = +r.enemy_kill_points || 0; if (!n || !ekp) return 0; return Math.min(1, Math.max(0, (ekp - 10 * n) / (10 * n))); }
+  function hmSum(pts) { const o = { n: 0, ekp: 0, kp: 0, lk: 0, lkD: 0, lkH: 0, dead: 0, sev: 0, eLoss: 0, acc: 0, heal: 0, first: null, kpS: 0, ekpS: 0, rkp: 0, rekp: 0, rn: 0 };
+    pts.forEach(p => { const r = p.r; o.n++; o.kp += hmKP(r); o.lk += hmLK(r); o.dead += +r.self_dead || 0; o.sev += +r.self_severe || 0; o.eLoss += (+r.enemy_dead || 0) + (+r.enemy_severe || 0); o.acc += +r.acclaim || 0; o.ekp += +r.enemy_kill_points || 0;
+      { const f = hmOwnT5(r); o.lkD += (+r.self_dead || 0) * (1 + 4 * f); o.lkH += (+r.self_severe || 0) * (1 + 4 * f); }   // LK Deads (Tote) / LK Heal (schwer Verwundete): T4 = 1, T5 = 5
+      if (p.joined || +r.group_size > 1) { o.rkp += hmKP(r); o.rekp += +r.enemy_kill_points || 0; o.rn++; } else { o.kpS += hmKP(r); o.ekpS += +r.enemy_kill_points || 0; } o.heal += +r.self_healing || 0; if (o.first == null || p.t < o.first) o.first = p.t; });
+    o.lkD = Math.round(o.lkD); o.lkH = Math.round(o.lkH);
+    o.kpt = o.ekpS > 0 ? o.kpS / o.ekpS : (o.kpS ? Infinity : null);   // KP-Trade: deine KP ÷ KP des Gegners – ohne Rally/Garnison
+    o.rkpt = o.rekp > 0 ? o.rkp / o.rekp : (o.rkp ? Infinity : null);   // eigener Wert für Rally/Garnison
     o.trade = o.dead + o.sev > 0 ? o.eLoss / (o.dead + o.sev) : (o.eLoss ? Infinity : null); return o; }
   function hmKptTxt(t) { return t == null ? '–' : t === Infinity ? '∞' : (t >= 10 ? Math.round(t) : t.toFixed(2).replace('.', ',')) + ' : 1'; }
   function hmTradeTxt(t) { return t == null ? '–' : t === Infinity ? '∞' : Math.round(t * 100) + ' %'; }
@@ -804,13 +823,16 @@ window.RokMods.battles = (R) => {
   }
   function hmPoints(st, src, range, withMates) {   // Punkte des gewählten KvK: du + (optional) Freunde/Königreich
     const h = hmCfg(st), m = hmMap(h), sid = hmSid(h), acc = hmAcc(h), [from, to] = range, mates = withMates && hmMates ? new Map(hmMates.map((f, i) => [f.gid, i])) : new Map();
+    const tm = (x) => { const q = /^(\d{1,2}):(\d{2})$/.exec(x || ''); return q ? +q[1] * 60 + +q[2] : null; }, hf = tm(h.hf) ?? (h.ht ? 0 : null), ht = tm(h.ht) ?? 1439; hmPT = hmPhaseTimes(h);
     const sp = hmSpect(), ws = sp ? hmWatchSet(h) : null, out = [], own = (pid) => acc ? String(pid) === acc : sp ? ((!ws || ws.has(String(pid))) && (!h.watch || String(pid) === h.watch)) : kbMine(pid);
-    const add = (r, joined) => { const kd = hmKind(r); if (!kd || (src !== 'all' && kd !== src)) return;
+    const add = (r, joined) => { const kd = hmKind(r); if (!kd) return; const grp = joined || (+r.group_size > 1 && kd === 'pvp');
+      if (src === 'rally' ? !(grp && kd === 'pvp') : (src !== 'all' && kd !== src)) return;
       if (!joined && sid && r.server_id != null && +r.server_id !== sid) return;
       const mine = own(r.player_id), fi = mates.get(String(r.player_id)); if (!mine && fi == null) return; if (!mine && kd !== 'pvp') return;   // Barbaren anderer bleiben privat
       if (!hmIn(r.pos_x, r.pos_y, r.map_role)) return;
       const t = r.battle_start ? Date.parse(r.battle_start) : NaN; if (from != null && !(t >= from)) return; if (to != null && !(t <= to)) return;
-      const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); out.push({ r, k: kd, u, v, t, mine, fi: mine ? -1 : fi, z: hmZoneAt(u, v, m, kd !== 'pvp'), joined }); };   // Pass 7 nur für Kämpfe
+      if (hf != null) { const d = new Date(t), mm = d.getHours() * 60 + d.getMinutes(); if (hf <= ht ? (mm < hf || mm > ht) : (mm < hf && mm > ht)) return; }   // Uhrzeit-Fenster (z. B. 15–18 Uhr)
+      const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); out.push({ r, k: kd, u, v, t, mine, fi: mine ? -1 : fi, z: hmZoneAt(u, v, m, kd !== 'pvp', t), joined, grp }); };   // Pass 7 nur für Kämpfe
     (kbRows || []).forEach(r => add(r, false));
     (kxRally || []).forEach(r => { if (r.pos_x != null) add({ ...r, kill_points: r.group_kill_points, is_pvp: r.is_pvp && (+r.group_kill_points || 0) > 0 }, true); });
     return out.sort((a, b) => a.t - b.t);
@@ -900,7 +922,9 @@ window.RokMods.battles = (R) => {
     const upto = cur == null ? all : all.filter(p => p.t <= cur), dots = cur == null || !h.trail ? upto : upto.filter(p => p.t >= cur - h.trail);
     const merge = (L) => { const M = new Map(), other = []; L.forEach(p => { if (p.k !== 'pvp') { other.push(p); return; } const k = (p.mine ? 'm' : 'f' + p.fi) + '|' + p.r.mail_id, o = M.get(k);   // ein Bericht = ein Punkt
       if (o) { o.kp += hmKP(p.r); o.n++; } else M.set(k, { ...p, kp: hmKP(p.r), n: 1 }); }); return [...M.values(), ...other]; };
-    return { h, m, fights, marches, all0, all, upto, dots, dotsM: merge(dots), t0, t1, cur, zs: hmZoneStats(h.src === 'all' ? upto.filter(p => p.k === 'pvp') : upto), zsAll: hmZoneStats(h.src === 'all' ? all0.filter(p => p.k === 'pvp') : all0) };
+    const live = [], lastP = new Map(); allA.forEach(p => { if (p.k !== 'pvp' || (!p.mine && p.fi < 0)) return; const k = String(p.r.player_id), o = lastP.get(k); if (!o || p.t > o.t) lastP.set(k, p); });
+    lastP.forEach((p, k) => { if (Date.now() - p.t < 15 * 6e4) live.push({ k, p, name: p.mine ? hmPName(k, p.r.self_name) : (hmMates?.[p.fi]?.name || hmPName(k, p.r.self_name)) }); });   // live = Kampf in den letzten 15 min
+    return { h, m, fights, marches, live, all0, all, upto, dots, dotsM: merge(dots), t0, t1, cur, zs: hmZoneStats(h.src === 'all' ? upto.filter(p => p.k === 'pvp') : upto), zsAll: hmZoneStats(h.src === 'all' ? all0.filter(p => p.k === 'pvp') : all0) };
   }
   function hmPName(pid, nm) { return kbIdName(pid) || nm || String(pid); }
   function hmZoneStats(pts) {
@@ -918,14 +942,14 @@ window.RokMods.battles = (R) => {
       .sort((a, b) => b.w.kp - a.w.kp || b.w.n - a.w.n);
   }
   function hmMarkCard(S, o) {   // Marker auf der Karte: nur Zone, Name, KP und Trade – alles Weitere rechts
-    const { h, m } = S, pvp = h.src === 'pvp' || h.src === 'all', sel = h.pop === o.z, ppl = hmWho(o);
+    const { h, m } = S, pvp = h.src === 'pvp' || h.src === 'all' || h.src === 'rally', sel = h.pop === o.z, ppl = hmWho(o);
     const names = ppl.slice(0, 2).map(x => esc(x.name)).join(', ') + (ppl.length > 2 ? ` +${ppl.length - 2}` : '');
     return `<div class="rounded-xl border ${sel ? 'border-white ring-2 ring-amber-400' : 'border-amber-400/70'} bg-ink-950/90 px-2 py-1 shadow-xl text-[11px] text-slate-200 max-w-[16rem]">
       <div class="flex items-center gap-1.5 whitespace-nowrap"><b class="text-gold-300" translate="no">📍 ${esc(hmZName(h, m, o.z))}</b><span class="text-cyan-200 truncate" translate="no">· ${names}</span></div>
-      <div class="whitespace-nowrap">${pvp ? `🏆 <b class="text-gold-200">${short(o.kp)}</b> · ⚖️ <b class="${o.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(o.trade)}</b> · 🔁 <b class="${o.kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmKptTxt(o.kpt).replace(' : ', ':')}</b>` : `${h.src === 'barb' ? '🪓' : '🏰'} <b class="text-gold-200">${fmt(o.n)}</b>`}</div></div>`;
+      <div class="whitespace-nowrap">${pvp ? `🏆 <b class="text-gold-200">${short(o.kp)}</b> · ⚖️ <b class="${o.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmTradeTxt(o.trade)}</b> · 🔁 <b class="${o.kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmKptTxt(o.kpt).replace(' : ', ':')}</b>` : `${h.src === 'barb' ? '🪓' : '👹'} <b class="text-gold-200">${fmt(o.n)}</b>`}</div></div>`;
   }
   function hmLivePanel(S) {   // rechts: gewählte Zone (Marker anklicken oder Auswahl) – sonst die aktuelle Schlacht
-    const { h, m, fights, zs } = S, pvp = h.src === 'pvp' || h.src === 'all', zo = h.pop != null ? zs.find(o => o.z === h.pop) : null, spect = hmSpect();
+    const { h, m, fights, zs } = S, pvp = h.src === 'pvp' || h.src === 'all' || h.src === 'rally', zo = h.pop != null ? zs.find(o => o.z === h.pop) : null, spect = hmSpect();
     const f = !zo && pvp ? ((h.fight && fights.find(x => x.id === h.fight)) || fights[0]) : null;
     const pts = zo ? zo.mine : f ? (S.cur != null ? f.pts.filter(p => p.t <= S.cur) : f.pts) : [], o = hmSum(pts);
     const big = (l, v, c) => `<div class="rounded-xl bg-ink-900/80 border border-ink-700 p-2"><div class="text-[10px] text-slate-400">${l}</div><div class="text-lg font-bold tabular-nums ${c}">${v}</div></div>`;
@@ -936,8 +960,8 @@ window.RokMods.battles = (R) => {
     const ally = zo && zo.ally.size ? `<div class="mt-2 text-[11px] text-red-200"><span class="text-slate-500">Gegner:</span> <span translate="no">${[...zo.ally.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([a, n]) => `[${esc(a)}] ${n}`).join(' · ')}</span></div>` : '';
     const title = zo ? `📍 <span translate="no">${esc(hmZName(h, m, zo.z))}</span>` : f ? `⚔️ <span translate="no">${esc(f.name)}</span>` : '';
     const when = zo ? `<span>erste KP</span> ${hmWhen(o.first)}` : f ? `${hmWhen(f.a)} – ${new Date(S.cur != null ? Math.min(S.cur, f.b) : f.b).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}` : '';
-    const tiles = pvp ? `${big('🏆 Kill Points', short(o.kp), 'text-gold-200')}${big('🏟️ LK-Punkte', short(o.lk), 'text-amber-200')}${big('💀 Deads', short(o.dead), 'text-red-300')}${big('⚖️ Trade', hmTradeTxt(o.trade), o.trade >= 1 ? 'text-emerald-300' : 'text-red-300')}${big('🔁 KP-Trade', hmKptTxt(o.kpt), o.kpt >= 1 ? 'text-emerald-300' : 'text-red-300')}${big('🗡️ Gegner-KP', short(o.ekp), 'text-red-200')}${big('🎖️ Verdienst', o.acc ? short(o.acc) : '–', 'text-sky-200')}${big('💚 Heilung', short(o.heal), 'text-emerald-200')}`
-      : big(h.src === 'barb' ? '🪓 Barbaren' : '🏰 Forts', fmt(o.n), 'text-gold-200');
+    const tiles = pvp ? `${big('🏆 Kill Points', short(o.kp), 'text-gold-200')}${big('🏟️ LK Kills', short(o.lk), 'text-amber-200')}${big('🪦 LK Deads', short(o.lkD), 'text-red-200')}${big('💉 LK Heal', short(o.lkH), 'text-emerald-200')}${big('💀 Deads', short(o.dead), 'text-red-300')}${big('⚖️ Trade', hmTradeTxt(o.trade), o.trade >= 1 ? 'text-emerald-300' : 'text-red-300')}${big('🔁 KP-Trade', hmKptTxt(o.kpt), o.kpt >= 1 ? 'text-emerald-300' : 'text-red-300')}${o.rn ? big('🛡️ Rally/Garnison KP-Trade', hmKptTxt(o.rkpt), o.rkpt >= 1 ? 'text-emerald-300' : 'text-red-300') : ''}${big('🗡️ Gegner-KP', short(o.ekp), 'text-red-200')}${big('🎖️ Verdienst', o.acc ? short(o.acc) : '–', 'text-sky-200')}${big('💚 Heilung', short(o.heal), 'text-emerald-200')}`
+      : big(h.src === 'barb' ? '🪓 Barbaren' : '👹 Kahar', fmt(o.n), 'text-gold-200');
     return `<aside class="rounded-xl border ${f?.live ? 'border-red-500/60' : 'border-ink-700'} bg-ink-950/70 p-3 lg:sticky lg:top-2 self-start">
       <div class="flex items-center justify-between gap-2 mb-2"><h3 class="font-display text-base text-gold-300">${f?.live ? '<span class="inline-block w-2 h-2 rounded-full bg-red-500 animate-pulse mr-1"></span><span>Kampf läuft</span>' : '📊 <span>Werte</span>'}</h3>
         <label class="flex items-center gap-1 text-[11px] text-slate-400" title="Lädt jede Minute neue Kampfberichte nach"><input type="checkbox" data-hmlive ${h.live ? 'checked' : ''} class="accent-red-500"> <span>🔴 Live</span></label></div>
@@ -966,17 +990,20 @@ window.RokMods.battles = (R) => {
       <input data-hmkvkcode value="${esc(ak.kvk || '')}" placeholder="C•••••" maxlength="6" spellcheck="false" class="bg-ink-950 border border-gold-500/50 rounded-xl px-3 py-1 text-sm font-bold tracking-widest text-gold-200 w-28 uppercase focus:outline-none focus:border-gold-400" translate="no">
       <span class="text-xs text-slate-400">📅</span>
       <input type="date" data-hmkvkstart value="${esc(start)}" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500">
+      ${(() => { const pt = hmPhaseTimes(h), loc = (t) => { if (!t) return ''; const d = new Date(t - new Date(t).getTimezoneOffset() * 6e4); return d.toISOString().slice(0, 16); }, inp = 'bg-ink-950 border border-ink-600 rounded-xl px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500';
+        return `<span class="text-xs text-slate-400" title="Ab hier zählt jeder Kampf als Pass 7">⚔️ <span>Pass 7 ab</span></span><input type="datetime-local" data-hmp7 value="${esc(ak.p7 || loc(pt.p7))}" class="${inp} ${ak.p7 ? 'border-gold-500/60' : ''}">
+          <span class="text-xs text-slate-400" title="Ab hier zählt jeder Kampf als Kingsland">👑 <span>Kingsland ab</span></span><input type="datetime-local" data-hmkl value="${esc(ak.kl || loc(pt.kl))}" class="${inp} ${ak.kl ? 'border-gold-500/60' : ''}">`; })()}
     </div>`;
   }
   function hmHtml(st, reload) {
     const S = hmState(st), { h, m, fights, marches, all, t0, t1, cur, zs, zsAll } = S;
     if (h.fr && !hmMates && !hmMatesLoading) hmLoadMates();
     const seg = (attr, k, l, on) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold transition">${l}</button>`;
-    const sel = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500', pvp = h.src === 'pvp' || h.src === 'all', start = hmStart(h);
+    const sel = 'bg-ink-950 border border-ink-600 rounded-lg px-2 py-1 text-xs text-slate-100 focus:outline-none focus:border-gold-500', pvp = h.src === 'pvp' || h.src === 'all' || h.src === 'rally', start = hmStart(h);
     const fightSel = pvp ? `<select data-hmfight class="${sel} max-w-[22rem]"><option value="">🎞️ Komplette Timeline</option>${fights.map(f => `<option value="${f.id}" ${h.fight === f.id ? 'selected' : ''}>⚔️ ${esc(f.name)} · ${hmWhen(f.a)}–${new Date(f.b).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} · ${short(f.kp)} KP</option>`).join('')}</select>
       ${h.fight ? '<button type="button" data-hmfren title="Schlacht umbenennen" class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60">✏️</button>' : ''}` : '';
     const zOpt = zsAll.slice().sort((a, b) => hmZName(h, m, a.z).localeCompare(hmZName(h, m, b.z), 'de', { numeric: true }));
-    const zoneSel = (big) => `<select data-hmzsel class="${sel} ${big ? 'text-sm py-1.5' : ''}"><option value="">🗺️ Alle Zonen</option>${zOpt.map(o => `<option value="${o.z}" ${h.iso === o.z ? 'selected' : ''}>${esc(hmZName(h, m, o.z))} – ${pvp ? '🏆 ' + short(o.kp) : (h.src === 'barb' ? '🪓 ' : '🏰 ') + fmt(o.n)}</option>`).join('')}</select>`;
+    const zoneSel = (big) => `<select data-hmzsel class="${sel} ${big ? 'text-sm py-1.5' : ''}"><option value="">🗺️ Alle Zonen</option>${zOpt.map(o => `<option value="${o.z}" ${h.iso === o.z ? 'selected' : ''}>${esc(hmZName(h, m, o.z))} – ${pvp ? '🏆 ' + short(o.kp) : (h.src === 'barb' ? '🪓 ' : '👹 ') + fmt(o.n)}</option>`).join('')}</select>`;
     const marchSel = `<select data-hmmarch class="${sel} text-sm py-1.5"><option value="">⚔️ Alle Märsche</option>${marches.map(x => `<option value="${esc(x)}" ${h.march === x ? 'selected' : ''}>${esc(x)}</option>`).join('')}</select>`;
     const matesBar = h.fr ? `<div class="flex flex-wrap items-center gap-1.5 text-[11px] mb-1">${hmMatesLoading ? '<span class="text-slate-500">…</span>' : !hmMates?.length ? '<span class="text-slate-500">Niemand sichtbar</span>'
       : hmMates.map((f, i) => `<span class="inline-flex items-center gap-1 rounded-md border border-ink-600 px-1.5 py-0.5"><span class="w-2 h-2 rounded-full" style="background:${HM_COL[i % HM_COL.length]}"></span><span translate="no">${esc(f.name)}</span><span class="text-slate-500">${f.kind === 'k' ? '👑' : '🤝'}</span></span>`).join('')}</div>` : '';
@@ -989,7 +1016,7 @@ window.RokMods.battles = (R) => {
         <div class="min-w-0 flex-1"><div class="text-sm font-semibold text-slate-100 truncate" translate="no" title="${esc(k)}">${esc(k)}</div>
           <div class="grid grid-cols-3 gap-x-3 gap-y-1 mt-1 text-sm">${pvp ? st6('🏆 KP', short(w.kp), 'text-gold-200') + st6('🎖️ Acclaim', w.acc ? short(w.acc) : '–', 'text-sky-200') + st6('⚖️ Trade', hmTradeTxt(w.trade), w.trade >= 1 ? 'text-emerald-300' : 'text-red-300')
             + st6('🔁 KP-Trade', hmKptTxt(w.kpt), w.kpt >= 1 ? 'text-emerald-300' : 'text-red-300') + st6('🗡️ Gegner-KP', short(w.ekp), 'text-red-200') + st6('⚔️ Kämpfe', fmt(w.n))
-            + st6('💀 Deads', short(w.dead), 'text-red-300') + st6('🩸 Schwer verw.', short(w.sev)) : st6(h.src === 'barb' ? '🪓 Barbaren' : '🏰 Forts', fmt(w.n), 'text-gold-200')}</div></div></div>`).join('');
+            + st6('💀 Deads', short(w.dead), 'text-red-300') + st6('🩸 Schwer verw.', short(w.sev)) : st6(h.src === 'barb' ? '🪓 Barbaren' : '👹 Kahar', fmt(w.n), 'text-gold-200')}</div></div></div>`).join('');
     const zoneChips = `<button type="button" data-hmzf="" aria-pressed="${h.iso == null}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold">🗺️ Alle</button>` + zOpt.map(o => `<button type="button" data-hmzf="${o.z}" aria-pressed="${h.iso === o.z}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold"><span translate="no">${esc(hmZName(h, m, o.z))}</span> <span class="text-gold-300 tabular-nums">${pvp ? short(o.kp) : fmt(o.n)}</span></button>`).join('');
     // Alle Kämpfe: ein Bericht = eine Zeile (weitere Gegner aufklappbar) · Barbaren: Ketten desselben Marsches zusammengefasst
     const mkOf = (p) => p.joined ? 'Rally (Teilnehmer)' : kbMarchOf(p.r), marchCell = (mk, joined) => `<div class="flex items-center gap-1.5 min-w-0">${joined ? '🛡️' : `<span class="flex gap-0.5 shrink-0">${hmHeroes(mk)}</span>`}<span class="truncate max-w-[10rem]" translate="no">${esc(mk)}</span></div>`;
@@ -1014,12 +1041,27 @@ window.RokMods.battles = (R) => {
       return main + (n > 1 ? g.pts.map(p => `<tr ${subCls(g.k)}><td class="py-1 pr-2 pl-3 tabular-nums text-slate-500">↳ ${new Date(p.t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td><td class="pr-2" translate="no">${esc(hmZName(h, m, p.z))}</td><td></td><td></td><td class="pr-2 text-right tabular-nums">${p.r.npc_level ? 'Lv ' + esc(p.r.npc_level) : ''}</td></tr>`).join('') : ''); }).join('');
     const th = (l, r) => `<th class="py-1 pr-2 font-medium ${r ? 'text-right' : 'text-left'}">${l}</th>`;
     const blHead = `<tr class="text-[11px] text-slate-500">${th('Zeit')}${th('Zone')}${th('Marsch')}${pvp ? th('Gegner') + th('🏆 KP', 1) + th('🎖️ Acclaim', 1) + th('⚖️ Trade', 1) + th('🔁 KP-Trade', 1) + th('💀 Deads', 1) + th('') : th('Kette', 1) + th('Stufe', 1)}</tr>`;
+    // 💪 Flex: ganze Battle Streaks (Hauptbericht) ab 2 Mio. KP – nur Märsche, KP und Trade
+    let flexHtml = '';
+    if (h.src === 'pvp' || h.src === 'all') {
+      const F = new Map(), fmin = +h.flexMin || 2e6; mine.filter(p => p.k === 'pvp' && !p.grp).forEach(p => { const k = String(p.r.parent_id || p.r.mail_id); (F.get(k) || F.set(k, []).get(k)).push(p); });
+      const L = [...F.values()].map(pts => { const zk = {}; pts.forEach(p => { zk[p.z] = (zk[p.z] || 0) + hmKP(p.r); }); const z = +Object.entries(zk).sort((a, b) => b[1] - a[1])[0][0];
+        return { pts, w: hmSum(pts), t: Math.min(...pts.map(p => p.t)), z, mk: [...new Set(pts.map(p => kbMarchOf(p.r)))] }; }).filter(x => x.w.kp >= fmin).sort((a, b) => b.t - a.t);
+      const rowsF = L.slice(0, 200).map(x => `<tr class="border-t border-ink-800/70"><td class="py-2 pr-3 tabular-nums text-slate-400 whitespace-nowrap">${hmWhen(x.t)}</td><td class="pr-3 whitespace-nowrap" translate="no">${esc(hmZName(h, m, x.z))}</td>
+        <td class="pr-3"><div class="flex flex-wrap gap-2">${x.mk.slice(0, 4).map(k => `<span class="flex gap-0.5" title="${esc(k)}">${hmHeroes(k)}</span>`).join('')}</div></td>
+        <td class="pr-3 text-right tabular-nums text-gold-200 font-bold text-sm">🏆 ${short(x.w.kp)}</td><td class="text-right tabular-nums font-semibold ${x.w.trade >= 1 ? 'text-emerald-300' : 'text-red-300'}">⚖️ ${hmTradeTxt(x.w.trade)}</td></tr>`).join('');
+      flexHtml = `<details data-hmflex ${h.flexOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-gold-500/40 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-gold-200">💪 Flex <span class="text-gold-300 tabular-nums">(${fmt(L.length)})</span>
+          <select data-hmflexmin onclick="event.stopPropagation()" class="ml-2 bg-ink-950 border border-ink-600 rounded-lg px-1.5 py-0.5 text-xs text-slate-100">${[1e6, 2e6, 5e6, 10e6].map(v => `<option value="${v}" ${fmin === v ? 'selected' : ''}>≥ ${short(v)} KP</option>`).join('')}</select></summary>
+        <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><tbody>${rowsF || '<tr><td class="py-2 text-slate-500">Noch kein Battle Streak über dieser Grenze.</td></tr>'}</tbody></table></div></details>`;
+    }
     return `<style>#battlesView:fullscreen{overflow-y:auto;padding:12px;background:#07090f}#battlesView:fullscreen #hmBox{width:min(100%,calc(100vh - 170px));margin:0 auto}</style>
       <section class="panel rounded-2xl p-4 sm:p-5 mt-4"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-300">🔥 <span>Heatmap</span></h2><span class="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/40 text-amber-300">TEST</span><span class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 ml-2"><button type="button" data-hmmode="my" aria-pressed="${!hmSpect()}" ${kbMyIds().size ? '' : 'disabled'} class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold disabled:opacity-40">🏠 My KvK</button><button type="button" data-hmmode="watch" aria-pressed="${hmSpect()}" class="seg-btn rounded-lg px-3 py-1 text-xs font-semibold">👁️ Watch</button></span><button type="button" data-hmlink class="ml-2 px-3 py-1 rounded-xl border border-gold-500/50 text-gold-200 hover:bg-gold-500/10 text-xs font-semibold">🔗 <span>Link teilen</span></button><span class="ml-auto">${reload}</span></div>
+      ${S.live.length ? `<div class="flex flex-wrap items-center gap-1.5 mb-3">${S.live.map(x => `<span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/60 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200"><span class="relative flex w-2.5 h-2.5"><span class="absolute inset-0 rounded-full bg-emerald-400 animate-ping"></span><span class="relative w-2.5 h-2.5 rounded-full bg-emerald-400"></span></span><b translate="no">${esc(x.name)}</b> <span>fightet</span></span>`).join('')}</div>` : ''}
       ${hmIdBar(st, h)}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_SRC.filter(x => !hmSpect() || x[0] === 'pvp').map(([k, l, c]) => seg('data-hmsrc', k, `<span class="inline-block w-2 h-2 rounded-full mr-1" style="background:${c}"></span>${l}`, h.src === k)).join('')}</div>
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${HM_T.map(([k, l]) => seg('data-hmt', k, l, !h.fight && h.t === k)).join('')}</div>
+        <span class="flex items-center gap-1 p-1 rounded-xl bg-ink-950 border ${h.hf || h.ht ? 'border-gold-500/60' : 'border-ink-700'}" title="Nur Kämpfe in dieser Uhrzeit (jeden Tag)"><span class="px-1">🕒</span><input type="time" data-hmhf value="${esc(h.hf || '')}" class="bg-transparent text-xs text-slate-100 focus:outline-none w-[5.5rem]"><span class="text-slate-500">–</span><input type="time" data-hmht value="${esc(h.ht || '')}" class="bg-transparent text-xs text-slate-100 focus:outline-none w-[5.5rem]">${h.hf || h.ht ? '<button type="button" data-hmhx class="px-1.5 text-slate-400 hover:text-red-300">✕</button>' : ''}</span>
       </div>
       ${!h.fight && h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (start ? start + 'T00:00' : ''))}" class="${sel}"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="${sel}"></div>` : ''}
       ${hmDays(h, S)}
@@ -1067,8 +1109,8 @@ window.RokMods.battles = (R) => {
       <div class="flex flex-wrap gap-1 mt-2 p-1 rounded-xl bg-ink-950 border border-ink-700">${zoneChips}</div>
       <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
       ${pvp ? hmCompare(h, S) : ''}
-      <details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${pvp ? '⚔️ <span>Alle Kämpfe</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '🏰 <span>Alle Forts</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
-        <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><thead>${blHead}</thead><tbody>${blRows}</tbody></table>${bl.length > blShow.length ? `<div class="text-[11px] text-slate-500 mt-1">${fmt(blShow.length)} / ${fmt(bl.length)}</div>` : ''}</div></details>
+      ${flexHtml || `<details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${h.src === 'rally' ? '🛡️ <span>Rally &amp; Garnison</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '👹 <span>Alle Kahar</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
+        <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><thead>${blHead}</thead><tbody>${blRows}</tbody></table>${bl.length > blShow.length ? `<div class="text-[11px] text-slate-500 mt-1">${fmt(blShow.length)} / ${fmt(bl.length)}</div>` : ''}</div></details>`}
       </section>`;
   }
   // ---------- My KvK / Watch (Zuschauer) ----------
@@ -1077,16 +1119,17 @@ window.RokMods.battles = (R) => {
   function hmWInfoCur(h) { const c = h.wkvk; if (!c) return null; const i = hmWInfo[c]; if (!i) hmLoadWInfo(c); return i && !i.loading ? i : null; }
   async function hmLoadWInfo(c) {   // wer ist in diesem KvK (C-Nummer), welche Karte, welcher Start – vom Besitzer der ID gesetzt
     hmWInfo[c] = { loading: true }; const o = { ids: new Set(), map: null, start: null, err: false };
-    try { const db = RokAuth?.db?.(); if (!db) throw 0; const q = await db.from('rok_kvk_ids').select('governor_id,map,kvk_start').eq('kvk', c); if (q.error) throw q.error;
-      const mc = {}, sc = {}; (q.data || []).forEach(x => { o.ids.add(String(x.governor_id)); if (x.map) mc[x.map] = (mc[x.map] || 0) + 1; if (x.kvk_start) sc[x.kvk_start] = (sc[x.kvk_start] || 0) + 1; });
-      const top = (m) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || null; o.map = top(mc); o.start = top(sc); } catch { o.err = true; }
+    try { const db = RokAuth?.db?.(); if (!db) throw 0; let q = await db.from('rok_kvk_ids').select('governor_id,map,kvk_start,p7_at,kl_at').eq('kvk', c); if (q.error) q = await db.from('rok_kvk_ids').select('governor_id,map,kvk_start').eq('kvk', c); if (q.error) throw q.error;
+      const mc = {}, sc = {}, p7 = {}, kl = {}; (q.data || []).forEach(x => { o.ids.add(String(x.governor_id)); if (x.map) mc[x.map] = (mc[x.map] || 0) + 1; if (x.kvk_start) sc[x.kvk_start] = (sc[x.kvk_start] || 0) + 1; if (x.p7_at) p7[x.p7_at] = (p7[x.p7_at] || 0) + 1; if (x.kl_at) kl[x.kl_at] = (kl[x.kl_at] || 0) + 1; });
+      const top = (m) => Object.entries(m).sort((a, b) => b[1] - a[1])[0]?.[0] || null; o.map = top(mc); o.start = top(sc); o.p7 = top(p7); o.kl = top(kl); } catch { o.err = true; }
     hmWInfo[c] = o; if (R.view === 'battles' && kbSt().page === 'heat') renderKampf();
   }
   function hmWatchSet(h) { if (!h.wkvk) return null; const i = hmWInfoCur(h); return i ? i.ids : new Set(); }
   async function hmSyncKvk(h) {   // deine ID → KvK, Karte, Start für Zuschauer veröffentlichen
-    if (hmSpect()) return; const acc = hmAcc(h), a = hmAk(h); if (!acc || !a.kvk) return; const sig = [a.kvk, a.map || h.map, a.start || hmStart(h) || ''].join('|'); if (a.sync === sig) return;
+    if (hmSpect()) return; const acc = hmAcc(h), a = hmAk(h); if (!acc || !a.kvk) return; const sig = [a.kvk, a.map || h.map, a.start || hmStart(h) || '', a.p7 || '', a.kl || ''].join('|'); if (a.sync === sig) return;
     try { const db = RokAuth?.db?.(), uid = RokAuth?.userId?.(); if (!db || !uid) return;
-      const q = await db.from('rok_kvk_ids').upsert({ governor_id: acc, kvk: a.kvk, map: a.map || h.map, kvk_start: a.start || hmStart(h) || null, user_id: uid, updated_at: new Date().toISOString() });
+      const row = { governor_id: acc, kvk: a.kvk, map: a.map || h.map, kvk_start: a.start || hmStart(h) || null, user_id: uid, updated_at: new Date().toISOString(), p7_at: a.p7 ? new Date(a.p7).toISOString() : null, kl_at: a.kl ? new Date(a.kl).toISOString() : null };
+      let q = await db.from('rok_kvk_ids').upsert(row); if (q.error && /p7_at|kl_at/i.test(q.error.message || '')) { delete row.p7_at; delete row.kl_at; q = await db.from('rok_kvk_ids').upsert(row); }
       if (!q.error) { a.sync = sig; savePassive(); } } catch {}
   }
   function hmWatchBar(h) {
@@ -1103,7 +1146,7 @@ window.RokMods.battles = (R) => {
     const [from, to] = hmRange(h, S.fights), ws = hmSpect() ? hmWatchSet(h) : null, P = new Map(), mp = hmMap(h), cz = h.cmpZ || '', zSeen = new Map();
     (kbRows || []).forEach(r => { if (!kbIsPvp(r) || kbIsAoo(r) || r.map_role !== 'gsmp' || !r.battle_start) return; const t = Date.parse(r.battle_start); if (from != null && t < from) return; if (to != null && t > to) return;
       const k = String(r.player_id); if (ws && !ws.has(k)) return;
-      let z = -1; if (hmIn(r.pos_x, r.pos_y, r.map_role)) { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, mp); z = hmZoneAt(u, v, mp, false); if (z >= 0) zSeen.set(z, (zSeen.get(z) || 0) + hmKP(r)); }
+      let z = -1; if (hmIn(r.pos_x, r.pos_y, r.map_role)) { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, mp); z = hmZoneAt(u, v, mp, false, Date.parse(r.battle_start)); if (z >= 0) zSeen.set(z, (zSeen.get(z) || 0) + hmKP(r)); }
       if (cz) { if (z < 0) return; const n = mp.zones.n[z] || ''; if (cz.startsWith('z:') ? +cz.slice(2) !== z : hmBaseName(n) !== cz.slice(2)) return; } (P.get(k) || P.set(k, { n: r.self_name, pts: [] }).get(k)).pts.push({ r, t }); });
     const all = [...P.entries()].map(([k, o]) => ({ k, name: hmPName(k, o.n), w: hmSum(o.pts), pts: o.pts })).sort((a, b) => b.w.kp - a.w.kp);
     if (!all.length && !cz) return '';
@@ -1111,8 +1154,8 @@ window.RokMods.battles = (R) => {
     const sel = ids.map(k => all.find(x => x.k === k));
     const chips = all.slice(0, 20).map(x => `<button type="button" data-hmcmpp="${esc(x.k)}" aria-pressed="${ids.includes(x.k)}" class="seg-btn rounded-lg px-2 py-1 text-xs font-semibold"><span translate="no">${esc(x.name)}</span> <span class="text-gold-300 tabular-nums">${short(x.w.kp)}</span></button>`).join('');
     const bm = (x) => hmMarches(x.pts, 'pvp')[0]?.[0] || '–';
-    const R0 = [['🏆 Kill Points', x => x.w.kp, short, 1], ['🏟️ LK-Punkte', x => x.w.lk, short, 1], ['🎖️ Acclaim', x => x.w.acc, v => v ? short(v) : '–', 1], ['⚖️ Trade', x => x.w.trade === Infinity ? 1e9 : (x.w.trade ?? 0), (v, x) => hmTradeTxt(x.w.trade), 1],
-      ['🔁 KP-Trade', x => x.w.kpt === Infinity ? 1e9 : (x.w.kpt ?? 0), (v, x) => hmKptTxt(x.w.kpt), 1], ['🗡️ Gegner-KP', x => x.w.ekp, short, 0], ['☠️ Gegner-Verluste', x => x.w.eLoss, short, 1], ['💀 Deads', x => x.w.dead, short, 0], ['🩸 Schwer verw.', x => x.w.sev, short, 0], ['💚 Heilung', x => x.w.heal, short, 1],
+    const R0 = [['🏆 Kill Points', x => x.w.kp, short, 1], ['🏟️ LK Kills', x => x.w.lk, short, 1], ['🪦 LK Deads', x => x.w.lkD, short, 0], ['💉 LK Heal', x => x.w.lkH, short, 0], ['🎖️ Acclaim', x => x.w.acc, v => v ? short(v) : '–', 1], ['⚖️ Trade', x => x.w.trade === Infinity ? 1e9 : (x.w.trade ?? 0), (v, x) => hmTradeTxt(x.w.trade), 1],
+      ['🔁 KP-Trade', x => x.w.kpt === Infinity ? 1e9 : (x.w.kpt ?? 0), (v, x) => hmKptTxt(x.w.kpt), 1], ['🗡️ Gegner-KP', x => x.w.ekp, short, 0], ['🛡️ Rally/Garnison KP-Trade', x => x.w.rkpt === Infinity ? 1e9 : (x.w.rkpt ?? 0), (v, x) => x.w.rn ? hmKptTxt(x.w.rkpt) : '–', 1], ['☠️ Gegner-Verluste', x => x.w.eLoss, short, 1], ['💀 Deads', x => x.w.dead, short, 0], ['🩸 Schwer verw.', x => x.w.sev, short, 0], ['💚 Heilung', x => x.w.heal, short, 1],
       ['⚔️ Kämpfe', x => x.w.n, fmt, 1], ['📈 KP pro Kampf', x => x.w.n ? x.w.kp / x.w.n : 0, short, 1]];
     const body = R0.map(([l, f, fm, good]) => { const vals = sel.map(f), best = good ? Math.max(...vals) : null;
       return `<tr class="border-t border-ink-800/60"><td class="py-1.5 pr-3 text-slate-400 whitespace-nowrap">${l}</td>${sel.map((x, i) => `<td class="py-1.5 px-2 text-right tabular-nums ${good && vals[i] === best && sel.length > 1 && best > 0 ? 'text-emerald-300 font-bold' : 'text-slate-100'}">${fm(vals[i], x)}</td>`).join('')}</tr>`; }).join('')
@@ -1127,13 +1170,13 @@ window.RokMods.battles = (R) => {
     const kp = new Array(N).fill(0), bb = new Array(N).fill(0), zk = {}, mp = hmMap(h);
     (kbRows || []).forEach(r => { const k = String(r.player_id); if (acc ? k !== acc : sp ? ((ws && !ws.has(k)) || (h.watch && k !== h.watch)) : !kbMine(k)) return;
       if (r.map_role !== 'gsmp' || !r.battle_start) return; const i = Math.floor((Date.parse(r.battle_start) - a) / 864e5); if (i < 0 || i >= N) return;
-      if (r.is_pvp) { if (kbIsPvp(r) && !kbIsAoo(r)) { kp[i] += hmKP(r); if (hmIn(r.pos_x, r.pos_y, r.map_role)) { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, mp), z = hmZoneAt(u, v, mp, false), n = z >= 0 ? hmBaseName(mp.zones.n[z]) : ''; if (n) (zk[i] = zk[i] || {})[n] = (zk[i][n] || 0) + hmKP(r); } } }
+      if (r.is_pvp) { if (kbIsPvp(r) && !kbIsAoo(r)) { kp[i] += hmKP(r); if (hmIn(r.pos_x, r.pos_y, r.map_role)) { const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, mp), z = hmZoneAt(u, v, mp, false, Date.parse(r.battle_start)), n = z >= 0 ? hmBaseName(mp.zones.n[z]) : ''; if (n) (zk[i] = zk[i] || {})[n] = (zk[i][n] || 0) + hmKP(r); } } }
       else if (!sp && (h.src === 'fort' ? kbCatOf(r.npc_btype, r.group_size) === 'fort' : kbCatOf(r.npc_btype, r.group_size) === 'barb')) bb[i]++; });
     const mk = Math.max(1, ...kp), mb = Math.max(1, ...bb), pvpM = h.src === 'pvp', dm = pvpM ? 'fight' : 'all', mode = h.src === 'all' ? 'both' : pvpM ? 'r' : 'b';
     const btn = (i) => { const onlyRed = mode === 'r', onlyBlue = mode === 'b'; const d = new Date(a + i * 864e5), k = d.toISOString().slice(0, 10), on = !h.fight && h.t === 'day' && h.day === k, fut = i > today;
       const ar = !onlyBlue && kp[i] ? (.35 + .6 * Math.sqrt(kp[i] / mk)).toFixed(2) : 0, ab = !onlyRed && bb[i] ? (.35 + .6 * Math.sqrt(bb[i] / mb)).toFixed(2) : 0, bl = h.src === 'fort' ? '147,51,234' : '37,99,235';
       const bg = ar && ab ? `background:linear-gradient(135deg,rgba(220,38,38,${ar}) 0 50%,rgba(${bl},${ab}) 50% 100%)` : ar ? `background:rgba(220,38,38,${ar})` : ab ? `background:rgba(${bl},${ab})` : '';
-      return `<button type="button" data-hmday="${k}" ${fut ? 'disabled' : ''} title="${d.toLocaleDateString('de-DE')}${kp[i] ? ' · 🏆 ' + short(kp[i]) : ''}${bb[i] && !onlyRed ? (h.src === 'fort' ? ' · 🏰 ' : ' · 🪓 ') + bb[i] : ''}" style="${bg}" class="min-w-[1.75rem] rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums border ${fut ? 'opacity-30 border-ink-800 text-slate-500' : on ? 'border-gold-400 text-white ring-1 ring-gold-400' : 'border-ink-700 text-slate-100 hover:border-gold-500/60'}">${i + 1}</button>`; };
+      return `<button type="button" data-hmday="${k}" ${fut ? 'disabled' : ''} title="${d.toLocaleDateString('de-DE')}${kp[i] ? ' · 🏆 ' + short(kp[i]) : ''}${bb[i] && !onlyRed ? (h.src === 'fort' ? ' · 👹 ' : ' · 🪓 ') + bb[i] : ''}" style="${bg}" class="min-w-[1.75rem] rounded-md px-1.5 py-0.5 text-[11px] font-semibold tabular-nums border ${fut ? 'opacity-30 border-ink-800 text-slate-500' : on ? 'border-gold-400 text-white ring-1 ring-gold-400' : 'border-ink-700 text-slate-100 hover:border-gold-500/60'}">${i + 1}</button>`; };
     let rowHtml;
     if (dm === 'fight') {   // nur Kampftage, gruppiert nach Schlacht: „Zone 4 · 7 8 9“, „Kingsland · 20“
       const nm = {}; (S.fights || []).forEach(f => { const i = Math.floor((f.a - a) / 864e5); if (i < 0 || i >= N) return; const n = h.fn[f.id] || f.base || f.auto; (nm[i] = nm[i] || {})[n] = (nm[i][n] || 0) + f.kp; });
@@ -1161,25 +1204,28 @@ window.RokMods.battles = (R) => {
   }
   function hmMask(h, m) { if (h.iso == null) return null; const key = m.k + ':' + h.iso; if (hmMaskC && hmMaskC.key === key) return hmMaskC.c;
     const d = m.zones, c = document.createElement('canvas'); c.width = c.height = d.w; const g = c.getContext('2d'), im = g.createImageData(d.w, d.w);
-    for (let i = 0; i < d.w * d.w; i++) if (d.d.charCodeAt(i) - 97 !== h.iso) { im.data[i * 4] = 7; im.data[i * 4 + 1] = 9; im.data[i * 4 + 2] = 15; im.data[i * 4 + 3] = 215; }
+    for (let i = 0; i < d.w * d.w; i++) if (d.d.charCodeAt(i) - 97 !== h.iso) { im.data[i * 4] = 7; im.data[i * 4 + 1] = 9; im.data[i * 4 + 2] = 15; im.data[i * 4 + 3] = 242; }
     g.putImageData(im, 0, 0); hmMaskC = { key, c }; return c; }
   // Punkte + Städte: scharf, in Bildschirm-Auflösung (nicht mitvergrößert)
   function hmPaintDots(ctx, W, S, map) {   // map(u, v) → [x, y] in Pixeln
     const { h, m, dotsM: dots } = S, col = HM_SRC.find(x => x[0] === h.src)[2], dpr = W / 1000 * 1.6;
+    const selZ = h.pop;
     dots.forEach(p => { const [x, y] = map(p.u, p.v); if (x < -10 || y < -10 || x > W + 10 || y > W + 10) return; const fresh = S.cur != null && S.cur - p.t < 5 * 6e4;
-      ctx.beginPath(); ctx.arc(x, y, (p.mine ? 3.2 : 2.8) * dpr, 0, 7); ctx.fillStyle = p.mine ? (HM_SRC.find(x => x[0] === p.k)?.[2] || col) : HM_COL[p.fi % HM_COL.length]; ctx.fill();
+      if (h.src === 'rally') { ctx.font = `${Math.round(13 * dpr)}px system-ui,"Segoe UI Emoji",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.joined ? '🛡️' : '🚩', x, y); return; }   // Rally/Garnison als Symbol
+      const other = selZ != null && p.k === 'pvp' && p.z !== selZ;   // Zone ausgewählt → andere Kampfpunkte orange
+      ctx.beginPath(); ctx.arc(x, y, (p.mine ? 3.2 : 2.8) * dpr, 0, 7); ctx.fillStyle = other ? '#f97316' : p.mine ? (HM_SRC.find(x => x[0] === p.k)?.[2] || col) : HM_COL[p.fi % HM_COL.length]; ctx.fill();
       ctx.lineWidth = (fresh ? 2 : 1) * dpr; ctx.strokeStyle = fresh ? '#fde047' : 'rgba(0,0,0,.7)'; ctx.stroke(); });
     const dot = (c, color, r) => { if (!c) return; const [u, v] = hmXY(+c.city_x, +c.city_y, h, m), [x, y] = map(u, v); ctx.beginPath(); ctx.arc(x, y, (r + 5) * dpr, 0, 7); ctx.fillStyle = color + '44'; ctx.fill();
       ctx.beginPath(); ctx.arc(x, y, r * dpr, 0, 7); ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = '#052e16'; ctx.stroke(); };
     if (h.src === 'barb' || h.src === 'fort') { dot(hmCity(), '#22c55e', 6); if (h.fr && hmMates) hmMates.forEach((f, i) => dot(hmCity(f.gid), HM_COL[i % HM_COL.length], 4.5)); return; }
-    const last = new Map(); (S.all || []).forEach(p => { if (p.k !== 'pvp' || p.r.city_x == null) return; const k = String(p.r.player_id), o = last.get(k); if (!o || p.t > o.t) last.set(k, p); });   // Kämpfe: Stadt nur, solange gekämpft wird
-    last.forEach(p => { if (Date.now() - p.t < 45 * 6e4 && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)) dot(p.r, p.mine ? '#22c55e' : HM_COL[p.fi % HM_COL.length], p.mine ? 6 : 4.5); });
+    (S.live || []).forEach(({ p }) => { if (p.r.city_x != null && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)) dot(p.r, p.mine ? '#22c55e' : HM_COL[p.fi % HM_COL.length], p.mine ? 6 : 4.5); });   // Kämpfe: Stadt nur, solange gekämpft wird
   }
   function hmApplyView() {
     const st = $('hmStage'), box = $('hmBox'); if (!st || !box) return; const W = box.clientWidth;
     hmView.s = Math.min(10, Math.max(1, hmView.s)); const max = W * (hmView.s - 1); hmView.x = Math.min(0, Math.max(-max, hmView.x)); hmView.y = Math.min(0, Math.max(-max, hmView.y));
     st.style.transform = `translate(${hmView.x}px,${hmView.y}px) scale(${hmView.s})`;
     const map = (u, v) => [hmView.x + u * W * hmView.s, hmView.y + v * W * hmView.s];
+    document.querySelectorAll('#hmMarks [data-hmcity]').forEach(e => { const [x, y] = map(+e.dataset.u, +e.dataset.v); e.style.left = x + 'px'; e.style.top = y + 'px'; });
     document.querySelectorAll('#hmMarks [data-hmmark]').forEach(e => { const [x, y] = map(+e.dataset.u, +e.dataset.v); if (x < 0 || y < 0 || x > W || y > W) { e.style.display = 'none'; return; } e.style.display = '';
       const w = e.offsetWidth, hh = e.offsetHeight, left = x + 14 + w > W - 48 && x - 14 - w >= 0, L = left ? x - 14 - w : x + 14, T = Math.max(4, Math.min(W - hh - 4, y - hh / 2)), ar = e.querySelector('[data-ar]');   // Karte bleibt immer im Bild
       e.style.left = L + 'px'; e.style.top = T + 'px'; if (ar) { ar.style.top = Math.max(4, Math.min(hh - 12, y - T - 4)) + 'px'; ar.style.left = left ? (w - 2) + 'px' : '-6px'; } });
@@ -1197,8 +1243,10 @@ window.RokMods.battles = (R) => {
     ctx.clearRect(0, 0, W, W); const mk = hmMask(h, m); if (mk) { ctx.imageSmoothingEnabled = true; ctx.drawImage(mk, 0, 0, W, W); }
     if (heat) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high'; ctx.drawImage(heat, 0, 0, W, W); }
     const box = $('hmMarks'); if (box) {
-      box.innerHTML = !h.zm ? '' : zs.map(o => `<div data-hmmark data-hmzone="${o.z}" data-u="${o.mu}" data-v="${o.mv}" class="absolute pointer-events-auto cursor-pointer ${h.pop === o.z ? 'z-30' : 'z-10'}" style="left:0;top:0">
-          <span data-ar class="absolute w-2 h-2 rotate-45 bg-amber-400"></span>${hmMarkCard(S, o)}</div>`).join('');
+      const pulse = (S.live || []).filter(({ p }) => p.r.city_x != null && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)).map(({ p }) => { const [u, v] = hmXY(+p.r.city_x, +p.r.city_y, h, m);
+        return `<div data-hmcity data-u="${u}" data-v="${v}" class="absolute pointer-events-none z-0" style="left:0;top:0"><span class="absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-emerald-400/50 animate-ping"></span><span class="absolute -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full bg-emerald-400/15 blur-md animate-pulse"></span></div>`; }).join('');
+      box.innerHTML = pulse + (!h.zm ? '' : zs.map(o => `<div data-hmmark data-hmzone="${o.z}" data-u="${o.mu}" data-v="${o.mv}" class="absolute pointer-events-auto cursor-pointer ${h.pop === o.z ? 'z-30' : 'z-10'}" style="left:0;top:0">
+          <span data-ar class="absolute w-2 h-2 rotate-45 bg-amber-400"></span>${hmMarkCard(S, o)}</div>`).join(''));
       box.querySelectorAll('[data-hmmark]').forEach(e => e.onclick = (ev) => { ev.stopPropagation(); if (ev.target.closest('[data-hmpop]')) return; hmPickZone(st, +e.dataset.hmzone, false); });
       box.querySelectorAll('[data-hmpop]').forEach(e => { e.addEventListener('pointerdown', ev => ev.stopPropagation()); e.addEventListener('wheel', ev => ev.stopPropagation(), { passive: true }); });
       box.querySelectorAll('[data-hmiso]').forEach(b => b.onclick = (ev) => { ev.stopPropagation(); hmIso(st, +b.dataset.hmiso); });
@@ -1227,6 +1275,13 @@ window.RokMods.battles = (R) => {
       let ok = false; try { await navigator.clipboard.writeText(url); ok = true; } catch {}
       hmAsk('🔗 Link zur Heatmap', url, () => {}, (ok ? 'In die Zwischenablage kopiert. ' : '') + (kvk ? 'Öffnet die Heatmap für ' + kvk + (pid ? ' mit diesem Spieler' : '') + '.' : 'Tipp: zuerst die C-Nummer eintragen, dann sehen andere das ganze KvK.'));
       setTimeout(() => { const i = document.getElementById('hmAskIn'); if (i) { i.readOnly = true; i.select(); } const b = document.querySelector('#hmAsk [data-ok]'); if (b) b.textContent = 'OK'; }, 30); });
+    el.querySelector('[data-hmp7]')?.addEventListener('change', (ev) => { const a = hmAk(h); if (ev.target.value) a.p7 = ev.target.value; else delete a.p7; re(); });
+    el.querySelector('[data-hmkl]')?.addEventListener('change', (ev) => { const a = hmAk(h); if (ev.target.value) a.kl = ev.target.value; else delete a.kl; re(); });
+    el.querySelector('[data-hmhf]')?.addEventListener('change', (ev) => { h.hf = ev.target.value || ''; h.tl = null; re(); });
+    el.querySelector('[data-hmht]')?.addEventListener('change', (ev) => { h.ht = ev.target.value || ''; h.tl = null; re(); });
+    el.querySelector('[data-hmhx]')?.addEventListener('click', () => { h.hf = ''; h.ht = ''; re(); });
+    el.querySelector('[data-hmflexmin]')?.addEventListener('change', (ev) => { h.flexMin = +ev.target.value; re(); });
+    el.querySelector('[data-hmflex]')?.addEventListener('toggle', (ev) => { h.flexOpen = ev.target.open; savePassive(); });
     el.querySelectorAll('[data-hmmode]').forEach(b => b.onclick = () => { h.mode = b.dataset.hmmode; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelector('[data-hmwkvk]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, '');
       if (v && !/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C13340'); ev.target.value = h.wkvk || ''; return; } h.wkvk = v || ''; h.watch = ''; h.fight = null; h.tl = null; h.pop = null; delete hmWInfo[v]; re(); });
@@ -1317,7 +1372,7 @@ window.RokMods.battles = (R) => {
       const near = (hmLast?.S || hmState(st)).dotsM.filter(p => Math.hypot(p.u - u, p.v - v) < .012 / Math.sqrt(hmView.s));
       if (!near.length) { tip.classList.add('hidden'); return; }
       const kp = near.reduce((s, p) => s + (p.kp ?? hmKP(p.r)), 0), en = [...new Set(near.map(p => p.r.enemy_name).filter(Boolean))].slice(0, 3), who = [...new Set(near.map(p => p.mine ? (kbIdName(p.r.player_id) || p.r.self_name || 'Du') + ' · ' + p.r.player_id : hmMates?.[p.fi]?.name).filter(Boolean))];
-      tip.innerHTML = `${h.src === 'pvp' ? `⚔️ ${near.length} · 🏆 ${short(kp)}` : (h.src === 'barb' ? '🪓 ' : '🏰 ') + near.length}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].r.pos_x, 'x'))} · Y ${Math.round(hmTile(near[0].r.pos_y, 'y'))} · ${hmWhen(near[near.length - 1].t)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}${who.length ? `<br><span class="text-cyan-200" translate="no">${who.map(esc).join(', ')}</span>` : ''}`;
+      tip.innerHTML = `${h.src === 'pvp' ? `⚔️ ${near.length} · 🏆 ${short(kp)}` : (h.src === 'barb' ? '🪓 ' : '👹 ') + near.length}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].r.pos_x, 'x'))} · Y ${Math.round(hmTile(near[0].r.pos_y, 'y'))} · ${hmWhen(near[near.length - 1].t)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}${who.length ? `<br><span class="text-cyan-200" translate="no">${who.map(esc).join(', ')}</span>` : ''}`;
       tip.style.left = Math.min(bb.width - 190, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
     box.addEventListener('mouseleave', () => tip.classList.add('hidden'));
     document.addEventListener('fullscreenchange', () => setTimeout(hmApplyView, 100), { once: true });
@@ -1372,7 +1427,7 @@ window.RokMods.battles = (R) => {
     return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 mb-2 flex gap-3"><div class="shrink-0">${hmHeroImg(h.n?.[0], 'w-16 h-16 rounded-xl', expd)}</div><div class="min-w-0 flex-1">
       <div class="flex items-center justify-between gap-2"><div class="font-semibold text-slate-100"><span>${main ? 'Hauptkommandant' : 'Nebenkommandant'}</span>: <span translate="no" class="text-gold-200">${kdNm(h.n?.[0], h.n?.[1], '#' + h.id)}</span></div>
       <div class="text-[11px] text-slate-400 whitespace-nowrap"><span>Lv</span> ${esc(h.lv ?? '–')} · ${'★'.repeat(Math.min(+h.st || 0, 6))}${h.aw ? ' · <span class="text-sky-300">erweckt</span>' : ''}</div></div>
-      <div class="mt-2 flex flex-wrap gap-1.5">${sk || '<span class="text-[11px] text-slate-500">Keine Skills im Bericht.</span>'}</div></div></div>`;
+      <div class="mt-2 flex flex-wrap gap-1.5">${sk}</div></div></div>`;
   }
   function kdGearImg(en, fb) { const slug = String(en || '').toLowerCase().replace(/['’]/g, '').replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     if (!slug) return `<span class="w-9 text-center">${fb}</span>`;
@@ -1386,9 +1441,9 @@ window.RokMods.battles = (R) => {
     return `<div class="min-w-0">
       <div class="flex items-baseline gap-2 mb-2"><h3 class="font-display text-lg" style="color:${col}">${title}</h3><span class="text-sm text-slate-200" translate="no">${sd.abbr ? `[${esc(sd.abbr)}] ` : ''}${esc(sd.name || '–')}</span>${sd.city ? `<span class="text-[11px] text-slate-500"><span>Rathaus</span> ${esc(sd.city)}</span>` : ''}</div>
       ${kdHero(sd.h1, true)}${kdHero(sd.h2, false)}
-      <div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 mb-2"><div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Ausrüstung</div>${gear || '<div class="text-[11px] text-slate-500">Keine Ausrüstung im Bericht.</div>'}</div>
+      ${sd.gear || sd.arm ? `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 mb-2"><div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Ausrüstung</div>${gear || '<div class="text-[11px] text-slate-500">Keine Ausrüstung im Bericht.</div>'}</div>
       <div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[11px] uppercase tracking-wider text-slate-400 mb-1">Rüstung &amp; Inschriften</div>${arm || '<div class="text-[11px] text-slate-500">Keine Rüstung im Bericht.</div>'}
-        ${sum ? `<div class="mt-2 pt-2 border-t border-ink-700"><div class="text-[10px] text-slate-500 mb-1">Rüstung gesamt</div><div class="flex flex-wrap gap-1">${sum}</div></div>` : ''}</div></div>`;
+        ${sum ? `<div class="mt-2 pt-2 border-t border-ink-700"><div class="text-[10px] text-slate-500 mb-1">Rüstung gesamt</div><div class="flex flex-wrap gap-1">${sum}</div></div>` : ''}</div>` : ''}</div>`;   // ohne gespeichertes Gear: Kästen weglassen
   }
   function kdStats(d, row) {
     const o = d.own || {}, p = d.opp || {}, ab = v => Math.abs(+v || 0);

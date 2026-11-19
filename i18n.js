@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 16 (battles.js)
+        "👹 Kahar": "👹 Kahar", "🛡️ Rally+Garnison": "🛡️ Rally+Garrison", "Alle Kahar": "All Kahar", "Rally &amp; Garnison": "Rally &amp; Garrison", "Rally & Garnison": "Rally & Garrison", "fightet": "is fighting", "Pass 7 ab": "Pass 7 from", "Kingsland ab": "Kingsland from", "🏟️ LK Kills": "🏟️ LK Kills", "🪦 LK Deads": "🪦 LK Deads", "💉 LK Heal": "💉 LK Heal", "🛡️ Rally/Garnison KP-Trade": "🛡️ Rally/Garrison KP trade", "Noch kein Battle Streak über dieser Grenze.": "No battle streak above this limit yet.", "Nur Kämpfe in dieser Uhrzeit (jeden Tag)": "Only battles at this time of day (every day)",
         // Heatmap 15 (battles.js)
         "Link teilen": "Share link", "🔗 Link zur Heatmap": "🔗 Link to the heatmap",
         // Heatmap 14 (battles.js)
