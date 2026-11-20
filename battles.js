@@ -160,6 +160,7 @@ window.RokMods.battles = (R) => {
       for (const c of ['account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp,npc_btype,npc_level,pos_x,pos_y,map_role', 'account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp,npc_btype,npc_level', 'account,mail_id,player_id,battle_start,leader_name,leader_alliance,members,my_hero1,my_hero2,group_kill_points,group_severe,group_dead,enemy_kill_points,opponents,enemy_names,enemy_alliances,is_pvp']) { try { kxRally = await kxLoadAll(db, 'rok_rallies', c, 'battle_start'); break; } catch { kxRally = []; } }   // neueste Spalten zuerst (SQL v9: Ort)
       try { const { data } = await db.from('rok_item_names').select('item_type,item_id,name'); kxNames = {}; (data || []).forEach(r => { kxNames[r.item_type + '_' + r.item_id] = r.name; }); } catch { kxNames = {}; }
     } catch { kxLoot = kxLoot || []; kxRally = kxRally || []; }
+    { const seen = new Set(); kxRally = (kxRally || []).filter(r => { const k = r.player_id + '|' + r.battle_start + '|' + (r.group_kill_points ?? '') + '|' + (r.enemy_kill_points ?? ''); if (seen.has(k)) return false; seen.add(k); return true; }); }   // gleicher Gruppenkampf in mehreren Mails nur einmal zählen
     kxLoading = false; if (R.view === 'battles') renderKampf();
   }
   // Bekannte Gegenstände (aus den Kampfberichten abgeglichen: Menge pro Drop + Häufigkeit) – Reihenfolge der Gruppen = Anzeige
@@ -746,7 +747,7 @@ window.RokMods.battles = (R) => {
   var HM_T = [['kvk', '🏁 KvK-Zeitraum'], ['d1', '24 h'], ['d3', '3 Tage'], ['d7', '7 Tage'], ['custom', 'Zeitraum']];
   var HM_TRAIL = [[3600e3, '1 h'], [6 * 3600e3, '6 h'], [86400e3, '24 h'], [0, 'alles bis dahin']];
   var HM_COL = ['#22d3ee', '#f472b6', '#facc15', '#a3e635', '#fb923c', '#c084fc', '#2dd4bf', '#f87171', '#60a5fa', '#e879f9'];
-  var hmSubOpen = new Set(), hmMates = null, hmMatesLoading = false, hmPlay = null, hmView = { s: 1, x: 0, y: 0 }, hmCalMode = false, hmShare = null, hmShareCol = true, hmLiveT = null, hmMaskC = null, hmLast = null;
+  var hmTC = null, hmTCc = null, hmSubOpen = new Set(), hmMates = null, hmMatesLoading = false, hmPlay = null, hmView = { s: 1, x: 0, y: 0 }, hmCalMode = false, hmShare = null, hmShareCol = true, hmLiveT = null, hmMaskC = null, hmLast = null;
   function hmCfg(st) { const h = (st.heat = st.heat || {});
     if (h.v !== 4) { h.rot = 0; h.mir = false; h.zn2 = {}; h.iso = null; h.pop = null; h.v = 4; }   // neue Zonen (Zone 4/5/6, Pass 7, Altar, Kingsland)
     if (!['pvp', 'barb', 'fort', 'all', 'rally'].includes(h.src) || hmSpect()) h.src = 'pvp';   // Barbaren/Forts bleiben privat
@@ -806,7 +807,7 @@ window.RokMods.battles = (R) => {
   function hmSum(pts) { const o = { n: 0, ekp: 0, kp: 0, lk: 0, lkD: 0, lkH: 0, dead: 0, sev: 0, eLoss: 0, acc: 0, heal: 0, first: null, kpS: 0, ekpS: 0, rkp: 0, rekp: 0, rn: 0 };
     pts.forEach(p => { const r = p.r; o.n++; o.kp += hmKP(r); o.lk += hmLK(r); o.dead += +r.self_dead || 0; o.sev += +r.self_severe || 0; o.eLoss += (+r.enemy_dead || 0) + (+r.enemy_severe || 0); o.acc += +r.acclaim || 0; o.ekp += +r.enemy_kill_points || 0;
       { const f = hmOwnT5(r); o.lkD += (+r.self_dead || 0) * (1 + 4 * f); o.lkH += (+r.self_severe || 0) * (1 + 4 * f); }   // LK Deads (Tote) / LK Heal (schwer Verwundete): T4 = 1, T5 = 5
-      if (p.joined || +r.group_size > 1) { o.rkp += hmKP(r); o.rekp += +r.enemy_kill_points || 0; o.rn++; } else { o.kpS += hmKP(r); o.ekpS += +r.enemy_kill_points || 0; } o.heal += +r.self_healing || 0; if (o.first == null || p.t < o.first) o.first = p.t; });
+      if (p.grp || p.joined || +r.group_size > 1) { o.rkp += hmKP(r); o.rekp += +r.enemy_kill_points || 0; o.rn++; } else { o.kpS += hmKP(r); o.ekpS += +r.enemy_kill_points || 0; } o.heal += +r.self_healing || 0; if (o.first == null || p.t < o.first) o.first = p.t; });
     o.lkD = Math.round(o.lkD); o.lkH = Math.round(o.lkH);
     o.kpt = o.ekpS > 0 ? o.kpS / o.ekpS : (o.kpS ? Infinity : null);   // KP-Trade: deine KP ÷ KP des Gegners – ohne Rally/Garnison
     o.rkpt = o.rekp > 0 ? o.rkp / o.rekp : (o.rkp ? Infinity : null);   // eigener Wert für Rally/Garnison
@@ -825,14 +826,15 @@ window.RokMods.battles = (R) => {
     const h = hmCfg(st), m = hmMap(h), sid = hmSid(h), acc = hmAcc(h), [from, to] = range, mates = withMates && hmMates ? new Map(hmMates.map((f, i) => [f.gid, i])) : new Map();
     const tm = (x) => { const q = /^(\d{1,2}):(\d{2})$/.exec(x || ''); return q ? +q[1] * 60 + +q[2] : null; }, hf = tm(h.hf) ?? (h.ht ? 0 : null), ht = tm(h.ht) ?? 1439; hmPT = hmPhaseTimes(h);
     const sp = hmSpect(), ws = sp ? hmWatchSet(h) : null, out = [], own = (pid) => acc ? String(pid) === acc : sp ? ((!ws || ws.has(String(pid))) && (!h.watch || String(pid) === h.watch)) : kbMine(pid);
-    const add = (r, joined) => { const kd = hmKind(r); if (!kd) return; const grp = joined || (+r.group_size > 1 && kd === 'pvp');
-      if (src === 'rally' ? !(grp && kd === 'pvp') : (src !== 'all' && kd !== src)) return;
+    const add = (r, joined) => { const kd = hmKind(r); if (!kd) return; const city = !joined && kd === 'pvp' && r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 30;
+      const grp = joined || city || (+r.group_size > 1 && kd === 'pvp');
+      if (src === 'rally' ? !(grp && kd === 'pvp') : ((src !== 'all' && kd !== src) || (grp && kd === 'pvp'))) return;   // Rally/Garnison/City-Rally zählen nicht zu den normalen Kämpfen
       if (!joined && sid && r.server_id != null && +r.server_id !== sid) return;
       const mine = own(r.player_id), fi = mates.get(String(r.player_id)); if (!mine && fi == null) return; if (!mine && kd !== 'pvp') return;   // Barbaren anderer bleiben privat
       if (!hmIn(r.pos_x, r.pos_y, r.map_role)) return;
       const t = r.battle_start ? Date.parse(r.battle_start) : NaN; if (from != null && !(t >= from)) return; if (to != null && !(t <= to)) return;
       if (hf != null) { const d = new Date(t), mm = d.getHours() * 60 + d.getMinutes(); if (hf <= ht ? (mm < hf || mm > ht) : (mm < hf && mm > ht)) return; }   // Uhrzeit-Fenster (z. B. 15–18 Uhr)
-      const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); out.push({ r, k: kd, u, v, t, mine, fi: mine ? -1 : fi, z: hmZoneAt(u, v, m, kd !== 'pvp', t), joined, grp }); };   // Pass 7 nur für Kämpfe
+      const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m); out.push({ r, k: kd, u, v, t, mine, fi: mine ? -1 : fi, z: hmZoneAt(u, v, m, kd !== 'pvp', t), joined, grp, city }); };   // Pass 7 nur für Kämpfe
     (kbRows || []).forEach(r => add(r, false));
     (kxRally || []).forEach(r => { if (r.pos_x != null) add({ ...r, kill_points: r.group_kill_points, is_pvp: r.is_pvp && (+r.group_kill_points || 0) > 0 }, true); });
     return out.sort((a, b) => a.t - b.t);
@@ -917,14 +919,15 @@ window.RokMods.battles = (R) => {
     if (h.fight && !fights.some(f => f.id === h.fight)) h.fight = null;
     const range = hmRange(h, fights), allA = hmPoints(st, h.src, range, h.fr), mk = (p) => p.joined ? 'Rally (Teilnehmer)' : kbMarchOf(p.r);
     const marches = [...new Set(allA.filter(p => p.mine).map(mk))].sort(); if (h.march && !marches.includes(h.march)) h.march = '';
-    const all0 = h.march ? allA.filter(p => !p.mine || mk(p) === h.march) : allA, all = h.iso != null ? all0.filter(p => p.z === h.iso) : all0;
+    const allM = h.march ? allA.filter(p => !p.mine || mk(p) === h.march) : allA, zbOf = (z) => z >= 0 ? hmBaseName(hmZName(h, m, z)) : '', all0 = h.zb ? allM.filter(p => zbOf(p.z) === h.zb) : allM, all = h.iso != null ? all0.filter(p => p.z === h.iso) : all0;
     const t0 = all.length ? all[0].t : Date.now(), t1 = all.length ? all[all.length - 1].t : Date.now(), cur = h.tl == null ? null : Math.min(t1, Math.max(t0, h.tl));
     const upto = cur == null ? all : all.filter(p => p.t <= cur), dots = cur == null || !h.trail ? upto : upto.filter(p => p.t >= cur - h.trail);
     const merge = (L) => { const M = new Map(), other = []; L.forEach(p => { if (p.k !== 'pvp') { other.push(p); return; } const k = (p.mine ? 'm' : 'f' + p.fi) + '|' + p.r.mail_id, o = M.get(k);   // ein Bericht = ein Punkt
       if (o) { o.kp += hmKP(p.r); o.n++; } else M.set(k, { ...p, kp: hmKP(p.r), n: 1 }); }); return [...M.values(), ...other]; };
     const live = [], lastP = new Map(); allA.forEach(p => { if (p.k !== 'pvp' || (!p.mine && p.fi < 0)) return; const k = String(p.r.player_id), o = lastP.get(k); if (!o || p.t > o.t) lastP.set(k, p); });
     lastP.forEach((p, k) => { if (Date.now() - p.t < 15 * 6e4) live.push({ k, p, name: p.mine ? hmPName(k, p.r.self_name) : (hmMates?.[p.fi]?.name || hmPName(k, p.r.self_name)) }); });   // live = Kampf in den letzten 15 min
-    return { h, m, fights, marches, live, all0, all, upto, dots, dotsM: merge(dots), t0, t1, cur, zs: hmZoneStats(h.src === 'all' ? upto.filter(p => p.k === 'pvp') : upto), zsAll: hmZoneStats(h.src === 'all' ? all0.filter(p => p.k === 'pvp') : all0) };
+    const zb = new Map(); allM.forEach(p => { if (!p.mine || p.z < 0) return; const b = zbOf(p.z), o = zb.get(b) || { b, kp: 0, n: 0 }; o.kp += hmKP(p.r); o.n++; zb.set(b, o); });
+    return { h, m, fights, marches, live, zbList: [...zb.values()].sort((a, b) => b.kp - a.kp || b.n - a.n), allA, all0, all, upto, dots, dotsM: merge(dots), t0, t1, cur, zs: hmZoneStats(h.src === 'all' ? upto.filter(p => p.k === 'pvp') : upto), zsAll: hmZoneStats(h.src === 'all' ? all0.filter(p => p.k === 'pvp') : all0) };
   }
   function hmPName(pid, nm) { return kbIdName(pid) || nm || String(pid); }
   function hmZoneStats(pts) {
@@ -1041,6 +1044,42 @@ window.RokMods.battles = (R) => {
       return main + (n > 1 ? g.pts.map(p => `<tr ${subCls(g.k)}><td class="py-1 pr-2 pl-3 tabular-nums text-slate-500">↳ ${new Date(p.t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</td><td class="pr-2" translate="no">${esc(hmZName(h, m, p.z))}</td><td></td><td></td><td class="pr-2 text-right tabular-nums">${p.r.npc_level ? 'Lv ' + esc(p.r.npc_level) : ''}</td></tr>`).join('') : ''); }).join('');
     const th = (l, r) => `<th class="py-1 pr-2 font-medium ${r ? 'text-right' : 'text-left'}">${l}</th>`;
     const blHead = `<tr class="text-[11px] text-slate-500">${th('Zeit')}${th('Zone')}${th('Marsch')}${pvp ? th('Gegner') + th('🏆 KP', 1) + th('🎖️ Acclaim', 1) + th('⚖️ Trade', 1) + th('🔁 KP-Trade', 1) + th('💀 Deads', 1) + th('') : th('Kette', 1) + th('Stufe', 1)}</tr>`;
+    // 📜 Battlereport: Rally, Garnison und City-Rally einzeln – zählen nicht in die normalen Werte
+    let brHtml = '';
+    if (h.src === 'pvp' || h.src === 'all') {
+      const G = hmPoints(st, 'rally', hmRange(h, fights), false).filter(p => p.mine), B = new Map(); G.forEach(p => { const k = String(p.r.mail_id) + '|' + p.r.player_id; (B.get(k) || B.set(k, []).get(k)).push(p); });
+      const L = [...B.values()].map(pts => ({ pts, p: pts[0], w: hmSum(pts) })).sort((a, b) => b.p.t - a.p.t);
+      const typ = (p) => p.city ? '🏯 City-Rally' : p.joined ? '🛡️ Rally/Garnison (dabei)' : '🚩 Rally/Garnison (Anführer)';
+      const rowsB = L.slice(0, 200).map(x => { const r = x.p.r, mk = x.p.joined ? [r.my_hero1, r.my_hero2].filter(Boolean).join(' / ') : kbMarchOf(r), kp = x.w.rkp, ekp = x.w.rekp, kpt = ekp > 0 ? kp / ekp : (kp ? Infinity : null);
+        return `<tr class="border-t border-ink-800/70"><td class="py-2 pr-3 tabular-nums text-slate-400 whitespace-nowrap">${hmWhen(x.p.t)}</td><td class="pr-3 whitespace-nowrap text-sky-200">${typ(x.p)}</td><td class="pr-3 whitespace-nowrap" translate="no">${esc(hmZName(h, m, x.p.z))}</td>
+          <td class="pr-3"><span class="flex gap-0.5" title="${esc(mk)}">${hmHeroes(mk)}</span></td><td class="pr-3 text-red-200 truncate max-w-[12rem]" translate="no">${esc(r.enemy_names || ((r.enemy_alliance ? '[' + r.enemy_alliance + '] ' : '') + (r.enemy_name || '')))}</td>
+          <td class="pr-3 text-right tabular-nums text-gold-200 font-semibold">🏆 ${short(kp)}</td><td class="pr-3 text-right tabular-nums text-red-200">🗡️ ${short(ekp)}</td><td class="pr-3 text-right tabular-nums ${kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">🔁 ${hmKptTxt(kpt)}</td>
+          <td class="text-right">${x.p.joined ? '' : `<button type="button" data-kbdetail="${esc(r.mail_id)}|${esc(r.opponent_id)}" class="px-2 py-0.5 rounded-lg border border-gold-500/40 text-gold-200 hover:bg-gold-500/10">🔍</button>`}</td></tr>`; }).join('');
+      const tot = hmSum(G), tkpt = tot.rekp > 0 ? tot.rkp / tot.rekp : null;
+      brHtml = `<details data-hmbr ${h.brOpen ? 'open' : ''} class="mt-3 rounded-xl border border-sky-500/40 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-sky-200">📜 Battlereport <span class="text-slate-400 font-normal">· Rally · Garnison · City-Rally</span> <span class="tabular-nums text-gold-300">(${fmt(L.length)})</span>${L.length ? ` <span class="ml-2 text-xs text-slate-300">🏆 ${short(tot.rkp)} · 🔁 ${hmKptTxt(tkpt)}</span>` : ''}</summary>
+        <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><tbody>${rowsB || '<tr><td class="py-2 text-slate-500">Keine Rally, Garnison oder City-Rally im Zeitraum.</td></tr>'}</tbody></table></div></details>`;
+    }
+    // 📈 Trade-Verlauf über den Tag (30 min / 1 h / 4 h) + Buff-Auswertung (z. B. 50 % für 4 h)
+    let tcHtml = '';
+    if (h.src === 'pvp' || h.src === 'all') {
+      const bk = [30, 60, 240].includes(+h.tcB) ? +h.tcB : 60, BM = bk * 6e4, P = mine.filter(p => p.k === 'pvp' && !p.grp), bucket = new Map();
+      P.forEach(p => { const k = Math.floor(p.t / BM) * BM; (bucket.get(k) || bucket.set(k, []).get(k)).push(p); });
+      const ks = [...bucket.keys()].sort((a, b) => a - b), rowsT = ks.map(k => ({ k, w: hmSum(bucket.get(k)) }));
+      hmTC = { labels: rowsT.map(x => new Date(x.k).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })), trade: rowsT.map(x => x.w.trade === Infinity ? null : x.w.trade == null ? null : Math.round(x.w.trade * 100)), kpt: rowsT.map(x => x.w.kpt === Infinity || x.w.kpt == null ? null : +x.w.kpt.toFixed(2)), kp: rowsT.map(x => x.w.kp), buff: rowsT.map(x => (h.buffs || []).some(b => { const a = Date.parse(b); return x.k + BM > a && x.k < a + 4 * 36e5; })) };
+      const buffs = (h.buffs || []).filter(b => !isNaN(Date.parse(b))), inBuff = (t) => buffs.some(b => { const a = Date.parse(b); return t >= a && t < a + 4 * 36e5; });
+      let res = '';
+      if (buffs.length && P.length) { const pin = P.filter(p => inBuff(p.t)), pout = P.filter(p => !inBuff(p.t)), wi = hmSum(pin), wo = hmSum(pout);
+        const hrs = (L) => new Set(L.map(p => Math.floor(p.t / 36e5))).size || 1, rIn = wi.kp / hrs(pin), rOut = wo.kp / hrs(pout), gain = pin.length && pout.length ? (rIn - rOut) * hrs(pin) : null;
+        const cell = (l, a, b, f) => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-3 text-slate-400">${l}</td><td class="pr-3 text-right tabular-nums text-amber-200 font-semibold">${f(a)}</td><td class="text-right tabular-nums text-slate-300">${f(b)}</td></tr>`;
+        res = `<div class="mt-3 grid sm:grid-cols-[minmax(0,1fr)_14rem] gap-3 items-start"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th></th><th class="text-right pr-3">⚡ <span>mit Buff</span></th><th class="text-right"><span>ohne</span></th></tr></thead><tbody>
+          ${cell('🏆 KP pro Kampfstunde', rIn, rOut, short)}${cell('⚖️ Trade', wi.trade, wo.trade, hmTradeTxt)}${cell('🔁 KP-Trade', wi.kpt, wo.kpt, hmKptTxt)}${cell('💀 Verluste (schwer + tot)', wi.sev + wi.dead, wo.sev + wo.dead, short)}${cell('⚔️ Kämpfe', wi.n, wo.n, fmt)}</tbody></table>
+          <div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3"><div class="text-[11px] text-slate-400"><span>Der Buff hat gebracht</span></div><div class="text-2xl font-bold tabular-nums ${gain == null ? 'text-slate-400' : gain >= 0 ? 'text-emerald-300' : 'text-red-300'}">${gain == null ? '–' : (gain >= 0 ? '+' : '−') + short(Math.abs(gain)) + ' KP'}</div><div class="text-[11px] text-slate-400">${!pout.length ? '<span>Zum Vergleich fehlen Kämpfe ohne Buff im Zeitraum.</span>' : pin.length ? `${rOut > 0 ? (gain >= 0 ? '+' : '') + Math.round((rIn / rOut - 1) * 100) + ' % <span>KP pro Stunde</span>' : ''}` : '<span>Keine Kämpfe im Buff-Zeitraum.</span>'}</div></div></div>`; }
+      tcHtml = `<details data-hmtc ${h.tcOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">📈 <span>Trade-Verlauf</span></summary>
+        <div class="px-3 pb-3"><div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${[[30, '30 min'], [60, '1 h'], [240, '4 h']].map(([v, l]) => `<button type="button" data-hmtcb="${v}" aria-pressed="${bk === v}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">${l}</button>`).join('')}</span>
+          <span class="ml-2 text-slate-400">⚡ <span>Buff (4 h) ab</span></span><input type="datetime-local" data-hmbuffin class="bg-ink-950 border border-amber-500/50 rounded-lg px-2 py-0.5 text-xs text-slate-100"><button type="button" data-hmbuffadd class="px-2 py-0.5 rounded-lg border border-amber-500/50 text-amber-200 hover:bg-amber-500/10">+ <span>Buff</span></button>
+          ${buffs.map((b, i) => `<span class="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">⚡ ${hmWhen(Date.parse(b))}–${new Date(Date.parse(b) + 4 * 36e5).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}<button type="button" data-hmbuffx="${i}" class="text-slate-400 hover:text-red-300">✕</button></span>`).join('')}</div>
+          ${rowsT.length ? '<div class="h-56"><canvas id="hmTradeChart"></canvas></div>' : '<div class="text-xs text-slate-500">Keine Kämpfe im Zeitraum.</div>'}${res}</div></details>`;
+    }
     // 💪 Flex: ganze Battle Streaks (Hauptbericht) ab 2 Mio. KP – nur Märsche, KP und Trade
     let flexHtml = '';
     if (h.src === 'pvp' || h.src === 'all') {
@@ -1105,10 +1144,12 @@ window.RokMods.battles = (R) => {
         </div>
       </div>${hmLivePanel(S)}</div>
       ${!kbPosCols ? '<div class="mt-2 text-xs text-amber-300">SQL für die Heatmap fehlt noch in Supabase.</div>' : ''}
-      <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3>${zoneSel(true)}${marchSel}</div>
-      <div class="flex flex-wrap gap-1 mt-2 p-1 rounded-xl bg-ink-950 border border-ink-700">${zoneChips}</div>
+      <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3>${marchSel}</div>
+      <div class="flex flex-wrap gap-1.5 mt-2">${[{ b: '', kp: S.zbList.reduce((a, x) => a + x.kp, 0), n: S.zbList.reduce((a, x) => a + x.n, 0) }, ...S.zbList].map(x => `<button type="button" data-hmzb="${esc(x.b)}" aria-pressed="${(h.zb || '') === x.b}" class="seg-btn rounded-xl px-3 py-2 text-left"><div class="text-sm font-bold" translate="no">${x.b ? esc(x.b) : '🗺️ <span>Alle</span>'}</div><div class="text-xs tabular-nums text-gold-300">${pvp ? '🏆 ' + short(x.kp) : (h.src === 'barb' ? '🪓 ' : '👹 ') + fmt(x.n)}</div></button>`).join('')}</div>
       <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
+      ${tcHtml}
       ${pvp ? hmCompare(h, S) : ''}
+      ${brHtml}
       ${flexHtml || `<details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${h.src === 'rally' ? '🛡️ <span>Rally &amp; Garnison</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '👹 <span>Alle Kahar</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
         <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><thead>${blHead}</thead><tbody>${blRows}</tbody></table>${bl.length > blShow.length ? `<div class="text-[11px] text-slate-500 mt-1">${fmt(blShow.length)} / ${fmt(bl.length)}</div>` : ''}</div></details>`}
       </section>`;
@@ -1211,7 +1252,7 @@ window.RokMods.battles = (R) => {
     const { h, m, dotsM: dots } = S, col = HM_SRC.find(x => x[0] === h.src)[2], dpr = W / 1000 * 1.6;
     const selZ = h.pop;
     dots.forEach(p => { const [x, y] = map(p.u, p.v); if (x < -10 || y < -10 || x > W + 10 || y > W + 10) return; const fresh = S.cur != null && S.cur - p.t < 5 * 6e4;
-      if (h.src === 'rally') { ctx.font = `${Math.round(13 * dpr)}px system-ui,"Segoe UI Emoji",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.joined ? '🛡️' : '🚩', x, y); return; }   // Rally/Garnison als Symbol
+      if (h.src === 'rally') { ctx.font = `${Math.round(13 * dpr)}px system-ui,"Segoe UI Emoji",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.city ? '🏯' : p.joined ? '🛡️' : '🚩', x, y); return; }   // Rally/Garnison als Symbol
       const other = selZ != null && p.k === 'pvp' && p.z !== selZ;   // Zone ausgewählt → andere Kampfpunkte orange
       ctx.beginPath(); ctx.arc(x, y, (p.mine ? 3.2 : 2.8) * dpr, 0, 7); ctx.fillStyle = other ? '#f97316' : p.mine ? (HM_SRC.find(x => x[0] === p.k)?.[2] || col) : HM_COL[p.fi % HM_COL.length]; ctx.fill();
       ctx.lineWidth = (fresh ? 2 : 1) * dpr; ctx.strokeStyle = fresh ? '#fde047' : 'rgba(0,0,0,.7)'; ctx.stroke(); });
@@ -1282,6 +1323,22 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-hmhx]')?.addEventListener('click', () => { h.hf = ''; h.ht = ''; re(); });
     el.querySelector('[data-hmflexmin]')?.addEventListener('change', (ev) => { h.flexMin = +ev.target.value; re(); });
     el.querySelector('[data-hmflex]')?.addEventListener('toggle', (ev) => { h.flexOpen = ev.target.open; savePassive(); });
+    el.querySelectorAll('[data-hmzb]').forEach(b => b.onclick = () => { h.zb = b.dataset.hmzb || ''; h.pop = null; re(); });
+    el.querySelectorAll('[data-hmtcb]').forEach(b => b.onclick = () => { h.tcB = +b.dataset.hmtcb; re(); });
+    el.querySelector('[data-hmbuffadd]')?.addEventListener('click', () => { const v = el.querySelector('[data-hmbuffin]')?.value; if (!v) return; h.buffs = [...(h.buffs || []), v].sort(); re(); });
+    el.querySelectorAll('[data-hmbuffx]').forEach(b => b.onclick = () => { h.buffs = (h.buffs || []).filter((_, i) => i !== +b.dataset.hmbuffx); re(); });
+    el.querySelector('[data-hmtc]')?.addEventListener('toggle', (ev) => { h.tcOpen = ev.target.open; savePassive(); });
+    el.querySelector('[data-hmbr]')?.addEventListener('toggle', (ev) => { h.brOpen = ev.target.open; savePassive(); });
+    try { hmTCc?.destroy(); } catch {} hmTCc = null;
+    const tcv = document.getElementById('hmTradeChart'); if (tcv && window.Chart && hmTC) {
+      hmTCc = new Chart(tcv, { data: { labels: hmTC.labels, datasets: [
+        { type: 'bar', label: 'KP', data: hmTC.kp, yAxisID: 'kp', backgroundColor: hmTC.buff.map(b => b ? 'rgba(245,158,11,.45)' : 'rgba(148,163,184,.18)'), borderWidth: 0 },
+        { type: 'line', label: 'Trade %', data: hmTC.trade, yAxisID: 'tr', borderColor: '#34d399', backgroundColor: '#34d399', tension: .3, spanGaps: true, pointRadius: 2 },
+        { type: 'line', label: 'KP-Trade', data: hmTC.kpt, yAxisID: 'kt', borderColor: '#60a5fa', backgroundColor: '#60a5fa', tension: .3, spanGaps: true, pointRadius: 2 }] },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false }, plugins: { legend: { labels: { color: '#cbd5e1', boxWidth: 10 } }, tooltip: { callbacks: { label: (x) => x.dataset.label + ': ' + (x.dataset.yAxisID === 'kp' ? short(x.raw) : x.dataset.yAxisID === 'tr' ? x.raw + ' %' : x.raw + ' : 1') } } },
+          scales: { x: { ticks: { color: '#64748b', maxTicksLimit: 12 }, grid: { display: false } }, kp: { position: 'right', ticks: { color: '#64748b', callback: (v) => short(v) }, grid: { display: false } },
+            tr: { position: 'left', ticks: { color: '#34d399', callback: (v) => v + ' %' }, grid: { color: 'rgba(148,163,184,.08)' } }, kt: { display: false } } } });
+    }
     el.querySelectorAll('[data-hmmode]').forEach(b => b.onclick = () => { h.mode = b.dataset.hmmode; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelector('[data-hmwkvk]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, '');
       if (v && !/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C13340'); ev.target.value = h.wkvk || ''; return; } h.wkvk = v || ''; h.watch = ''; h.fight = null; h.tl = null; h.pop = null; delete hmWInfo[v]; re(); });

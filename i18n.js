@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 17 (battles.js)
+        "📈 Trade-Verlauf": "📈 Trade history", "Trade-Verlauf": "Trade history", "Buff (4 h) ab": "Buff (4 h) from", "Buff": "Buff", "mit Buff": "with buff", "ohne": "without", "🏆 KP pro Kampfstunde": "🏆 KP per battle hour", "💀 Verluste (schwer + tot)": "💀 Losses (severe + dead)", "Der Buff hat gebracht": "The buff brought", "KP pro Stunde": "KP per hour", "Keine Kämpfe im Buff-Zeitraum.": "No battles during the buff.", "Zum Vergleich fehlen Kämpfe ohne Buff im Zeitraum.": "No battles without buff in the period to compare.", "Keine Kämpfe im Zeitraum.": "No battles in the period.", "Keine Rally, Garnison oder City-Rally im Zeitraum.": "No rally, garrison or city rally in the period.", "🏯 City-Rally": "🏯 City rally", "🛡️ Rally/Garnison (dabei)": "🛡️ Rally/Garrison (joined)", "🚩 Rally/Garnison (Anführer)": "🚩 Rally/Garrison (leader)", "Alle": "All",
         // Heatmap 16 (battles.js)
         "👹 Kahar": "👹 Kahar", "🛡️ Rally+Garnison": "🛡️ Rally+Garrison", "Alle Kahar": "All Kahar", "Rally &amp; Garnison": "Rally &amp; Garrison", "Rally & Garnison": "Rally & Garrison", "fightet": "is fighting", "Pass 7 ab": "Pass 7 from", "Kingsland ab": "Kingsland from", "🏟️ LK Kills": "🏟️ LK Kills", "🪦 LK Deads": "🪦 LK Deads", "💉 LK Heal": "💉 LK Heal", "🛡️ Rally/Garnison KP-Trade": "🛡️ Rally/Garrison KP trade", "Noch kein Battle Streak über dieser Grenze.": "No battle streak above this limit yet.", "Nur Kämpfe in dieser Uhrzeit (jeden Tag)": "Only battles at this time of day (every day)",
         // Heatmap 15 (battles.js)
