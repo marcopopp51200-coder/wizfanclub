@@ -46,8 +46,8 @@ window.RokMods.battles = (R) => {
     setTimeout(() => { R.view = 'battles'; R.applyView?.(); window.scrollTo({ top: 0 }); }, 400);
   })();
 
-  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true, kbAccCols = true, kbParCols = true;
-  function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : '') + (kbParCols ? ',parent_id' : ''); }
+  var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true, kbAccCols = true, kbParCols = true, kbKdCols = true;
+  function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : '') + (kbParCols ? ',parent_id' : '') + (kbKdCols ? ',enemy_kingdom' : ''); }
   var KB_COLS = 'mail_id,opponent_id,account,player_id,battle_start,battle_end,is_pvp,self_name,self_alliance,self_hero1,self_hero2,self_troops_start,self_wounded,self_severe,self_dead,self_healing,self_power_lost,enemy_name,enemy_alliance,enemy_hero1,enemy_hero2,enemy_troops_start,enemy_wounded,enemy_severe,enemy_dead,enemy_power_lost,kill_points,enemy_kill_points,server_id';
   async function loadBattles(force) {
     if (kbLoading || (kbRows && !force)) return; kbLoading = true; kbProg = 0; kbErr = '';
@@ -55,6 +55,7 @@ window.RokMods.battles = (R) => {
       const all = [];
       for (let from = 0; from < 100000; from += 1000) {
         let q = await db.from('rok_battles').select(kbSel()).order('battle_start', { ascending: false }).order('mail_id').order('opponent_id').range(from, from + 999);
+        if (q.error && kbKdCols && /enemy_kingdom/i.test(q.error.message || '')) { kbKdCols = false; from -= 1000; continue; }
         if (q.error && kbParCols && /parent_id/i.test(q.error.message || '')) { kbParCols = false; from -= 1000; continue; }   // SQL v17 (Battle Streak) noch nicht ausgeführt
         if (q.error && kbAccCols && /acclaim/i.test(q.error.message || '')) { kbAccCols = false; from -= 1000; continue; }   // SQL v11 (Verdienst) noch nicht ausgeführt
         if (q.error && kbPosCols && /pos_|city_|map_role|room_id/i.test(q.error.message || '')) { kbPosCols = false; from -= 1000; continue; }   // SQL v9 (Heatmap) noch nicht ausgeführt
@@ -307,13 +308,18 @@ window.RokMods.battles = (R) => {
     const filters = catSel + timeRow(modeSel + marchSel + enemyChip);
     // Unterseiten: Battles · Loot · Ressourcen
     const page = st.page || 'battles';
-    const subTabs = `<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-3xl mx-auto mt-2" role="tablist">${[['battles', '⚔️', 'Battles', '#f43f5e'], ['heat', '🔥', 'Heatmap', '#fb923c'], ['loot', '🎁', 'Loot', '#f5c542'], ['res', '🌾', 'Ressourcen', '#34d399']].map(([k, i, l, c]) =>
+    const subTabs = `<div class="grid grid-cols-3 sm:grid-cols-5 gap-3 max-w-4xl mx-auto mt-2" role="tablist">${[['battles', '⚔️', 'Battles', '#f43f5e'], ['heat', '🔥', 'Heatmap', '#fb923c'], ['ana', '📊', 'Analyse', '#a78bfa'], ['loot', '🎁', 'Loot', '#f5c542'], ['res', '🌾', 'Ressourcen', '#34d399']].map(([k, i, l, c]) =>
         `<button type="button" class="hub-tile panel !min-h-[6.5rem] sm:!min-h-[8rem]" data-kbpage="${k}" role="tab" aria-pressed="${page === k}"><span class="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl grid place-items-center text-2xl sm:text-3xl" style="background:linear-gradient(135deg,${c}33,${c}11);border:1px solid ${c}55">${i}</span><span class="font-display text-sm sm:text-lg text-white tracking-wide">${l}</span></button>`).join('')}</div>`;
     const pageHead = (icon, t, sub) => `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">${icon} ${t}</h2><p class="text-xs text-slate-400 mb-3">${sub}</p>`;
     if (page === 'res') {
       if (!rsRows && !rsLoading) loadRes();
       el.innerHTML = wip + subTabs + rsHtml(timeRow('', accsRes));
       kbBind(el); rsDraw(); return;
+    }
+    if (page === 'ana') {
+      if (!kxLoot && !kxLoading) loadKampfExtra();
+      el.innerHTML = wip + subTabs + anaHtml(st, timeRow('', accsRes));
+      kbBind(el); el.querySelectorAll('[data-anatab]').forEach(b => b.onclick = () => { st.anaTab = b.dataset.anatab; savePassive(); renderKampf(); }); return;
     }
     if (page === 'heat') {
       const accSel = accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
@@ -726,6 +732,93 @@ window.RokMods.battles = (R) => {
     el.querySelectorAll('[data-kbrow]').forEach(tr => tr.onclick = (ev) => { if (ev.target.closest('button,a,input,select')) return; tr.querySelector('[data-kbdetail]')?.click(); });
   }
 
+  // ================= 📊 Analyse: Gegner, Allianzen, Matchups, Leistung, Farm =================
+  function anaRows(st) {   // eigene PvP-Kämpfe (Weltkarte, ohne Ark of Osiris, ohne Rally/Garnison) im Zeitraum oben
+    return (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kbIsPvp(r) && !kbIsAoo(r) && !(+r.group_size > 1) && kxInRange(r.battle_start))
+      .filter(r => !(r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 30));
+  }
+  function anaSum(rows) { const o = { n: 0, kp: 0, ekp: 0, my: 0, en: 0, dead: 0 }; rows.forEach(r => { o.n++; o.kp += +r.kill_points || 0; o.ekp += +r.enemy_kill_points || 0; o.my += (+r.self_severe || 0) + (+r.self_dead || 0); o.en += (+r.enemy_severe || 0) + (+r.enemy_dead || 0); o.dead += +r.self_dead || 0; });
+    o.kpt = o.ekp > 0 ? o.kp / o.ekp : (o.kp ? Infinity : null); o.trade = o.my > 0 ? o.en / o.my : (o.en ? Infinity : null); return o; }
+  function anaKd(k) { return k ? '#' + k : ''; }
+  function anaEnemyPair(r) { return [r.enemy_hero1, r.enemy_hero2].filter(Boolean).join(' / ') || '–'; }
+  function anaHtml(st, top) {
+    const tab = st.anaTab || 'nem', rows = anaRows(st), th = 'py-1.5 pr-3 text-[11px] font-medium text-slate-500', td = 'py-1.5 pr-3 tabular-nums';
+    const kptC = (v) => v == null ? 'text-slate-400' : v >= 1 ? 'text-emerald-300' : 'text-red-300';
+    const tabs = [['nem', '🎯', 'Gegner'], ['ally', '🏳️', 'Allianzen'], ['match', '⚔️', 'Matchups'], ['perf', '📈', 'Leistung'], ['farm', '🪓', 'Farm']];
+    let body = '';
+    if (!rows.length && tab !== 'farm') body = '<div class="text-sm text-slate-500 py-6 text-center">Keine PvP-Kämpfe im Zeitraum.</div>';
+    else if (tab === 'nem') {   // Nemesis, leichte Ziele, Finger weg
+      const M = new Map(); rows.forEach(r => { const k = String(r.enemy_player_id || r.enemy_name); const o = M.get(k) || { name: r.enemy_name, ally: r.enemy_alliance, kd: r.enemy_kingdom, rows: [] }; o.rows.push(r); M.set(k, o); });
+      const L = [...M.values()].map(o => ({ ...o, w: anaSum(o.rows) })).filter(o => o.name);
+      const tbl = (title, sub, list, col) => `<div class="rounded-xl border ${col} bg-ink-950/60 p-3"><div class="font-semibold text-slate-100">${title}</div><div class="text-[11px] text-slate-500 mb-2">${sub}</div>
+        <table class="w-full text-xs"><thead><tr><th class="${th} text-left">Gegner</th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">🏆 KP</th><th class="${th} text-right">🗡️ Gegner-KP</th><th class="${th} text-right">🔁 KP-Trade</th></tr></thead><tbody>
+        ${list.slice(0, 10).map(o => `<tr class="border-t border-ink-800/60"><td class="py-1.5 pr-3"><span class="text-red-200" translate="no">${o.ally ? '[' + esc(o.ally) + '] ' : ''}${esc(o.name)}</span>${o.kd ? ` <span class="text-[10px] text-slate-500">${anaKd(o.kd)}</span>` : ''}</td><td class="${td} text-right">${fmt(o.w.n)}</td><td class="${td} text-right text-gold-200">${short(o.w.kp)}</td><td class="${td} text-right text-red-200">${short(o.w.ekp)}</td><td class="${td} text-right ${kptC(o.w.kpt)}">${hmKptTxt(o.w.kpt)}</td></tr>`).join('') || '<tr><td class="py-2 text-slate-500" colspan="5">–</td></tr>'}</tbody></table></div>`;
+      const min = (o) => o.w.n >= 3;
+      body = `<div class="grid lg:grid-cols-3 gap-3">
+        ${tbl('😈 Nemesis', 'Wer dir die meisten KP abgenommen hat', [...L].sort((a, b) => b.w.ekp - a.w.ekp), 'border-red-500/40')}
+        ${tbl('🍗 Leichte Ziele', 'Bester KP-Trade (ab 3 Kämpfen)', L.filter(min).sort((a, b) => (b.w.kpt === Infinity ? 1e9 : b.w.kpt || 0) - (a.w.kpt === Infinity ? 1e9 : a.w.kpt || 0)), 'border-emerald-500/40')}
+        ${tbl('⛔ Finger weg', 'Schlechtester KP-Trade (ab 3 Kämpfen)', L.filter(min).sort((a, b) => (a.w.kpt ?? 0) - (b.w.kpt ?? 0)), 'border-amber-500/40')}</div>`;
+    } else if (tab === 'ally') {   // Allianzen + Königreich, Uhrzeiten
+      const M = new Map(); rows.forEach(r => { const k = (r.enemy_alliance || '?') + '|' + (r.enemy_kingdom || ''); const o = M.get(k) || { ally: r.enemy_alliance || '?', name: r.enemy_alliance_name, kd: r.enemy_kingdom, rows: [], pl: new Set(), hr: new Array(24).fill(0) }; o.rows.push(r); o.pl.add(r.enemy_player_id || r.enemy_name); o.hr[new Date(r.battle_start).getHours()]++; M.set(k, o); });
+      const L = [...M.values()].map(o => ({ ...o, w: anaSum(o.rows) })).sort((a, b) => b.w.n - a.w.n).slice(0, 25);
+      const kds = new Map(); L.forEach(o => { if (o.kd) kds.set(o.kd, (kds.get(o.kd) || 0) + o.w.n); });
+      body = `${kds.size ? `<div class="flex flex-wrap gap-1.5 mb-3">${[...kds.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => `<span class="rounded-lg border border-ink-600 px-2 py-1 text-xs">👑 <b>${anaKd(k)}</b> <span class="text-slate-400">${fmt(n)} <span>Kämpfe</span></span></span>`).join('')}</div>` : ''}
+        <div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr><th class="${th} text-left">Allianz</th><th class="${th} text-left">Königreich</th><th class="${th} text-right">Spieler</th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">🏆 KP</th><th class="${th} text-right">🔁 KP-Trade</th><th class="${th} text-right">⚖️ Trade</th><th class="${th} text-left">🕒 <span>aktiv (0–23 Uhr)</span></th></tr></thead><tbody>
+        ${L.map(o => { const mx = Math.max(1, ...o.hr); return `<tr class="border-t border-ink-800/60"><td class="py-1.5 pr-3"><b class="text-red-200" translate="no">[${esc(o.ally)}]</b> <span class="text-slate-400" translate="no">${esc(o.name || '')}</span></td><td class="${td} text-slate-300">${anaKd(o.kd) || '–'}</td><td class="${td} text-right">${fmt(o.pl.size)}</td><td class="${td} text-right">${fmt(o.w.n)}</td><td class="${td} text-right text-gold-200">${short(o.w.kp)}</td><td class="${td} text-right ${kptC(o.w.kpt)}">${hmKptTxt(o.w.kpt)}</td><td class="${td} text-right ${kptC(o.w.trade)}">${hmTradeTxt(o.w.trade)}</td>
+          <td class="py-1.5"><div class="flex items-end gap-px h-6">${o.hr.map((v, i) => `<span title="${i}–${i + 1} Uhr: ${v}" class="w-1.5 rounded-sm ${v ? 'bg-red-400' : 'bg-ink-800'}" style="height:${Math.max(8, v / mx * 100)}%"></span>`).join('')}</div></td></tr>`; }).join('')}</tbody></table></div>`;
+    } else if (tab === 'match') {   // dein Marsch gegen ihre Paare + Gegner-Meta
+      const mine = [...new Set(rows.map(kbMarchOf))].map(k => [k, rows.filter(r => kbMarchOf(r) === k).length]).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
+      const ep = new Map(); rows.forEach(r => { const k = anaEnemyPair(r); const o = ep.get(k) || []; o.push(r); ep.set(k, o); });
+      const meta = [...ep.entries()].map(([k, v]) => ({ k, w: anaSum(v) })).sort((a, b) => b.w.n - a.w.n);
+      const cols = meta.slice(0, 8).map(x => x.k);
+      const cell = (a, b) => { const w = anaSum(rows.filter(r => kbMarchOf(r) === a && anaEnemyPair(r) === b)); if (!w.n) return '<td class="py-1 px-1 text-center text-slate-700">·</td>';
+        const v = w.kpt === Infinity ? 9 : w.kpt || 0, bg = v >= 1 ? `rgba(16,185,129,${Math.min(.6, .15 + (v - 1) * .2)})` : `rgba(239,68,68,${Math.min(.6, .15 + (1 - v) * .5)})`;
+        return `<td class="py-1 px-1 text-center tabular-nums" style="background:${bg}" title="${w.n} Kämpfe · ${short(w.kp)} KP gegen ${short(w.ekp)}">${hmKptTxt(w.kpt).replace(' : 1', '')}<div class="text-[9px] text-slate-300/70">${w.n}×</div></td>`; };
+      body = `<div class="text-[11px] text-slate-500 mb-2">Zahl = KP-Trade (deine KP ÷ ihre KP an dir) · grün = du gewinnst · darunter die Anzahl Kämpfe</div>
+        <div class="overflow-x-auto"><table class="text-xs border-separate border-spacing-0.5"><thead><tr><th></th>${cols.map(c => `<th class="p-1 align-bottom"><div class="flex flex-col items-center gap-0.5"><span class="flex gap-0.5">${hmHeroes(c)}</span><span class="text-[9px] text-slate-400 max-w-[5rem] truncate" translate="no">${esc(c)}</span></div></th>`).join('')}</tr></thead>
+        <tbody>${mine.map(a => `<tr><th class="pr-2 text-left"><div class="flex items-center gap-1"><span class="flex gap-0.5">${hmHeroes(a)}</span><span class="text-[10px] text-slate-300 max-w-[7rem] truncate" translate="no">${esc(a)}</span></div></th>${cols.map(b => cell(a, b)).join('')}</tr>`).join('')}</tbody></table></div>
+        <h4 class="font-semibold text-slate-200 mt-5 mb-1">👁️ Gegner-Meta <span class="text-[11px] text-slate-500 font-normal">– welche Paare am häufigsten gegen dich laufen</span></h4>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${meta.slice(0, 12).map(x => `<div class="flex items-center gap-2 rounded-xl border border-ink-700 bg-ink-950/60 p-2"><span class="flex gap-0.5">${hmHeroes(x.k)}</span><div class="min-w-0 flex-1"><div class="text-xs text-slate-200 truncate" translate="no">${esc(x.k)}</div><div class="text-[11px] text-slate-400">${fmt(x.w.n)}× · 🗡️ ${short(x.w.ekp)} · <span class="${kptC(x.w.kpt)}">🔁 ${hmKptTxt(x.w.kpt)}</span></div></div></div>`).join('')}</div>`;
+    } else if (tab === 'perf') {   // Müdigkeitskurve, Hochrechnung, Rekorde, Abzeichen
+      const R = rows.slice().sort((a, b) => Date.parse(a.battle_start) - Date.parse(b.battle_start)), T = R.map(r => Date.parse(r.battle_start));
+      const B = [[0, 15, '0–15 min'], [15, 30, '15–30 min'], [30, 60, '30–60 min'], [60, 120, '1–2 h'], [120, 1e9, '> 2 h']].map(b => ({ b, rows: [] }));
+      let s0 = null, last = -1e15; R.forEach((r, i) => { const t = T[i]; if (t - last > 45 * 6e4) s0 = t; last = t; const m = (t - s0) / 6e4; B.find(x => m >= x.b[0] && m < x.b[1]).rows.push(r); });
+      const fat = B.map(x => ({ l: x.b[2], w: anaSum(x.rows) }));
+      // Rekorde
+      let best10 = 0, bi = 0, fast = null; for (let i = 0, j = 0, sum = 0; i < R.length; i++) { sum += +R[i].kill_points || 0; while (T[i] - T[j] > 10 * 6e4) { sum -= +R[j].kill_points || 0; j++; } if (sum > best10) { best10 = sum; bi = T[i]; } }
+      for (let i = 0, j = 0, sum = 0; i < R.length; i++) { sum += +R[i].kill_points || 0; while (sum - (+R[j].kill_points || 0) >= 1e7 && j < i) { sum -= +R[j].kill_points || 0; j++; } if (sum >= 1e7) { const d = T[i] - T[j]; if (fast == null || d < fast.d) fast = { d, t: T[j] }; } }
+      const S = new Map(); R.forEach(r => { const k = String(r.parent_id || r.mail_id); S.set(k, (S.get(k) || 0) + (+r.kill_points || 0)); }), bigS = Math.max(0, ...S.values());
+      let run = 0, bestRun = 0; R.forEach(r => { if (+r.self_dead > 0) run = 0; else { run++; bestRun = Math.max(bestRun, run); } });
+      const days = new Map(); R.forEach((r, i) => { const d = new Date(T[i]).toLocaleDateString('de-DE'); days.set(d, (days.get(d) || 0) + (+r.kill_points || 0)); }), bestDay = [...days.entries()].sort((a, b) => b[1] - a[1])[0];
+      const tot = anaSum(R);
+      const hcfg = hmCfg(st), ks = hmStart(hcfg), kA = ks ? Date.parse(ks + 'T00:00:00Z') : null, dEl = kA ? Math.max(1, (Date.now() - kA) / 864e5) : null, kvkKp = kA ? R.filter((r, i) => T[i] >= kA).reduce((a, r) => a + (+r.kill_points || 0), 0) : 0, proj = dEl && dEl < 50 ? kvkKp / dEl * 50 : null;
+      const rec = (i, l, v, sub) => `<div class="rounded-xl border border-gold-500/30 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">${i} ${l}</div><div class="text-xl font-bold text-gold-200 tabular-nums">${v}</div><div class="text-[10px] text-slate-500">${sub || ''}</div></div>`;
+      const badges = [[tot.kp >= 1e8, '💯', '100-Mio-Club', 'ab 100 Mio. KP'], [tot.kp >= 1e9, '👑', 'Milliardär', 'ab 1 Mrd. KP'], [bestRun >= 100, '🛡️', 'Unsterblich', '100 Kämpfe ohne Tote'], [bigS >= 1e7, '💥', 'Flex-König', 'Streak ab 10 Mio.'], [best10 >= 5e6, '⚡', 'Blitzkrieg', '5 Mio. in 10 min'], [(tot.kpt || 0) >= 2, '🔁', 'Trader', 'KP-Trade ab 2 : 1'], [rows.length >= 1000, '⚔️', 'Dauerkämpfer', '1.000 Kämpfe']];
+      body = `<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-4">
+          ${rec('💥', 'Größter Battle Streak', short(bigS) + ' KP')}${rec('⚡', 'Meiste KP in 10 min', short(best10), bi ? hmWhen(bi) : '')}
+          ${rec('🏁', 'Schnellste 10 Mio.', fast ? Math.round(fast.d / 6e4) + ' min' : '–', fast ? hmWhen(fast.t) : '')}${rec('🛡️', 'Längste Serie ohne Tote', fmt(bestRun) + ' <span class="text-xs">Kämpfe</span>')}
+          ${rec('📅', 'Bester Tag', bestDay ? short(bestDay[1]) : '–', bestDay ? bestDay[0] : '')}${rec('🔮', 'Hochrechnung KvK-Ende', proj ? '~' + short(proj) : '–', proj ? `<span>bei</span> ${short(kvkKp)} <span>nach</span> ${Math.floor(dEl)} <span>von 50 Tagen</span>` : '<span>KvK-Start in der Heatmap setzen</span>')}
+          ${rec('🏆', 'KP im Zeitraum', short(tot.kp), fmt(tot.n) + ' <span>Kämpfe</span>')}${rec('🔁', 'KP-Trade im Zeitraum', hmKptTxt(tot.kpt))}</div>
+        <h4 class="font-semibold text-slate-200 mb-1">🎖️ Abzeichen</h4>
+        <div class="flex flex-wrap gap-2 mb-4">${badges.map(([ok, i, n, d]) => `<span class="inline-flex items-center gap-2 rounded-xl border px-3 py-2 ${ok ? 'border-gold-400 bg-gold-500/15 text-gold-100' : 'border-ink-700 text-slate-600 grayscale opacity-60'}" title="${esc(d)}"><span class="text-xl">${i}</span><span><b class="text-xs">${n}</b><br><span class="text-[10px] opacity-80">${d}</span></span></span>`).join('')}</div>
+        <h4 class="font-semibold text-slate-200 mb-1">😮‍💨 Müdigkeitskurve <span class="text-[11px] text-slate-500 font-normal">– wie lange du schon in der Schlacht bist (Pause über 45 min = neue Schlacht)</span></h4>
+        <div class="grid grid-cols-5 gap-2">${fat.map(x => { const v = x.w.kpt === Infinity ? 3 : x.w.kpt || 0; return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-2 text-center"><div class="text-[11px] text-slate-400">${x.l}</div><div class="text-lg font-bold ${kptC(x.w.kpt)}">${x.w.n ? hmKptTxt(x.w.kpt) : '–'}</div><div class="h-1.5 rounded bg-ink-800 mt-1"><div class="h-1.5 rounded ${v >= 1 ? 'bg-emerald-400' : 'bg-red-400'}" style="width:${Math.min(100, v / 3 * 100)}%"></div></div><div class="text-[10px] text-slate-500 mt-1">${fmt(x.w.n)} <span>Kämpfe</span> · ${hmTradeTxt(x.w.trade)}</div></div>`; }).join('')}</div>`;
+    } else if (tab === 'farm') {   // Barbaren-Effizienz
+      const B = (kbRows || []).filter(r => !r.is_pvp && kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kbCatOf(r.npc_btype, r.group_size) === 'barb' && kxInRange(r.battle_start));
+      if (!B.length) body = '<div class="text-sm text-slate-500 py-6 text-center">Keine Barbaren im Zeitraum.</div>';
+      else { const T = B.map(r => Date.parse(r.battle_start)), hrs = new Set(T.map(t => Math.floor(t / 36e5))).size, days = new Set(T.map(t => new Date(t).toDateString())).size, lv = new Map();
+        B.forEach(r => { const k = +r.npc_level || 0; lv.set(k, (lv.get(k) || 0) + 1); });
+        const L = [...lv.entries()].sort((a, b) => b[0] - a[0]), mx = Math.max(...L.map(x => x[1]));
+        const hr = new Array(24).fill(0); T.forEach(t => hr[new Date(t).getHours()]++); const hmx = Math.max(1, ...hr);
+        const loot = (kxLoot || []).filter(l => B.some(r => r.mail_id === l.mail_id)).length;
+        body = `<div class="grid sm:grid-cols-4 gap-2 mb-4">
+            ${[['🪓', 'Barbaren', fmt(B.length)], ['⏱️', 'pro Farm-Stunde', (B.length / Math.max(1, hrs)).toFixed(1)], ['📅', 'pro Tag', (B.length / Math.max(1, days)).toFixed(1)], ['🎁', 'Beute pro Barbar', loot ? (loot / B.length).toFixed(2) : '–']].map(([i, l, v]) => `<div class="rounded-xl border border-sky-500/30 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">${i} ${l}</div><div class="text-xl font-bold text-sky-200 tabular-nums">${v}</div></div>`).join('')}</div>
+          <div class="grid lg:grid-cols-2 gap-4"><div><h4 class="font-semibold text-slate-200 mb-1">📊 <span>Nach Stufe</span></h4>${L.map(([k, n]) => `<div class="flex items-center gap-2 text-xs mb-1"><span class="w-12 text-slate-400">Lv ${k || '?'}</span><div class="flex-1 h-3 rounded bg-ink-800"><div class="h-3 rounded bg-sky-500" style="width:${n / mx * 100}%"></div></div><span class="w-10 text-right tabular-nums">${fmt(n)}</span></div>`).join('')}</div>
+            <div><h4 class="font-semibold text-slate-200 mb-1">🕒 <span>Wann du farmst</span></h4><div class="flex items-end gap-1 h-28">${hr.map((v, i) => `<div class="flex-1 flex flex-col items-center justify-end h-full" title="${i}–${i + 1} Uhr: ${v}"><div class="w-full rounded-t ${v ? 'bg-sky-500' : 'bg-ink-800'}" style="height:${Math.max(3, v / hmx * 100)}%"></div><span class="text-[9px] text-slate-500">${i % 3 ? '' : i}</span></div>`).join('')}</div></div></div>`; }
+    }
+    return `<section class="panel rounded-2xl p-4 sm:p-5 mt-4"><h2 class="font-display text-lg text-gold-300 mb-2">📊 <span>Analyse</span></h2>${top}
+      <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 my-3">${tabs.map(([k, i, l]) => `<button type="button" data-anatab="${k}" aria-pressed="${tab === k}" class="seg-btn rounded-lg px-3 py-1.5 text-sm font-semibold">${i} <span>${l}</span></button>`).join('')}</div>${body}</section>`;
+  }
   // ================= Heatmap: wo du kämpfst (Testversion) =================
   // Kampfort aus dem Bericht (Attacks[].Pos) – unabhängig davon, wo deine Stadt gerade steht. Nur die KvK-Weltkarte (Role „gsmp“),
   // das KvK erkennt man an der Server-Nummer im Bericht (z. B. 16144 → „C16144“). Bericht rechnet ~6 Einheiten pro Feld, X0/Y0 unten links.
@@ -1017,9 +1110,7 @@ window.RokMods.battles = (R) => {
     const marchCards = ml.map(([k, w]) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 flex items-center gap-3">
         <div class="flex gap-1 shrink-0">${k.startsWith('Rally') ? '<span class="w-12 h-12 rounded-xl grid place-items-center bg-sky-500/15 border border-sky-500/40 text-xl">🛡️</span>' : String(k).split(' / ').slice(0, 2).map(icon).join('')}</div>
         <div class="min-w-0 flex-1"><div class="text-sm font-semibold text-slate-100 truncate" translate="no" title="${esc(k)}">${esc(k)}</div>
-          <div class="grid grid-cols-3 gap-x-3 gap-y-1 mt-1 text-sm">${pvp ? st6('🏆 KP', short(w.kp), 'text-gold-200') + st6('🎖️ Acclaim', w.acc ? short(w.acc) : '–', 'text-sky-200') + st6('⚖️ Trade', hmTradeTxt(w.trade), w.trade >= 1 ? 'text-emerald-300' : 'text-red-300')
-            + st6('🔁 KP-Trade', hmKptTxt(w.kpt), w.kpt >= 1 ? 'text-emerald-300' : 'text-red-300') + st6('🗡️ Gegner-KP', short(w.ekp), 'text-red-200') + st6('⚔️ Kämpfe', fmt(w.n))
-            + st6('💀 Deads', short(w.dead), 'text-red-300') + st6('🩸 Schwer verw.', short(w.sev)) : st6(h.src === 'barb' ? '🪓 Barbaren' : '👹 Kahar', fmt(w.n), 'text-gold-200')}</div></div></div>`).join('');
+          <div class="grid grid-cols-3 gap-x-3 gap-y-1 mt-1 text-sm">${pvp ? st6('🏆 KP', short(w.kp), 'text-gold-200') + st6('⚖️ Trade', hmTradeTxt(w.trade), w.trade >= 1 ? 'text-emerald-300' : 'text-red-300') + st6('🔁 KP-Trade', hmKptTxt(w.kpt), w.kpt >= 1 ? 'text-emerald-300' : 'text-red-300') : st6(h.src === 'barb' ? '🪓 Barbaren' : '👹 Kahar', fmt(w.n), 'text-gold-200')}</div></div></div>`).join('');
     const zoneChips = `<button type="button" data-hmzf="" aria-pressed="${h.iso == null}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold">🗺️ Alle</button>` + zOpt.map(o => `<button type="button" data-hmzf="${o.z}" aria-pressed="${h.iso === o.z}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold"><span translate="no">${esc(hmZName(h, m, o.z))}</span> <span class="text-gold-300 tabular-nums">${pvp ? short(o.kp) : fmt(o.n)}</span></button>`).join('');
     // Alle Kämpfe: ein Bericht = eine Zeile (weitere Gegner aufklappbar) · Barbaren: Ketten desselben Marsches zusammengefasst
     const mkOf = (p) => p.joined ? 'Rally (Teilnehmer)' : kbMarchOf(p.r), marchCell = (mk, joined) => `<div class="flex items-center gap-1.5 min-w-0">${joined ? '🛡️' : `<span class="flex gap-0.5 shrink-0">${hmHeroes(mk)}</span>`}<span class="truncate max-w-[10rem]" translate="no">${esc(mk)}</span></div>`;
@@ -1059,26 +1150,47 @@ window.RokMods.battles = (R) => {
       brHtml = `<details data-hmbr ${h.brOpen ? 'open' : ''} class="mt-3 rounded-xl border border-sky-500/40 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-sky-200">📜 Battlereport <span class="text-slate-400 font-normal">· Rally · Garnison · City-Rally</span> <span class="tabular-nums text-gold-300">(${fmt(L.length)})</span>${L.length ? ` <span class="ml-2 text-xs text-slate-300">🏆 ${short(tot.rkp)} · 🔁 ${hmKptTxt(tkpt)}</span>` : ''}</summary>
         <div class="overflow-x-auto px-3 pb-3"><table class="w-full text-xs"><tbody>${rowsB || '<tr><td class="py-2 text-slate-500">Keine Rally, Garnison oder City-Rally im Zeitraum.</td></tr>'}</tbody></table></div></details>`;
     }
-    // 📈 Trade-Verlauf über den Tag (30 min / 1 h / 4 h) + Buff-Auswertung (z. B. 50 % für 4 h)
+    // 📈 Trade-Verlauf (eigene Auswahl: Zeitraum + Zone) und ⚡ Buff-Rechner
     let tcHtml = '';
     if (h.src === 'pvp' || h.src === 'all') {
-      const bk = [30, 60, 240].includes(+h.tcB) ? +h.tcB : 60, BM = bk * 6e4, P = mine.filter(p => p.k === 'pvp' && !p.grp), bucket = new Map();
+      const bk = [30, 60, 240, 1440].includes(+h.tcB) ? +h.tcB : 60, BM = bk * 6e4, sc = h.tcR || 'top', ks0 = hmStart(h), kvA = ks0 ? Date.parse(ks0 + 'T00:00:00Z') : null, d0 = new Date(); d0.setHours(0, 0, 0, 0);
+      const base0 = sc === 'top' ? mine : hmPoints(st, 'pvp', sc === 'kvk' ? [kvA, hmEnd(h)] : sc === 'today' ? [d0.getTime(), null] : [Date.now() - 864e5, null], false).filter(p => p.mine);
+      const P0 = base0.filter(p => p.k === 'pvp' && !p.grp), zbOf = (z) => z >= 0 ? hmBaseName(hmZName(h, m, z)) : '';
+      const zopts = [...new Set(P0.map(p => zbOf(p.z)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de', { numeric: true }));
+      if (h.tcZ && !zopts.includes(h.tcZ)) h.tcZ = '';
+      const P = h.tcZ ? P0.filter(p => zbOf(p.z) === h.tcZ) : P0, bucket = new Map();
       P.forEach(p => { const k = Math.floor(p.t / BM) * BM; (bucket.get(k) || bucket.set(k, []).get(k)).push(p); });
+      const buffs = (h.buffs || []).map(b => typeof b === 'string' ? { a: b, d: 4 } : b).filter(b => b && !isNaN(Date.parse(b.a))).map(b => ({ ...b, s: Date.parse(b.a), e: Date.parse(b.a) + (+b.d || 4) * 36e5 }));
+      const inBuff = (t) => buffs.some(b => t >= b.s && t < b.e);
       const ks = [...bucket.keys()].sort((a, b) => a - b), rowsT = ks.map(k => ({ k, w: hmSum(bucket.get(k)) }));
-      hmTC = { labels: rowsT.map(x => new Date(x.k).toLocaleString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })), trade: rowsT.map(x => x.w.trade === Infinity ? null : x.w.trade == null ? null : Math.round(x.w.trade * 100)), kpt: rowsT.map(x => x.w.kpt === Infinity || x.w.kpt == null ? null : +x.w.kpt.toFixed(2)), kp: rowsT.map(x => x.w.kp), buff: rowsT.map(x => (h.buffs || []).some(b => { const a = Date.parse(b); return x.k + BM > a && x.k < a + 4 * 36e5; })) };
-      const buffs = (h.buffs || []).filter(b => !isNaN(Date.parse(b))), inBuff = (t) => buffs.some(b => { const a = Date.parse(b); return t >= a && t < a + 4 * 36e5; });
-      let res = '';
-      if (buffs.length && P.length) { const pin = P.filter(p => inBuff(p.t)), pout = P.filter(p => !inBuff(p.t)), wi = hmSum(pin), wo = hmSum(pout);
-        const hrs = (L) => new Set(L.map(p => Math.floor(p.t / 36e5))).size || 1, rIn = wi.kp / hrs(pin), rOut = wo.kp / hrs(pout), gain = pin.length && pout.length ? (rIn - rOut) * hrs(pin) : null;
-        const cell = (l, a, b, f) => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-3 text-slate-400">${l}</td><td class="pr-3 text-right tabular-nums text-amber-200 font-semibold">${f(a)}</td><td class="text-right tabular-nums text-slate-300">${f(b)}</td></tr>`;
-        res = `<div class="mt-3 grid sm:grid-cols-[minmax(0,1fr)_14rem] gap-3 items-start"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th></th><th class="text-right pr-3">⚡ <span>mit Buff</span></th><th class="text-right"><span>ohne</span></th></tr></thead><tbody>
-          ${cell('🏆 KP pro Kampfstunde', rIn, rOut, short)}${cell('⚖️ Trade', wi.trade, wo.trade, hmTradeTxt)}${cell('🔁 KP-Trade', wi.kpt, wo.kpt, hmKptTxt)}${cell('💀 Verluste (schwer + tot)', wi.sev + wi.dead, wo.sev + wo.dead, short)}${cell('⚔️ Kämpfe', wi.n, wo.n, fmt)}</tbody></table>
-          <div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3"><div class="text-[11px] text-slate-400"><span>Der Buff hat gebracht</span></div><div class="text-2xl font-bold tabular-nums ${gain == null ? 'text-slate-400' : gain >= 0 ? 'text-emerald-300' : 'text-red-300'}">${gain == null ? '–' : (gain >= 0 ? '+' : '−') + short(Math.abs(gain)) + ' KP'}</div><div class="text-[11px] text-slate-400">${!pout.length ? '<span>Zum Vergleich fehlen Kämpfe ohne Buff im Zeitraum.</span>' : pin.length ? `${rOut > 0 ? (gain >= 0 ? '+' : '') + Math.round((rIn / rOut - 1) * 100) + ' % <span>KP pro Stunde</span>' : ''}` : '<span>Keine Kämpfe im Buff-Zeitraum.</span>'}</div></div></div>`; }
-      tcHtml = `<details data-hmtc ${h.tcOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">📈 <span>Trade-Verlauf</span></summary>
-        <div class="px-3 pb-3"><div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${[[30, '30 min'], [60, '1 h'], [240, '4 h']].map(([v, l]) => `<button type="button" data-hmtcb="${v}" aria-pressed="${bk === v}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">${l}</button>`).join('')}</span>
-          <span class="ml-2 text-slate-400">⚡ <span>Buff (4 h) ab</span></span><input type="datetime-local" data-hmbuffin class="bg-ink-950 border border-amber-500/50 rounded-lg px-2 py-0.5 text-xs text-slate-100"><button type="button" data-hmbuffadd class="px-2 py-0.5 rounded-lg border border-amber-500/50 text-amber-200 hover:bg-amber-500/10">+ <span>Buff</span></button>
-          ${buffs.map((b, i) => `<span class="inline-flex items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-amber-200">⚡ ${hmWhen(Date.parse(b))}–${new Date(Date.parse(b) + 4 * 36e5).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}<button type="button" data-hmbuffx="${i}" class="text-slate-400 hover:text-red-300">✕</button></span>`).join('')}</div>
-          ${rowsT.length ? '<div class="h-56"><canvas id="hmTradeChart"></canvas></div>' : '<div class="text-xs text-slate-500">Keine Kämpfe im Zeitraum.</div>'}${res}</div></details>`;
+      hmTC = { labels: rowsT.map(x => new Date(x.k).toLocaleString('de-DE', bk >= 1440 ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })), trade: rowsT.map(x => x.w.trade === Infinity || x.w.trade == null ? null : Math.round(x.w.trade * 100)), kpt: rowsT.map(x => x.w.kpt === Infinity || x.w.kpt == null ? null : +x.w.kpt.toFixed(2)), kp: rowsT.map(x => x.w.kp), buff: rowsT.map(x => buffs.some(b => x.k + BM > b.s && x.k < b.e)) };
+      const segB = (attr, v, l, on) => `<button type="button" ${attr}="${v}" aria-pressed="${on}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">${l}</button>`;
+      // Buff-Auswertung
+      const pin = P.filter(p => inBuff(p.t)), pout = P.filter(p => !inBuff(p.t)), wi = hmSum(pin), wo = hmSum(pout), hrs = (L) => new Set(L.map(p => Math.floor(p.t / 36e5))).size || 1;
+      const rIn = wi.kp / hrs(pin), rOut = wo.kp / hrs(pout), gain = pin.length && pout.length ? (rIn - rOut) * hrs(pin) : null;
+      const cell = (l, a, b, f) => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-3 text-slate-400">${l}</td><td class="pr-3 text-right tabular-nums text-amber-200 font-semibold">${f(a)}</td><td class="text-right tabular-nums text-slate-300">${f(b)}</td></tr>`;
+      const now = Date.now(), act = buffs.find(b => now >= b.s && now < b.e), left = act ? act.e - now : 0;
+      const buffHtml = `<details data-hmbuff ${h.buffOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-amber-500/50 bg-amber-500/5"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-amber-200">⚡ <span>Buff-Rechner</span>${act ? ` <span class="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-400/60 px-2 py-0.5 text-xs"><span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span><span>läuft noch</span> ${Math.floor(left / 36e5)} h ${Math.floor(left % 36e5 / 6e4)} min</span>` : ''}</summary>
+        <div class="px-3 pb-3">
+          <div class="flex flex-wrap items-center gap-2 text-xs">
+            <button type="button" data-hmbuffnow class="px-3 py-1.5 rounded-xl bg-amber-500 text-ink-950 font-bold hover:bg-amber-400">⚡ <span>Buff jetzt starten</span></button>
+            <span class="text-slate-400"><span>Dauer</span></span><input type="number" data-hmbuffd min="0.5" max="24" step="0.5" value="${esc(h.buffD || 4)}" class="w-16 bg-ink-950 border border-amber-500/50 rounded-lg px-2 py-1 text-xs text-slate-100"> <span class="text-slate-400">h</span>
+            <span class="text-slate-500 mx-1">·</span><span class="text-slate-400"><span>oder Start</span></span><input type="datetime-local" data-hmbuffin class="bg-ink-950 border border-amber-500/50 rounded-lg px-2 py-1 text-xs text-slate-100"><button type="button" data-hmbuffadd class="px-2.5 py-1 rounded-lg border border-amber-500/50 text-amber-200 hover:bg-amber-500/10">+ <span>Buff</span></button>
+          </div>
+          ${buffs.length ? `<div class="flex flex-wrap gap-1.5 mt-2">${buffs.map((b, i) => `<span class="inline-flex items-center gap-1 rounded-lg border ${now >= b.s && now < b.e ? 'border-amber-300 bg-amber-500/25' : 'border-amber-500/40 bg-amber-500/10'} px-2 py-0.5 text-xs text-amber-100">⚡ ${hmWhen(b.s)} – ${new Date(b.e).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} <span class="text-slate-400">(${+b.d || 4} h)</span><button type="button" data-hmbuffx="${i}" class="text-slate-400 hover:text-red-300">✕</button></span>`).join('')}</div>
+          <div class="mt-3 grid sm:grid-cols-[minmax(0,1fr)_15rem] gap-3 items-start"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th></th><th class="text-right pr-3">⚡ <span>mit Buff</span></th><th class="text-right"><span>ohne</span></th></tr></thead><tbody>
+            ${cell('🏆 KP pro Kampfstunde', rIn, rOut, short)}${cell('🏆 KP gesamt', wi.kp, wo.kp, short)}${cell('⚖️ Trade', wi.trade, wo.trade, hmTradeTxt)}${cell('🔁 KP-Trade', wi.kpt, wo.kpt, hmKptTxt)}${cell('💀 Verluste (schwer + tot)', wi.sev + wi.dead, wo.sev + wo.dead, short)}${cell('⚔️ Kämpfe', wi.n, wo.n, fmt)}</tbody></table>
+            <div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3"><div class="text-[11px] text-slate-400"><span>Der Buff hat gebracht</span></div><div class="text-2xl font-bold tabular-nums ${gain == null ? 'text-slate-400' : gain >= 0 ? 'text-emerald-300' : 'text-red-300'}">${gain == null ? '–' : (gain >= 0 ? '+' : '−') + short(Math.abs(gain)) + ' KP'}</div>
+              <div class="text-[11px] text-slate-400">${!pin.length ? '<span>Keine Kämpfe im Buff-Zeitraum.</span>' : !pout.length ? '<span>Zum Vergleich fehlen Kämpfe ohne Buff im Zeitraum.</span>' : rOut > 0 ? `${rIn >= rOut ? '+' : ''}${Math.round((rIn / rOut - 1) * 100)} % <span>KP pro Stunde</span>` : ''}</div>
+              <div class="text-[10px] text-slate-500 mt-1"><span>Gerechnet mit</span>: ${sc === 'kvk' ? '<span>Ganzes KvK</span>' : sc === 'today' ? '<span>Heute</span>' : sc === 'h24' ? '24 h' : '<span>Zeitraum oben</span>'}${h.tcZ ? ' · ' + esc(h.tcZ) : ''}</div></div></div>` : '<div class="text-xs text-slate-500 mt-2">Noch kein Buff eingetragen.</div>'}
+        </div></details>`;
+      tcHtml = buffHtml + `<details data-hmtc ${h.tcOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">📈 <span>Trade-Verlauf</span></summary>
+        <div class="px-3 pb-3"><div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+          <span class="flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${[['top', 'Zeitraum oben'], ['today', 'Heute'], ['h24', '24 h'], ['kvk', 'Ganzes KvK']].map(([v, l]) => segB('data-hmtcr', v, `<span>${l}</span>`, sc === v)).join('')}</span>
+          <span class="flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${segB('data-hmtcz', '', '🗺️ <span>Alle</span>', !h.tcZ)}${zopts.map(z => segB('data-hmtcz', esc(z), esc(z), h.tcZ === z)).join('')}</span>
+          <span class="flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${[[30, '30 min'], [60, '1 h'], [240, '4 h'], [1440, '1 Tag']].map(([v, l]) => segB('data-hmtcb', v, l, bk === v)).join('')}</span>
+        </div>
+        ${rowsT.length ? '<div class="h-60"><canvas id="hmTradeChart"></canvas></div>' : '<div class="text-xs text-slate-500">Keine Kämpfe in dieser Auswahl.</div>'}</div></details>`;
     }
     // 💪 Flex: ganze Battle Streaks (Hauptbericht) ab 2 Mio. KP – nur Märsche, KP und Trade
     let flexHtml = '';
@@ -1105,6 +1217,7 @@ window.RokMods.battles = (R) => {
       ${!h.fight && h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (start ? start + 'T00:00' : ''))}" class="${sel}"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="${sel}"></div>` : ''}
       ${hmDays(h, S)}
       <div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
+        <label class="flex items-center gap-1 text-slate-400" title="Alle Teleports deiner Stadt als Linie"><input type="checkbox" data-hmcpath ${h.cpath ? 'checked' : ''} class="accent-emerald-400"> <span>🏙️ Stadt-Weg</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmzm ${h.zm ? 'checked' : ''} class="accent-amber-400"> <span>Zonen-Marker</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmfr ${h.fr ? 'checked' : ''} class="accent-amber-400"> <span>👥 Freunde &amp; Königreich</span></label>
         ${zoneSel(false)}
@@ -1125,7 +1238,7 @@ window.RokMods.battles = (R) => {
           <div id="hmMarks" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
           <div id="hmNoImg" class="hidden absolute inset-0 grid place-items-center text-sm text-slate-500 p-6 text-center">${esc(m.img)}</div>
           <div class="absolute top-2 right-2 flex flex-col gap-1 z-40">
-            ${[['in', '＋', 'Hineinzoomen'], ['out', '－', 'Herauszoomen'], ['fit', '🎯', 'Auf Kämpfe zoomen'], ['reset', '⤢', 'Ganze Karte'], ['full', '⛶', 'Vollbild'], ['png', '📷', 'Als Bild speichern']].map(([k, i, t]) => `<button type="button" data-hmz="${k}" title="${t}" class="w-9 h-9 rounded-lg bg-ink-950/85 border border-ink-600 hover:border-gold-500/60 text-base">${i}</button>`).join('')}
+            ${[['in', '＋', 'Hineinzoomen'], ['out', '－', 'Herauszoomen'], ['fit', '🎯', 'Auf Kämpfe zoomen'], ['reset', '⤢', 'Ganze Karte'], ['full', '⛶', 'Vollbild'], ['png', '📷', 'Als Bild speichern'], ['vid', '🎬', 'Replay als Video speichern']].map(([k, i, t]) => `<button type="button" data-hmz="${k}" title="${t}" class="w-9 h-9 rounded-lg bg-ink-950/85 border border-ink-600 hover:border-gold-500/60 text-base">${i}</button>`).join('')}
           </div>
           <div id="hmTip" class="hidden absolute z-50 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
         </div>
@@ -1250,6 +1363,15 @@ window.RokMods.battles = (R) => {
   // Punkte + Städte: scharf, in Bildschirm-Auflösung (nicht mitvergrößert)
   function hmPaintDots(ctx, W, S, map) {   // map(u, v) → [x, y] in Pixeln
     const { h, m, dotsM: dots } = S, col = HM_SRC.find(x => x[0] === h.src)[2], dpr = W / 1000 * 1.6;
+    if (h.cpath) {   // Stadt-Weg: jede neue Stadt-Position (Teleport) als Station
+      const pts = [], own = (S.allA || S.all || []).filter(p => p.mine && p.r.city_x != null && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)).sort((a, b) => a.t - b.t);
+      own.forEach(p => { const l = pts[pts.length - 1]; if (!l || Math.hypot(+p.r.city_x - l.x, +p.r.city_y - l.y) > 12) pts.push({ x: +p.r.city_x, y: +p.r.city_y, t: p.t }); });
+      if (pts.length > 1) { ctx.save(); ctx.setLineDash([6 * dpr, 4 * dpr]); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = 'rgba(52,211,153,.85)'; ctx.beginPath();
+        pts.forEach((q, i) => { const [u, v] = hmXY(q.x, q.y, h, m), [x, y] = map(u, v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); ctx.setLineDash([]);
+        ctx.font = `bold ${Math.round(9 * dpr)}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        pts.forEach((q, i) => { const [u, v] = hmXY(q.x, q.y, h, m), [x, y] = map(u, v); ctx.beginPath(); ctx.arc(x, y, 7 * dpr, 0, 7); ctx.fillStyle = '#064e3b'; ctx.fill(); ctx.lineWidth = 1.5 * dpr; ctx.strokeStyle = '#34d399'; ctx.stroke(); ctx.fillStyle = '#d1fae5'; ctx.fillText(String(i + 1), x, y + .5); });
+        ctx.restore(); }
+    }
     const selZ = h.pop;
     dots.forEach(p => { const [x, y] = map(p.u, p.v); if (x < -10 || y < -10 || x > W + 10 || y > W + 10) return; const fresh = S.cur != null && S.cur - p.t < 5 * 6e4;
       if (h.src === 'rally') { ctx.font = `${Math.round(13 * dpr)}px system-ui,"Segoe UI Emoji",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.city ? '🏯' : p.joined ? '🛡️' : '🚩', x, y); return; }   // Rally/Garnison als Symbol
@@ -1295,6 +1417,22 @@ window.RokMods.battles = (R) => {
     }
     hmApplyView();
   }
+  async function hmRecord(st) {   // Timeline als Video (WebM): Karte, Glühen, Punkte, Uhrzeit – Ausschnitt wie gerade gezoomt
+    const h = hmCfg(st), box = $('hmBox'), img = box?.querySelector('img'); if (!img?.complete || !window.MediaRecorder) { hmAsk('🎬 Replay', '', null, 'Dein Browser kann hier kein Video aufnehmen.'); return; }
+    const S0 = hmState(st); if (S0.all.length < 2) { hmAsk('🎬 Replay', '', null, 'Zu wenig Kämpfe im Zeitraum.'); return; }
+    const P = 1080, c = document.createElement('canvas'); c.width = c.height = P; const ctx = c.getContext('2d'), Wb = box.clientWidth, sx = -hmView.x / (Wb * hmView.s), sy = -hmView.y / (Wb * hmView.s), sw = 1 / hmView.s;
+    const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'].find(t => MediaRecorder.isTypeSupported(t)) || '', rec = new MediaRecorder(c.captureStream(30), mime ? { mimeType: mime, videoBitsPerSecond: 6e6 } : undefined), chunks = [];
+    rec.ondataavailable = (e) => e.data.size && chunks.push(e.data); rec.start();
+    const keep = h.tl, N = 180, tmp = document.createElement('canvas'); tmp.width = tmp.height = 1600; const tc = tmp.getContext('2d');
+    for (let i = 0; i <= N; i++) { h.tl = S0.t0 + (S0.t1 - S0.t0) * i / N; const S = hmState(st);
+      ctx.drawImage(img, sx * img.naturalWidth, sy * img.naturalHeight, sw * img.naturalWidth, sw * img.naturalHeight, 0, 0, P, P);
+      tc.clearRect(0, 0, 1600, 1600); const ht = hmHeat(S); if (ht) { tc.imageSmoothingEnabled = true; tc.drawImage(ht, 0, 0, 1600, 1600); } ctx.drawImage(tmp, sx * 1600, sy * 1600, sw * 1600, sw * 1600, 0, 0, P, P);
+      hmPaintDots(ctx, P, S, (u, v) => [(u - sx) / sw * P, (v - sy) / sw * P]);
+      ctx.fillStyle = 'rgba(7,9,15,.8)'; ctx.fillRect(16, P - 64, 330, 48); ctx.fillStyle = '#fcd34d'; ctx.font = 'bold 28px system-ui,sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText('⏱ ' + hmWhen(h.tl), 28, P - 40);
+      await new Promise(r => setTimeout(r, 50)); }
+    await new Promise(r => setTimeout(r, 600)); rec.stop(); await new Promise(r => { rec.onstop = r; }); h.tl = keep; hmLast = null; hmDraw(st);
+    const a = document.createElement('a'); a.download = 'heatmap-replay.webm'; a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' })); a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  }
   function hmIso(st, z) { const h = hmCfg(st), m = hmMap(h); h.iso = h.iso === z || z == null || isNaN(z) ? null : z; h.tl = null; savePassive(); renderKampf();
     if (h.iso != null) hmZoomTo(...hmZoneBox(m, h.iso)); else { hmView = { s: 1, x: 0, y: 0 }; hmApplyView(); } }
   function hmRename(st, z) { const h = hmCfg(st), m = hmMap(h), cur = (h.zn2[m.k] || {})[z] || '';
@@ -1325,7 +1463,14 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-hmflex]')?.addEventListener('toggle', (ev) => { h.flexOpen = ev.target.open; savePassive(); });
     el.querySelectorAll('[data-hmzb]').forEach(b => b.onclick = () => { h.zb = b.dataset.hmzb || ''; h.pop = null; re(); });
     el.querySelectorAll('[data-hmtcb]').forEach(b => b.onclick = () => { h.tcB = +b.dataset.hmtcb; re(); });
-    el.querySelector('[data-hmbuffadd]')?.addEventListener('click', () => { const v = el.querySelector('[data-hmbuffin]')?.value; if (!v) return; h.buffs = [...(h.buffs || []), v].sort(); re(); });
+    const bDur = () => Math.min(24, Math.max(0.5, +(el.querySelector('[data-hmbuffd]')?.value) || 4));
+    el.querySelector('[data-hmbuffd]')?.addEventListener('change', () => { h.buffD = bDur(); savePassive(); });
+    const addBuff = (a) => { const B = (h.buffs || []).map(b => typeof b === 'string' ? { a: b, d: 4 } : b); B.push({ a, d: bDur() }); h.buffs = B.sort((x, y) => Date.parse(x.a) - Date.parse(y.a)); h.buffD = bDur(); h.buffOpen = true; re(); };
+    el.querySelector('[data-hmbuffadd]')?.addEventListener('click', () => { const v = el.querySelector('[data-hmbuffin]')?.value; if (v) addBuff(v); });
+    el.querySelector('[data-hmbuffnow]')?.addEventListener('click', () => { const d = new Date(); d.setSeconds(0, 0); addBuff(new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16)); });
+    el.querySelectorAll('[data-hmtcr]').forEach(b => b.onclick = () => { h.tcR = b.dataset.hmtcr; if (h.tcR === 'kvk' && (+h.tcB || 60) < 240) h.tcB = 1440; re(); });
+    el.querySelectorAll('[data-hmtcz]').forEach(b => b.onclick = () => { h.tcZ = b.dataset.hmtcz; re(); });
+    el.querySelector('[data-hmbuff]')?.addEventListener('toggle', (ev) => { h.buffOpen = ev.target.open; savePassive(); });
     el.querySelectorAll('[data-hmbuffx]').forEach(b => b.onclick = () => { h.buffs = (h.buffs || []).filter((_, i) => i !== +b.dataset.hmbuffx); re(); });
     el.querySelector('[data-hmtc]')?.addEventListener('toggle', (ev) => { h.tcOpen = ev.target.open; savePassive(); });
     el.querySelector('[data-hmbr]')?.addEventListener('toggle', (ev) => { h.brOpen = ev.target.open; savePassive(); });
@@ -1339,6 +1484,7 @@ window.RokMods.battles = (R) => {
           scales: { x: { ticks: { color: '#64748b', maxTicksLimit: 12 }, grid: { display: false } }, kp: { position: 'right', ticks: { color: '#64748b', callback: (v) => short(v) }, grid: { display: false } },
             tr: { position: 'left', ticks: { color: '#34d399', callback: (v) => v + ' %' }, grid: { color: 'rgba(148,163,184,.08)' } }, kt: { display: false } } } });
     }
+    el.querySelector('[data-hmcpath]')?.addEventListener('change', (ev) => { h.cpath = ev.target.checked; savePassive(); hmDraw(st); });
     el.querySelectorAll('[data-hmmode]').forEach(b => b.onclick = () => { h.mode = b.dataset.hmmode; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelector('[data-hmwkvk]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, '');
       if (v && !/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C13340'); ev.target.value = h.wkvk || ''; return; } h.wkvk = v || ''; h.watch = ''; h.fight = null; h.tl = null; h.pop = null; delete hmWInfo[v]; re(); });
@@ -1412,6 +1558,7 @@ window.RokMods.battles = (R) => {
       else if (k === 'reset') { hmView = { s: 1, x: 0, y: 0 }; hmApplyView(); }
       else if (k === 'fit') { const p = hmState(st).dots.filter(q => q.mine); if (!p.length) return; hmZoomTo(Math.min(...p.map(q => q.u)), Math.min(...p.map(q => q.v)), Math.max(...p.map(q => q.u)), Math.max(...p.map(q => q.v))); }
       else if (k === 'full') { const w = $('battlesView'); try { if (document.fullscreenElement) await document.exitFullscreen(); else { await w.requestFullscreen(); setTimeout(() => $('hmWrap')?.scrollIntoView({ block: 'start' }), 150); } } catch {} setTimeout(hmApplyView, 250); }
+      else if (k === 'vid') { if (b.dataset.busy) return; b.dataset.busy = 1; b.textContent = '⏺'; try { await hmRecord(st); } catch (e) { console.warn(e); } delete b.dataset.busy; b.textContent = '🎬'; }
       else if (k === 'png') { try { const S = hmState(st), img = box.querySelector('img'), Wb = box.clientWidth, P = 2048, o = document.createElement('canvas'); o.width = o.height = P; const c = o.getContext('2d');
           const sx = -hmView.x / (Wb * hmView.s), sy = -hmView.y / (Wb * hmView.s), sw = 1 / hmView.s;   // Ausschnitt wie gerade gezoomt
           if (img?.complete && img.naturalWidth) c.drawImage(img, sx * img.naturalWidth, sy * img.naturalHeight, sw * img.naturalWidth, sw * img.naturalHeight, 0, 0, P, P);
