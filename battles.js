@@ -346,7 +346,7 @@ window.RokMods.battles = (R) => {
       ${ids.length ? '' : '<span class="text-[11px] text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}</div>`;
   }
   function renderKampf() {
-    const el = $('battlesView'); if (!el) return; const st0 = kbSt(); kbBuffStart();
+    const el = $('battlesView'); if (!el) return; const st0 = kbSt(); kbBuffStart(); kbKvkFillLoad();
     const wip = `<div class="text-center"><span class="inline-flex items-center gap-2 rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-1.5 font-display text-sm sm:text-base tracking-widest uppercase text-amber-300">🚧 <span>In Work</span> 🚧</span></div>`;
     if (!st0.accV2 && kbProfileId()) { st0.accV2 = 1; st0.acc = kbProfileId(); }   // Standard: dein Profil-Account
     if ((st0.page || 'battles') !== 'res' && !kbApply()) { kbRows = null; kbCurKey = null; if (!kbLoading) loadBattles(); }
@@ -900,30 +900,6 @@ window.RokMods.battles = (R) => {
         ${tile('💀', 'Verluste', short(a.dead + a.sev), short(b.dead + b.sev), 'text-red-200')}
       </div></div>`;
   }
-  // ===== 📌 Koalitions-/Allianz-Marker (Test): aus den Allianz-Mails „New … Marker Placed“ =====
-  var kbMarks = { rows: null, t: 0, loading: false, err: '' };
-  function kbMarksLoad(force) {
-    if (kbMarks.loading || (!force && kbMarks.rows && Date.now() - kbMarks.t < 120e3)) return; kbMarks.loading = true;
-    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); const since = new Date(Date.now() - 7 * 864e5).toISOString(), cols = 'mail_id,player_id,account,sent_at,content';
-        let q = null; try { q = await db.from('rok_mails').select(cols).eq('mail_type', 'Alliance').ilike('content->>title', '%Marker%').gte('sent_at', since).order('sent_at', { ascending: false }).limit(1000); } catch { q = { error: 1 }; }
-        if (q.error) q = await db.from('rok_mails').select(cols).eq('mail_type', 'Alliance').gte('sent_at', since).order('sent_at', { ascending: false }).limit(3000);
-        if (q.error) throw q.error;
-        const seen = new Set(); kbMarks = { rows: (q.data || []).filter(r => /marker/i.test(r.content?.title || '') && r.content?.kvs).map(r => ({ ...r.content.kvs, title0: r.content.title, sub: r.content.subTitle, t: Date.parse(r.sent_at), by: r.account }))
-          .filter(x => { const k = [Math.round(x.x), Math.round(x.y), x.comment, Math.round(x.t / 6e4)].join('|'); if (seen.has(k)) return false; seen.add(k); return true; }), t: Date.now(), loading: false, err: '' }; }
-      catch (e) { kbMarks = { rows: kbMarks.rows || [], t: Date.now(), loading: false, err: e?.message || String(e) }; }
-      if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); })();
-  }
-  function hmMarksHtml(st, h, m) {
-    if (hmSpect()) return '';
-    if (h.markOpen) kbMarksLoad();
-    const L = kbMarks.rows || [], zoneOf = (x) => { if (x.x == null || x.y == null) return ''; const [u, v] = hmXY(+x.x, +x.y, h, m); const z = hmZoneAt(u, v, m, true); return z >= 0 ? hmZName(h, m, z) : ''; };
-    const body = !h.markOpen ? '' : !kbMarks.rows ? '<div class="text-xs text-slate-500 py-2">Lädt …</div>' : kbMarks.err ? `<div class="text-xs text-red-300 py-2">${esc(kbMarks.err)}</div>` : !L.length ? '<div class="text-xs text-slate-500 py-2">Keine Marker-Mails in den letzten 7 Tagen.</div>' : `
-      <div class="max-h-96 overflow-y-auto"><table class="w-full text-xs"><thead><tr class="text-slate-500 sticky top-0 bg-ink-950"><th class="text-left py-1 pr-2"><span>Zeit</span></th><th class="text-left pr-2"><span>Gesetzt von</span></th><th class="text-left pr-2"><span>Kommentar</span></th><th class="text-right pr-2">X</th><th class="text-right pr-2">Y</th><th class="text-left pr-2"><span>Zone</span></th><th class="text-left pr-2"><span>Art</span></th><th class="text-right pr-2">mark</th><th class="text-right pr-2">title</th><th class="text-left"><span>Postfach</span></th></tr></thead><tbody>
-      ${L.map(x => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2 whitespace-nowrap text-slate-300">${hmWhen(x.t)}</td><td class="pr-2 text-slate-100" translate="no">${esc(x.name || '')}</td><td class="pr-2 text-amber-200" translate="no">${esc(x.comment || '')}</td>
-        <td class="pr-2 text-right tabular-nums">${Math.round(+x.x / 6)}</td><td class="pr-2 text-right tabular-nums">${Math.round(+x.y / 6)}</td><td class="pr-2 whitespace-nowrap">${esc(zoneOf(x))}</td><td class="pr-2 text-slate-400 whitespace-nowrap">${/coalition/i.test(x.title0 || '') ? 'Koalition' : /alliance/i.test(x.title0 || '') ? 'Allianz' : esc(x.title0 || '')}</td>
-        <td class="pr-2 text-right tabular-nums text-slate-500">${esc(x.mark ?? '')}</td><td class="pr-2 text-right tabular-nums text-slate-500">${esc(x.title ?? '')}</td><td class="text-slate-500" translate="no">${esc(x.by || '')}</td></tr>`).join('')}</tbody></table></div>`;
-    return `<details data-hmmarks ${h.markOpen ? 'open' : ''} class="mt-3 rounded-xl border border-violet-500/50 bg-violet-500/5"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-violet-200">📌 <span>Marker (Test)</span>${L.length ? ` <span class="rounded-full bg-violet-500/25 border border-violet-400/60 px-2 text-xs tabular-nums">${L.length}</span>` : ''} <span class="text-[11px] text-slate-500 font-normal">– alle Marker-Mails der letzten 7 Tage, roh zum Durchschauen</span></summary><div class="px-3 pb-3">${body}</div></details>`;
-  }
   // ===== 🔥 Gegner-Märsche auf dem Feld: aus den Kampfberichten der letzten Minuten (du + alle aus deinem KvK, die den Uploader nutzen) =====
   var kbField = { key: '', rows: null, t: 0, loading: false, err: '' };
   function kbFieldLoad(ids, force) {
@@ -1186,7 +1162,18 @@ window.RokMods.battles = (R) => {
   function hmAccRows(gid) { return (kbRows || []).filter(r => String(r.player_id) === gid && r.map_role === 'gsmp'); }
   function hmGsAuto(gid) { let b = null; hmAccRows(gid).forEach(r => { if (+r.server_id >= 10000 && (!b || (r.battle_start || '') > b.t)) b = { id: +r.server_id, t: r.battle_start || '' }; }); return b ? b.id : null; }   // interne Karten-Nummer aus dem Bericht (GsId) – nicht die C-Nummer
   function hmAk(h) { if (hmSpect()) return (h.wAk = h.wAk || {}); const st = kbSt(), g = hmAcc(h); if (!st.accKvk) st.accKvk = { ...(h.ak || {}) }; st.accKvk[g] = st.accKvk[g] || {}; return st.accKvk[g]; }   // pro ID: C-Nummer, Start, Karte (auf jedem Gerät gleich)
-  function hmKvkCode(h) { return hmAk(h).kvk || ''; }   // C-Nummer gibst du selbst ein, sie steht nicht in den Berichten
+  function hmKvkCode(h) { return hmAk(h).kvk || ''; }
+  // C-Nummer, Start, Pass 7 / Kingsland bleiben pro Account fest: fehlt etwas lokal, kommt es aus rok_kvk_ids (z. B. auf anderem Gerät oder in der App eingetragen)
+  var kbKvkFill = null;
+  function kbKvkFillLoad() {
+    if (hmSpect()) return; const ids = [...kbMyIds()], key = ids.slice().sort().join(','); if (!ids.length || kbKvkFill === key || kbKvkFill === 'loading') return; kbKvkFill = 'loading';
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw 0; const q = await db.from('rok_kvk_ids').select('governor_id,kvk,map,kvk_start,p7_at,kl_at').in('governor_id', ids); if (q.error) throw q.error;
+        const st = kbSt(); st.accKvk = st.accKvk || {}; let ch = false; const loc = (t) => { if (!t) return ''; const d = new Date(t), z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; };
+        (q.data || []).forEach(x => { const a = (st.accKvk[String(x.governor_id)] = st.accKvk[String(x.governor_id)] || {});
+          if (!a.kvk && x.kvk) { a.kvk = x.kvk; ch = true; } if (!a.map && x.map) { a.map = x.map; ch = true; } if (!a.start && x.kvk_start) { a.start = String(x.kvk_start).slice(0, 10); ch = true; }
+          if (!a.p7 && x.p7_at) { a.p7 = loc(x.p7_at); ch = true; } if (!a.kl && x.kl_at) { a.kl = loc(x.kl_at); ch = true; } });
+        kbKvkFill = key; if (ch) { savePassive(); if (R.view === 'battles') renderKampf(); } } catch { kbKvkFill = key; } })();
+  }   // C-Nummer gibst du selbst ein, sie steht nicht in den Berichten
   function hmSid(h) { return null; }   // nicht mehr nach Karten-Nummer filtern – die wird von mehreren KvKs benutzt; Zeitraum kommt vom KvK-Start   // gefiltert wird über die Karten-Nummer, die beim Eintragen der C-Nummer aktuell war
   function hmIsProf(h) { return hmAcc(h) === kbProfileId(); }
   function hmStart(h) { const sp = hmSpect(), a = hmAk(h), wi = sp ? hmWInfoCur(h) : null; if (!sp && a.start) return a.start; if (wi?.start) return String(wi.start).slice(0, 10);
@@ -1604,7 +1591,7 @@ window.RokMods.battles = (R) => {
       <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3>${marchSel}</div>
       <div class="flex flex-wrap gap-1.5 mt-2">${[{ b: '', kp: S.zbList.reduce((a, x) => a + x.kp, 0), n: S.zbList.reduce((a, x) => a + x.n, 0) }, ...S.zbList].map(x => `<button type="button" data-hmzb="${esc(x.b)}" aria-pressed="${(h.zb || '') === x.b}" class="seg-btn rounded-xl px-3 py-2 text-left"><div class="text-sm font-bold" translate="no">${x.b ? esc(x.b) : '🗺️ <span>Alle</span>'}</div><div class="text-xs tabular-nums text-gold-300">${pvp ? '🏆 ' + short(x.kp) : (h.src === 'barb' ? '🪓 ' : '👹 ') + fmt(x.n)}</div></button>`).join('')}</div>
       <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
-      ${hmSpect() ? '' : hmFieldHtml(st, h, m)}${hmMarksHtml(st, h, m)}${tcHtml}
+      ${hmSpect() ? '' : hmFieldHtml(st, h, m)}${tcHtml}
       ${pvp ? hmCompare(h, S) : ''}
       ${brHtml}
       ${flexHtml || `<details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${h.src === 'rally' ? '🛡️ <span>Rally &amp; Garnison</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '👹 <span>Alle Kahar</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
@@ -1819,7 +1806,6 @@ window.RokMods.battles = (R) => {
     el.querySelectorAll('[data-hmbuffx]').forEach(b => b.onclick = () => { h.buffs = (h.buffs || []).filter((_, i) => i !== +b.dataset.hmbuffx); re(); });
     el.querySelectorAll('[data-hmfw]').forEach(b => b.onclick = (e) => { e.preventDefault(); h.fw = +b.dataset.hmfw; re(); });
     el.querySelectorAll('[data-hmfrel]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbField.t = 0; kbFieldLoad(kbField.key ? kbField.key.split(',') : [], true); });
-    el.querySelectorAll('[data-hmmarks]').forEach(d => d.ontoggle = () => { if (!!h.markOpen !== d.open) { h.markOpen = d.open; savePassive(); renderKampf(); } });
     el.querySelectorAll('[data-hmfield]').forEach(d => d.ontoggle = () => { if (h.fieldOpen !== d.open) { h.fieldOpen = d.open; savePassive(); if (d.open) renderKampf(); } });
     el.querySelectorAll('[data-hmbuffhide]').forEach(b => b.onclick = () => { st.buffHide = { ...(st.buffHide || {}), [b.dataset.hmbuffhide]: 1 }; re(); });
     el.querySelector('[data-hmtc]')?.addEventListener('toggle', (ev) => { h.tcOpen = ev.target.open; savePassive(); });
