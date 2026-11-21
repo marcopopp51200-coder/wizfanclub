@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 28 (battles.js)
+        "Was": "What", "Wann": "When", "Wo": "Where", "Anzeige": "Display", "Aktive Filter": "Active filters", "Alles zurücksetzen": "Reset all", "KvK-Tag": "KvK day", "bis": "until", "Abspielen und Zeitpunkt wählen": "Play back and pick a moment", "Klick = nur diesen Bereich zeigen": "Click = show only this area",
         // Heatmap 27 (battles.js)
         "Heute": "Today", "Verluste": "Losses", "Marker (Test)": "Markers (test)", "– alle Marker-Mails der letzten 7 Tage, roh zum Durchschauen": "– all marker mails of the last 7 days, raw for browsing", "Zeit": "Time", "Gesetzt von": "Placed by", "Kommentar": "Comment", "Zone": "Zone", "Art": "Type", "Postfach": "Mailbox", "Keine Marker-Mails in den letzten 7 Tagen.": "No marker mails in the last 7 days.",
         // Heatmap 26 (battles.js)
