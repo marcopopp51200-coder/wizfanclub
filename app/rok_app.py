@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wiz fan Club App (Testversion 0.5)
+Wiz fan Club App (Testversion 0.7)
 ----------------------------------
 * Verbinden: Code von der Website (uploader.html) eingeben -> App ist mit deinem Account gekoppelt.
 * Accounts: erkennt die Governor-IDs aus dem Mailcache und bindet sie an deinen Website-Account.
@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.5-test"
+APP_VERSION = "0.7-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -239,6 +239,7 @@ def owner_of(mail):
 
 
 # ---------------------------------------------------------------- Marker-Mails (Koalitions-/Allianz-Marker)
+import re
 import re as _re
 from collections import deque
 
@@ -299,6 +300,64 @@ def marker_of(mail):
 def is_ball(mk, words):
     txt = ("%s %s" % (mk.get("text", ""), mk.get("title", ""))).lower()
     return any(w and w in txt for w in words)
+
+
+# ---------------------------------------------------------------- Ein-Klick-Verbindung von der Website (wizfanclub://pair?c=CODE&s=ADRESSE)
+import socket
+from urllib.parse import urlparse, parse_qs
+
+PROTO = "wizfanclub"
+IPC_PORT = 47851                     # nur lokal (127.0.0.1): uebergibt Links an die schon laufende App
+# Nur diese Websites duerfen die App verbinden (Schutz vor gefaelschten Links)
+SITE_OK = re.compile(r"^https://(rok-scanner[a-z0-9-]*\.vercel\.app|([a-z0-9-]+\.)*wizfanclub\.[a-z]+)$", re.I)
+
+
+def register_protocol():
+    """Meldet wizfanclub:// bei Windows an (nur fuer den eigenen Benutzer, keine Admin-Rechte)."""
+    if not IS_WIN:
+        return
+    try:
+        import winreg
+        if FROZEN:
+            cmd = '"%s" "%%1"' % sys.executable
+        else:
+            cmd = '"%s" "%s" "%%1"' % (sys.executable.replace("python.exe", "pythonw.exe"), os.path.abspath(__file__))
+        base = r"Software\Classes\%s" % PROTO
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base) as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, "URL:Wiz fan Club App")
+            winreg.SetValueEx(k, "URL Protocol", 0, winreg.REG_SZ, "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\DefaultIcon") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, sys.executable if FROZEN else "")
+        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, base + r"\shell\open\command") as k:
+            winreg.SetValueEx(k, "", 0, winreg.REG_SZ, cmd)
+    except Exception as e:
+        log("Protokoll: %s" % e)
+
+
+def parse_link(url):
+    """wizfanclub://pair?c=ABC123&s=https://... -> (code, site) oder None."""
+    try:
+        u = urlparse(str(url).strip())
+        if u.scheme.lower() != PROTO:
+            return None
+        q = parse_qs(u.query)
+        code = re.sub(r"[^A-Z0-9]", "", (q.get("c") or [""])[0].upper())
+        site = (q.get("s") or [""])[0].strip().rstrip("/")
+        if len(code) != 6 or not SITE_OK.match(site):
+            return None
+        return code, site
+    except Exception:
+        return None
+
+
+def hand_over(arg):
+    """Laeuft die App schon? Dann Link uebergeben und True zurueck (diese zweite Kopie beendet sich)."""
+    try:
+        with socket.create_connection(("127.0.0.1", IPC_PORT), timeout=1.5) as c:
+            c.sendall((arg or "show").encode("utf-8")[:2000])
+        return True
+    except OSError:
+        return False
 
 
 class Scanner:
@@ -364,6 +423,8 @@ class Scanner:
                 if self.seen.get(key) != sig:
                     todo.append((key, sig, e.path))
             for i, (key, sig, path) in enumerate(todo):
+                if len(todo) > 50 and i % 20 == 0:
+                    time.sleep(0.004)            # beim grossen Einlesen Luft lassen -> Fenster und Spiel ruckeln nicht
                 if i % 200 == 0 and len(todo) > 200:
                     self.status = T("status_scan", n="%d/%d" % (i, len(todo)))
                 try:
@@ -408,6 +469,12 @@ class Scanner:
         return new
 
     def loop(self):
+        if IS_WIN:                                # Hintergrund-Thread mit niedriger Prioritaet (Spiel hat Vorrang)
+            try:
+                import ctypes
+                ctypes.windll.kernel32.SetThreadPriority(ctypes.windll.kernel32.GetCurrentThread(), -2)
+            except Exception:
+                pass
         while True:
             try:
                 n = self.scan_once()
@@ -553,6 +620,9 @@ TXT["de"].update({
     "k_main": "Main", "k_alt": "Zweitaccount", "k_pilot": "Pilot", "pending": "wartet auf Besitzer",
     "prof_id": "Governor-ID in deinem Website-Profil: {id}", "prof_none": "In deinem Website-Profil ist noch keine Governor-ID eingetragen – trag sie dort ein, dann kannst du deinen Main binden.",
     "pending_info": "Der Besitzer muss das auf der Website unter „App verbinden“ erlauben.", "ov_pilot": "Pilot-Accounts mitzählen",
+    "link_bad": "Dieser Verbindungs-Link ist ungültig oder kommt nicht von der Wiz-fan-Club-Website.", "link_busy": "Verbinde mit der Website …",
+    "link_ok": "✔ Verbunden als {n}", "link_ask": "Mit dieser Website verbinden?\n\n{s}", "steps1": "Am einfachsten: Auf der Website „🚀 Mit App verbinden“ klicken – fertig.",
+    "err_404": "Unter {u} gibt es die App-Verbindung (noch) nicht.\n\nTrag bei „Website-Adresse“ genau die Adresse ein, auf der du den Code erzeugt hast – sie steht auf der Seite „App verbinden“ zum Kopieren.",
     "dev_name": "Name für diesen PC", "tab_mk": "Marker", "sub_mk": "Koalitions- und Allianz-Marker aus deinen Mails.", "mk_all": "Alle", "mk_ball": "Nur Ball", "mk_sort_new": "Neueste zuerst", "mk_sort_ball": "Ball zuerst",
     "mk_none": "Noch keine Marker-Mails gefunden. Falls doch welche im Spiel sind: unten „Beispiel speichern“ und mir die Datei schicken.",
     "mk_copy": "Kopieren", "mk_copied": "Koordinaten kopiert", "mk_ago_m": "vor {n} Min.", "mk_ago_h": "vor {n} Std.", "mk_ago_d": "vor {n} Tg.",
@@ -573,6 +643,9 @@ TXT["en"].update({
     "k_main": "Main", "k_alt": "Alt account", "k_pilot": "Pilot", "pending": "waiting for owner",
     "prof_id": "Governor ID in your website profile: {id}", "prof_none": "There is no governor ID in your website profile yet – add it there, then you can link your main.",
     "pending_info": "The owner has to allow this on the website under “Connect the app”.", "ov_pilot": "Count pilot accounts",
+    "link_bad": "This connection link is invalid or does not come from the Wiz fan Club website.", "link_busy": "Connecting to the website …",
+    "link_ok": "✔ Connected as {n}", "link_ask": "Connect with this website?\n\n{s}", "steps1": "Easiest: click “🚀 Connect with app” on the website – done.",
+    "err_404": "There is no app connection at {u} (yet).\n\nUnder “Website address” enter exactly the address where you created the code – it is shown on the “Connect the app” page for copying.",
     "dev_name": "Name for this PC", "tab_mk": "Markers", "sub_mk": "Coalition and alliance markers from your mails.", "mk_all": "All", "mk_ball": "Ball only", "mk_sort_new": "Newest first", "mk_sort_ball": "Ball first",
     "mk_none": "No marker mails found yet. If there are some in the game: click “Save example” below and send me the file.",
     "mk_copy": "Copy", "mk_copied": "Coordinates copied", "mk_ago_m": "{n} min ago", "mk_ago_h": "{n} h ago", "mk_ago_d": "{n} d ago",
@@ -581,6 +654,14 @@ TXT["en"].update({
     "mk_all_alarm": "Alert for normal markers too",
     "kinds_info": "Main = the ID from your website profile · Alt = also yours (filler, farm) · Pilot = someone else's account that you play",
 })
+
+
+# ---------------------------------------------------------------- Design-Bausteine (rund, scharf auf hochaufloesenden Bildschirmen)
+SCALE = 1.0          # wird beim Start aus der Bildschirm-DPI gesetzt
+
+
+def px(n):
+    return int(round(n * SCALE))
 
 
 def pick_font(root, *names):
@@ -594,38 +675,92 @@ def pick_font(root, *names):
     return names[-1]
 
 
-class Btn(tk.Label):
-    """Flacher Button mit Hover (gold / ghost / danger)."""
-    STY = {"gold": (C["gold"], "#0b0e16", "#fde68a"), "ghost": (C["card2"], C["text"], C["line2"]), "danger": (C["card2"], C["bad"], "#3b1d24")}
+def rrect(cv, x1, y1, x2, y2, r, **kw):
+    """Abgerundetes Rechteck auf einem Canvas."""
+    r = max(1, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
+    pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
+    return cv.create_polygon(pts, smooth=True, **kw)
 
-    def __init__(self, parent, text, cmd, kind="gold", small=False, **kw):
-        bg, fg, hov = self.STY[kind]
-        f = (FONT, 9 if small else 10, "bold")
-        super().__init__(parent, text=text, bg=bg, fg=fg, font=f, padx=10 if small else 16, pady=3 if small else 7, cursor="hand2", **kw)
-        self._c, self._cmd, self._on = (bg, fg, hov), cmd, True
-        self.bind("<Enter>", lambda e: self._on and self.configure(bg=hov))
-        self.bind("<Leave>", lambda e: self.configure(bg=bg if self._on else C["line"]))
-        self.bind("<Button-1>", lambda e: self._on and self._cmd and self._cmd())
+
+def bg_of(w):
+    try:
+        return w.cget("bg")
+    except tk.TclError:
+        return C["bg"]
+
+
+class Btn(tk.Canvas):
+    """Runder Button mit Hover (gold / ghost / danger)."""
+    STY = {"gold": (C["gold"], "#0b0e16", "#fde68a", C["gold"]), "ghost": (C["card2"], C["text"], C["line2"], C["line2"]),
+           "danger": (C["card2"], C["bad"], "#3b1d24", "#5b2530")}
+
+    def __init__(self, parent, text, cmd, kind="gold", small=False, width=None, **kw):
+        self.fill, self.fg, self.hov, self.out = self.STY[kind]
+        self.font = tkfont.Font(family=FONT, size=9 if small else 10, weight="bold")
+        tw = self.font.measure(text)
+        h = px(28 if small else 36)
+        w = width or (tw + px(24 if small else 34))
+        super().__init__(parent, width=w, height=h, bg=bg_of(parent), highlightthickness=0, bd=0, cursor="hand2", **kw)
+        self.text, self._cmd, self._on, self._hover = text, cmd, True, False
+        self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<Enter>", lambda e: self._h(True))
+        self.bind("<Leave>", lambda e: self._h(False))
+        self.bind("<ButtonRelease-1>", lambda e: self._on and self._cmd and self._cmd())
+        self.draw()
+
+    def _h(self, on):
+        self._hover = on; self.draw()
+
+    def draw(self):
+        self.delete("all")
+        w, h = int(self.winfo_width()) if self.winfo_width() > 1 else int(self["width"]), int(self["height"])
+        fill = (self.hov if self._hover else self.fill) if self._on else C["line"]
+        rrect(self, 1, 1, w - 1, h - 1, h / 2.4, fill=fill, outline=self.out if self._on else C["line"])
+        self.create_text(w / 2, h / 2, text=self.text, fill=self.fg if self._on else C["dim"], font=self.font)
 
     def enable(self, on=True):
-        self._on = on
-        bg, fg, _ = self._c
-        self.configure(bg=bg if on else C["line"], fg=fg if on else C["dim"], cursor="hand2" if on else "arrow")
+        self._on = on; self.configure(cursor="hand2" if on else "arrow"); self.draw()
+
+
+class Chip(tk.Canvas):
+    """Runde Auswahl-Pille (an/aus)."""
+
+    def __init__(self, parent, text, active, cmd):
+        self.font = tkfont.Font(family=FONT, size=9, weight="bold")
+        super().__init__(parent, width=self.font.measure(text) + px(26), height=px(28), bg=bg_of(parent), highlightthickness=0, bd=0, cursor="hand2")
+        self.text, self.cmd, self._hover = text, cmd, False
+        self.bind("<ButtonRelease-1>", lambda e: self.cmd())
+        self.bind("<Enter>", lambda e: (setattr(self, "_hover", True), self.draw()))
+        self.bind("<Leave>", lambda e: (setattr(self, "_hover", False), self.draw()))
+        self.bind("<Configure>", lambda e: self.draw())
+        self.set(active)
+
+    def set(self, active):
+        self.active = active; self.draw()
+
+    def draw(self):
+        self.delete("all")
+        w, h = max(int(self["width"]), self.winfo_width()), int(self["height"])
+        a = self.active
+        rrect(self, 1, 1, w - 1, h - 1, h / 2, fill=C["gold_dim"] if a else (C["card2"] if self._hover else C["input"]),
+              outline=C["gold2"] if a else C["line2"])
+        self.create_text(w / 2, h / 2, text=self.text, fill=C["gold"] if a else C["muted"], font=self.font)
 
 
 class Toggle(tk.Frame):
     """Schalter (Pill) mit Text."""
 
     def __init__(self, parent, text, var, cmd=None, bg=None):
-        bg = bg or C["card"]
+        bg = bg or bg_of(parent)
         super().__init__(parent, bg=bg, cursor="hand2")
         self.var, self.cmd = var, cmd
-        self.cv = tk.Canvas(self, width=38, height=20, bg=bg, highlightthickness=0)
+        self.W, self.H = px(40), px(22)
+        self.cv = tk.Canvas(self, width=self.W, height=self.H, bg=bg, highlightthickness=0)
         self.cv.pack(side="left")
         self.lb = tk.Label(self, text=text, bg=bg, fg=C["text"], font=(FONT, 10))
-        self.lb.pack(side="left", padx=8)
+        self.lb.pack(side="left", padx=px(8))
         for w in (self, self.cv, self.lb):
-            w.bind("<Button-1>", self._click)
+            w.bind("<ButtonRelease-1>", self._click)
         self.draw()
 
     def _click(self, _e=None):
@@ -634,42 +769,82 @@ class Toggle(tk.Frame):
             self.cmd()
 
     def draw(self):
-        on = bool(self.var.get())
-        cv = self.cv; cv.delete("all")
-        col = C["gold"] if on else C["line2"]
-        cv.create_oval(1, 1, 19, 19, fill=col, outline=col); cv.create_oval(19, 1, 37, 19, fill=col, outline=col)
-        cv.create_rectangle(10, 1, 28, 19, fill=col, outline=col)
-        x = 28 if on else 10
-        cv.create_oval(x - 7, 3, x + 7, 17, fill="#0b0e16" if on else C["muted"], outline="")
+        on, W, H, cv = bool(self.var.get()), self.W, self.H, self.cv
+        cv.delete("all")
+        rrect(cv, 1, 1, W - 1, H - 1, H / 2, fill=C["gold"] if on else C["line2"], outline="")
+        r = H / 2 - px(3)
+        x = W - H / 2 if on else H / 2
+        cv.create_oval(x - r, H / 2 - r, x + r, H / 2 + r, fill="#0b0e16" if on else C["muted"], outline="")
 
 
-class Chip(tk.Label):
-    def __init__(self, parent, text, active, cmd, bg=None):
-        super().__init__(parent, text=text, font=(FONT, 9, "bold"), padx=10, pady=4, cursor="hand2", bd=0)
-        self.cmd = cmd
-        self.bind("<Button-1>", lambda e: self.cmd())
-        self.set(active)
+class EntryBox(tk.Canvas):
+    """Rundes Eingabefeld; .bind() geht an das Feld selbst."""
 
-    def set(self, active):
-        self.active = active
-        self.configure(bg=C["gold_dim"] if active else C["input"], fg=C["gold"] if active else C["muted"],
-                       highlightthickness=1, highlightbackground=C["gold2"] if active else C["line2"])
+    def __init__(self, parent, var, width=30, big=False, center=False):
+        self.f = tkfont.Font(family=MONO if big else FONT, size=20 if big else 10, weight="bold" if big else "normal")
+        h = px(54 if big else 34)
+        w = self.f.measure("0") * width + px(24)
+        super().__init__(parent, width=w, height=h, bg=bg_of(parent), highlightthickness=0, bd=0)
+        self.e = tk.Entry(self, textvariable=var, bg=C["input"], fg=C["gold"] if big else C["text"], insertbackground=C["gold"],
+                          relief="flat", bd=0, font=self.f, justify="center" if center else "left", highlightthickness=0)
+        self.win = self.create_window(px(12), h / 2, window=self.e, anchor="w")
+        self.focus = False
+        self.e.bind("<FocusIn>", lambda e: (setattr(self, "focus", True), self.draw()))
+        self.e.bind("<FocusOut>", lambda e: (setattr(self, "focus", False), self.draw()), add="+")
+        super().bind("<Configure>", lambda e: self.draw())
+        self.draw()
+
+    def bind(self, seq=None, fn=None, add=None):
+        return self.e.bind(seq, fn, add="+")
+
+    def draw(self):
+        self.delete("bgr")
+        w, h = max(self.winfo_width(), int(self["width"])), int(self["height"])
+        rrect(self, 1, 1, w - 1, h - 1, px(10), fill=C["input"], outline=C["gold2"] if self.focus else C["line2"], tags="bgr")
+        self.tag_lower("bgr")
+        self.itemconfigure(self.win, width=w - px(24))
 
 
 def entry(parent, var, width=30, big=False, center=False):
-    e = tk.Entry(parent, textvariable=var, width=width, bg=C["input"], fg=C["gold"] if big else C["text"], insertbackground=C["gold"],
-                 relief="flat", font=(MONO, 20, "bold") if big else (FONT, 10), justify="center" if center else "left",
-                 highlightthickness=1, highlightbackground=C["line2"], highlightcolor=C["gold2"])
-    return e
+    return EntryBox(parent, var, width, big, center)
+
+
+class Card(tk.Canvas):
+    """Runde Karte; Inhalt kommt in .body. Hoehe passt sich dem Inhalt an."""
+
+    def __init__(self, parent, title=None, pad=16, fill=None, border=None, radius=16):
+        self.fill, self.border, self.rad, self.pad = fill or C["card"], border or C["line"], px(radius), px(pad)
+        super().__init__(parent, bg=bg_of(parent), highlightthickness=0, bd=0, height=px(40), width=px(200))
+        self.inner = tk.Frame(self, bg=self.fill)
+        if title:
+            tk.Label(self.inner, text=title.upper(), bg=self.fill, fg=C["gold"], font=(FONT, 8, "bold")).pack(anchor="w", pady=(0, px(6)))
+        self.body = tk.Frame(self.inner, bg=self.fill)
+        self.body.pack(fill="both", expand=True)
+        self.win = self.create_window(self.pad, self.pad, window=self.inner, anchor="nw")
+        self.bind("<Configure>", lambda e: self.redraw())
+        self.inner.bind("<Configure>", lambda e: self.fit())
+
+    def fit(self):
+        h = self.inner.winfo_reqheight() + 2 * self.pad
+        if abs(int(self["height"]) - h) > 1:
+            self.configure(height=h)
+
+    def set_border(self, col):
+        self.border = col; self.redraw()
+
+    def redraw(self):
+        w, h = self.winfo_width(), self.winfo_height()
+        if w < 4:
+            return
+        self.delete("bgr")
+        rrect(self, 1, 1, w - 1, h - 1, self.rad, fill=self.fill, outline=self.border, tags="bgr")
+        self.tag_lower("bgr")
+        self.itemconfigure(self.win, width=max(10, w - 2 * self.pad))
 
 
 def card(parent, title=None):
-    outer = tk.Frame(parent, bg=C["card"], highlightthickness=1, highlightbackground=C["line"])
-    if title:
-        tk.Label(outer, text=title.upper(), bg=C["card"], fg=C["gold"], font=(FONT, 8, "bold")).pack(anchor="w", padx=14, pady=(10, 0))
-    inner = tk.Frame(outer, bg=C["card"])
-    inner.pack(fill="both", expand=True, padx=14, pady=(6, 12))
-    return outer, inner
+    c = Card(parent, title)
+    return c, c.body
 
 
 class Scroll(tk.Frame):
@@ -694,6 +869,40 @@ class Scroll(tk.Frame):
             pass
 
 
+def load_private_fonts():
+    """Mitgelieferte Schriften (Cinzel = Website-Titel) nur fuer diese App laden – nichts wird installiert."""
+    if not IS_WIN:
+        return
+    try:
+        import ctypes
+        for d in (RES, HERE, os.path.join(HERE, "fonts")):
+            for f in glob.glob(os.path.join(d, "*.ttf")):
+                ctypes.windll.gdi32.AddFontResourceExW(f, 0x10, 0)
+    except Exception:
+        pass
+
+
+def enable_dpi():
+    """Scharfe Schrift auf Bildschirmen mit Skalierung (125 %, 150 % …)."""
+    if not IS_WIN:
+        return
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(1)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def draw_logo(cv, size):
+    """W-Emblem wie das App-Icon."""
+    s = size
+    rrect(cv, 2, 2, s - 2, s - 2, s * 0.22, fill="#0b0e16", outline=C["gold2"], width=max(2, px(2)))
+    cv.create_text(s / 2, s / 2 + 1, text="W", fill=C["gold"], font=(TITLE, int(s / SCALE * 0.42), "bold"))
+
+
 # ---------------------------------------------------------------- Overlay-Fenster
 class Overlay:
     PAD = 12
@@ -704,6 +913,7 @@ class Overlay:
         self.vals = {}
         self.flash_until = 0
         self.alert = None           # (marker, ball, bis)
+        self._drawn = None
 
     def build(self):
         ov = self.app.cfg["overlay"]
@@ -750,8 +960,8 @@ class Overlay:
         rows = [(T(k), self.vals.get(k, "–"), k) for k in ov.get("metrics", [])]
         lw = max([fl.measure(a) for a, _, _ in rows] + [0])
         vw = max([fv.measure(b) for _, b, _ in rows] + [fv.measure("0.000")])
-        P, gap, lh = self.PAD, 18, fl.metrics("linespace") + 4
-        width = max(P * 2 + lw + gap + vw, fh.measure(head) + P * 2 + 50, 150)
+        P, gap, lh = px(self.PAD), px(18), fl.metrics("linespace") + px(5)
+        width = max(P * 2 + lw + gap + vw, fh.measure(head) + P * 2 + px(50), px(170))
         hh = fh.metrics("linespace") + P + 4
         al = self.alert if self.alert and time.time() < self.alert[2] else None
         ah = 0
@@ -765,7 +975,7 @@ class Overlay:
         cv = self.cv
         cv.delete("all")
         cv.configure(width=width + 1, height=height + 1)
-        self._round(cv, 0, 0, width, height, 12, fill=C["side"], outline=C["gold2"], width=1)
+        self._round(cv, 0, 0, width, height, px(14), fill=C["side"], outline=C["gold2"], width=1)
         cv.create_line(P, hh - 2, width - P, hh - 2, fill=C["line2"])
         cv.create_text(P, P - 2, text=head, anchor="nw", fill=C["gold"], font=f_head)
         flashing = time.time() < self.flash_until
@@ -792,15 +1002,23 @@ class Overlay:
     def update(self, vals):
         if not self.win:
             return
+        now = time.time()
         if self.vals and vals.get("_n", 0) > self.vals.get("_n", 0):
-            self.flash_until = time.time() + 4               # neuer Kampf: kurz golden
-        self.vals = vals
-        self.draw()
-        try:
-            self.win.attributes("-topmost", True)
-            self.win.lift()
-        except tk.TclError:
-            pass
+            self.flash_until = now + 4                        # neuer Kampf: kurz golden
+        al = self.alert and now < self.alert[2]
+        key = (id(vals), now < self.flash_until, bool(al), int(now) % 2 if al else 0,
+               int(now // 60) if al else 0, getattr(self, "_status_ok", None))
+        if key != getattr(self, "_drawn", None):            # nur neu zeichnen, wenn sich etwas sichtbar aendert
+            self._drawn = key
+            self.vals = vals
+            self.draw()
+        self._tick = getattr(self, "_tick", 0) + 1
+        if self._tick % 5 == 1:
+            try:
+                self.win.attributes("-topmost", True)
+                self.win.lift()
+            except tk.TclError:
+                pass
 
     def show(self, on):
         if on and not self.win:
@@ -858,16 +1076,18 @@ PAGES = [("conn", "🔗", "tab_conn", "sub_conn"), ("acc", "👤", "tab_acc", "s
 
 class App:
     def __init__(self):
-        global FONT, MONO, TITLE
+        global FONT, MONO, TITLE, SCALE
         self.cfg = load_cfg()
         self.session_start = time.time()
+        enable_dpi(); load_private_fonts()
         self.root = tk.Tk()
-        FONT = pick_font(self.root, "Segoe UI", "Inter", "Helvetica")
-        MONO = pick_font(self.root, "Consolas", "DejaVu Sans Mono", "Courier")
+        SCALE = max(1.0, self.root.winfo_fpixels("1i") / 96.0)
+        FONT = pick_font(self.root, "Segoe UI Variable Text", "Segoe UI", "Inter", "Helvetica")
+        MONO = pick_font(self.root, "Cascadia Mono", "Consolas", "DejaVu Sans Mono", "Courier")
         TITLE = pick_font(self.root, "Cinzel", "Trajan Pro", "Georgia", "Times")
         self.root.title("Wiz fan Club App")
-        self.root.geometry("940x620")
-        self.root.minsize(880, 580)
+        self.root.geometry("%dx%d" % (px(1000), px(660)))
+        self.root.minsize(px(920), px(600))
         self.root.configure(bg=C["bg"])
         self.root.protocol("WM_DELETE_WINDOW", self.quit)
         try:
@@ -893,9 +1113,73 @@ class App:
         if self.cfg.get("token"):
             threading.Thread(target=self.refresh_me, daemon=True).start()
         self.overlay.show(self.cfg["overlay"].get("show", True))
-        if self.cfg.get("start_min"):
+        if self.cfg.get("start_min") and not START_LINK:
             self.root.iconify()
+        register_protocol()
+        threading.Thread(target=self.ipc_server, daemon=True).start()
+        if START_LINK:
+            self.root.after(800, lambda: self.handle_link(START_LINK))
         self.tick()
+
+    # ---------- Ein-Klick-Verbindung ----------
+    def ipc_server(self):
+        try:
+            srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            srv.bind(("127.0.0.1", IPC_PORT)); srv.listen(2)
+        except OSError as e:
+            log("ipc: %s" % e); return
+        while True:
+            try:
+                c, _ = srv.accept()
+                with c:
+                    msg = c.recv(2000).decode("utf-8", "replace")
+                self.root.after(0, lambda m=msg: self.handle_link(m))
+            except Exception:
+                time.sleep(0.5)
+
+    def handle_link(self, msg):
+        self.show_main()
+        try:
+            self.root.attributes("-topmost", True); self.root.after(300, lambda: self.root.attributes("-topmost", False))
+        except tk.TclError:
+            pass
+        p = parse_link(msg)
+        if not p:
+            if str(msg).lower().startswith(PROTO + ":"):
+                messagebox.showerror(self.t("err"), self.t("link_bad"))
+            return
+        code, site = p
+        if not messagebox.askyesno("Wiz fan Club", self.t("link_ask", s=site)):
+            return
+        self.cfg["api_base"] = site
+        dev = (self.cfg.get("device_name") or self.default_dev_name())[:40]
+        self.cfg["device_name"] = dev; save_cfg(self.cfg)
+        self.page = "conn"; self.render(); self.flash(self.t("link_busy"))
+
+        def done(d, err):
+            if err:
+                messagebox.showerror(self.t("err"), str(err)); self.render(); return
+            self.cfg["token"] = d["token"]; self.cfg["user_name"] = (d.get("user") or {}).get("name", "")
+            save_cfg(self.cfg); self.page = "acc"
+            self.flash(self.t("link_ok", n=self.cfg["user_name"] or "?"))
+            self.run_bg(self.refresh_me)
+        self.run_bg(lambda: self.api("pair", {"code": code, "device_name": dev}, auth=False), done)
+
+    def auto_bind_main(self):
+        """Profil-ID gefunden und noch nicht gebunden -> automatisch als Main binden."""
+        prof = str(self.cfg.get("profile_gov") or "")
+        if not prof or not prof.isdigit() or not self.cfg.get("token"):
+            return
+        if any(str(x["governor_id"]) == prof for x in self.cfg.get("links", [])):
+            return
+        if int(prof) not in self.scanner.owners:
+            return
+        name = (self.scanner.owners.get(int(prof)) or {}).get("name", "")
+        try:
+            d = self.api("link", {"governor_id": prof, "gov_name": name, "kind": "main"})
+            self.cfg["links"] = d.get("links", []); save_cfg(self.cfg)
+        except Exception as e:
+            log("auto main: %s" % e)
 
     def t(self, k, **kw):
         s = TXT.get(self.cfg.get("lang", "de"), TXT["de"]).get(k, k)
@@ -918,6 +1202,8 @@ class App:
                 msg = json.loads(e.read().decode("utf-8")).get("error")
             except Exception:
                 msg = None
+            if e.code == 404 and not msg:
+                msg = self.t("err_404", u=self.cfg["api_base"])
             raise RuntimeError(msg or "HTTP %d" % e.code)
         except urllib.error.URLError as e:
             raise RuntimeError(str(e.reason))
@@ -941,6 +1227,7 @@ class App:
             self.cfg["profile_gov"] = str((d.get("user") or {}).get("profile_gov") or "")
             self.cfg["links"] = d.get("links", [])
             save_cfg(self.cfg)
+            self.auto_bind_main()
         except Exception as e:
             log("me: %s" % e)
             if "neu koppeln" in str(e):
@@ -953,37 +1240,47 @@ class App:
             if not isinstance(c, tk.Toplevel):
                 c.destroy()
         T = self.t
-        side = tk.Frame(self.root, bg=C["side"], width=200)
+        side = tk.Frame(self.root, bg=C["side"], width=px(220))
         side.pack(side="left", fill="y"); side.pack_propagate(False)
         tk.Frame(self.root, bg=C["line"], width=1).pack(side="left", fill="y")
-        tk.Label(side, text="WIZ FAN CLUB", bg=C["side"], fg=C["gold"], font=(TITLE, 15, "bold")).pack(anchor="w", padx=18, pady=(20, 0))
-        tk.Label(side, text="Battle App · v" + APP_VERSION, bg=C["side"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w", padx=18, pady=(0, 18))
+        head = tk.Frame(side, bg=C["side"]); head.pack(fill="x", padx=px(18), pady=(px(22), px(22)))
+        lg = tk.Canvas(head, width=px(44), height=px(44), bg=C["side"], highlightthickness=0); lg.pack(side="left")
+        draw_logo(lg, px(44))
+        tt = tk.Frame(head, bg=C["side"]); tt.pack(side="left", padx=(px(10), 0))
+        tk.Label(tt, text="WIZ FAN CLUB", bg=C["side"], fg=C["gold"], font=(TITLE, 13, "bold")).pack(anchor="w")
+        tk.Label(tt, text="Battle App · v" + APP_VERSION, bg=C["side"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w")
         self.nav = {}
         for key, ico, lab, _sub in PAGES:
-            row = tk.Frame(side, bg=C["side"], cursor="hand2")
-            row.pack(fill="x", pady=1)
-            bar = tk.Frame(row, bg=C["side"], width=3); bar.pack(side="left", fill="y")
-            l = tk.Label(row, text="%s   %s" % (ico, T(lab)), bg=C["side"], fg=C["muted"], font=(FONT, 10, "bold"), anchor="w", padx=14, pady=9)
-            l.pack(side="left", fill="x", expand=True)
-            for w in (row, l):
-                w.bind("<Button-1>", lambda e, k=key: self.go(k))
-                w.bind("<Enter>", lambda e, k=key: self._hover(k, True))
-                w.bind("<Leave>", lambda e, k=key: self._hover(k, False))
-            self.nav[key] = (row, bar, l)
-        foot = tk.Frame(side, bg=C["side"]); foot.pack(side="bottom", fill="x", padx=16, pady=14)
-        self.side_user = tk.Label(foot, text="", bg=C["side"], fg=C["text"], font=(FONT, 9, "bold"), anchor="w", justify="left", wraplength=170)
+            cv = tk.Canvas(side, height=px(40), bg=C["side"], highlightthickness=0, cursor="hand2")
+            cv.pack(fill="x", padx=px(12), pady=px(2))
+            cv.bind("<ButtonRelease-1>", lambda e, k=key: self.go(k))
+            cv.bind("<Enter>", lambda e, k=key: self._hover(k, True))
+            cv.bind("<Leave>", lambda e, k=key: self._hover(k, False))
+            cv.bind("<Configure>", lambda e, k=key: self._draw_nav(k))
+            self.nav[key] = {"cv": cv, "txt": "%s   %s" % (ico, T(lab)), "hover": False}
+        foot = Card(side, pad=12, fill=C["card"], radius=14)
+        foot.pack(side="bottom", fill="x", padx=px(12), pady=px(14))
+        self.side_user = tk.Label(foot.body, text="", bg=C["card"], fg=C["text"], font=(FONT, 9, "bold"), anchor="w", justify="left", wraplength=px(170))
         self.side_user.pack(anchor="w")
-        self.status = tk.Label(foot, text="", bg=C["side"], fg=C["dim"], font=(FONT, 8), anchor="w", justify="left", wraplength=170)
-        self.status.pack(anchor="w", pady=(4, 0))
+        self.status = tk.Label(foot.body, text="", bg=C["card"], fg=C["dim"], font=(FONT, 8), anchor="w", justify="left", wraplength=px(170))
+        self.status.pack(anchor="w", pady=(px(4), 0))
         self.main = tk.Frame(self.root, bg=C["bg"])
         self.main.pack(side="left", fill="both", expand=True)
         self.render()
 
+    def _draw_nav(self, k):
+        n = self.nav[k]; cv = n["cv"]
+        w, h = cv.winfo_width(), int(cv["height"])
+        if w < 4:
+            return
+        act = k == self.page
+        cv.delete("all")
+        if act or n["hover"]:
+            rrect(cv, 1, 1, w - 1, h - 1, px(12), fill=C["gold_dim"] if act else C["card"], outline=C["gold2"] if act else "")
+        cv.create_text(px(16), h / 2, text=n["txt"], anchor="w", fill=C["gold"] if act else (C["text"] if n["hover"] else C["muted"]), font=(FONT, 10, "bold"))
+
     def _hover(self, k, on):
-        row, bar, l = self.nav[k]
-        if k != self.page:
-            for w in (row, l):
-                w.configure(bg=C["card"] if on else C["side"])
+        self.nav[k]["hover"] = on; self._draw_nav(k)
 
     def go(self, page):
         self.page = page
@@ -992,10 +1289,8 @@ class App:
     def render(self):
         if not hasattr(self, "main"):
             return
-        for k, (row, bar, l) in self.nav.items():
-            act = k == self.page
-            row.configure(bg=C["card2"] if act else C["side"]); l.configure(bg=C["card2"] if act else C["side"], fg=C["gold"] if act else C["muted"])
-            bar.configure(bg=C["gold"] if act else C["side"])
+        for k in self.nav:
+            self._draw_nav(k)
         if self.cfg.get("token"):
             self.side_user.configure(text="● " + (self.cfg.get("user_name") or "?"), fg=C["good"])
         else:
@@ -1003,11 +1298,13 @@ class App:
         for c in self.main.winfo_children():
             c.destroy()
         key, ico, lab, sub = next(p for p in PAGES if p[0] == self.page)
-        hd = tk.Frame(self.main, bg=C["bg"]); hd.pack(fill="x", padx=26, pady=(22, 12))
-        tk.Label(hd, text=self.t(lab), bg=C["bg"], fg=C["text"], font=(FONT, 18, "bold")).pack(anchor="w")
-        tk.Label(hd, text=self.t(sub), bg=C["bg"], fg=C["muted"], font=(FONT, 10)).pack(anchor="w")
-        body = tk.Frame(self.main, bg=C["bg"]); body.pack(fill="both", expand=True, padx=26, pady=(0, 20))
+        hd = tk.Frame(self.main, bg=C["bg"]); hd.pack(fill="x", padx=px(30), pady=(px(26), px(14)))
+        tk.Label(hd, text=self.t(lab), bg=C["bg"], fg=C["text"], font=(FONT, 20, "bold")).pack(anchor="w")
+        tk.Label(hd, text=self.t(sub), bg=C["bg"], fg=C["muted"], font=(FONT, 10)).pack(anchor="w", pady=(px(2), 0))
+        tk.Frame(hd, bg=C["gold2"], height=2, width=px(48)).pack(anchor="w", pady=(px(10), 0))
+        body = tk.Frame(self.main, bg=C["bg"]); body.pack(fill="both", expand=True, padx=px(30), pady=(0, px(22)))
         getattr(self, "page_" + key)(body)
+        self._owners_keys = tuple(sorted(self.scanner.owners))
 
     # ---------- Seiten ----------
     def page_conn(self, body):
@@ -1027,7 +1324,8 @@ class App:
             tk.Label(c, text="○ " + T("not_conn"), bg=C["card"], fg=C["muted"], font=(FONT, 10), wraplength=560, justify="left").pack(anchor="w")
         o, c = card(body, T("card_new")); o.pack(fill="x", pady=14)
         left = tk.Frame(c, bg=C["card"]); left.pack(side="left", fill="y")
-        tk.Label(left, text=T("steps"), bg=C["card"], fg=C["text"], font=(FONT, 10), justify="left").pack(anchor="w")
+        tk.Label(left, text=T("steps1"), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold"), justify="left", wraplength=px(430)).pack(anchor="w", pady=(0, px(8)))
+        tk.Label(left, text=T("steps"), bg=C["card"], fg=C["muted"], font=(FONT, 9), justify="left").pack(anchor="w")
         tk.Label(left, text=T("site"), bg=C["card"], fg=C["muted"], font=(FONT, 8, "bold")).pack(anchor="w", pady=(14, 2))
         self.v_site = tk.StringVar(value=self.cfg["api_base"])
         r = tk.Frame(left, bg=C["card"]); r.pack(anchor="w")
@@ -1042,7 +1340,7 @@ class App:
         e = entry(right, self.v_code, 8, big=True, center=True); e.pack(ipady=6, pady=4)
         e.bind("<Return>", lambda _e: self.pair())
         self.v_code.trace_add("write", lambda *_: self.v_code.get() != self.v_code.get().upper()[:6] and self.v_code.set(self.v_code.get().upper()[:6]))
-        self.btn_pair = Btn(right, T("pair"), self.pair); self.btn_pair.pack(fill="x", pady=(4, 0))
+        self.btn_pair = Btn(right, T("pair"), self.pair, width=e.winfo_reqwidth()); self.btn_pair.pack(pady=(px(6), 0))
 
     def page_acc(self, body):
         T = self.t
@@ -1062,13 +1360,15 @@ class App:
         for pid, o in sorted(owners.items(), key=lambda kv: (str(kv[0]) != prof, -kv[1].get("last", 0))):
             ln = links.get(str(pid))
             kind = (ln or {}).get("kind") or ("alt" if ln else None)
-            row = tk.Frame(sc.inner, bg=C["card"], highlightthickness=1, highlightbackground=kcol.get(kind, C["line"]) if ln else C["line"])
-            row.pack(fill="x", pady=4, padx=(0, 6))
+            rc = Card(sc.inner, pad=10, border=kcol.get(kind, C["line"]) if ln else C["line"], radius=14)
+            rc.pack(fill="x", pady=px(4), padx=(0, px(6)))
+            row = rc.body
             name = o.get("name") or "?"
-            av = tk.Canvas(row, width=40, height=40, bg=C["card"], highlightthickness=0); av.pack(side="left", padx=12, pady=10)
+            A = px(42)
+            av = tk.Canvas(row, width=A, height=A, bg=C["card"], highlightthickness=0); av.pack(side="left", padx=(px(4), px(12)))
             col = kcol.get(kind, C["muted"]) if ln else C["muted"]
-            av.create_oval(2, 2, 38, 38, fill=C["card2"], outline=col)
-            av.create_text(20, 20, text=name[:1].upper(), fill=col, font=(FONT, 13, "bold"))
+            av.create_oval(2, 2, A - 2, A - 2, fill=C["card2"], outline=col, width=2)
+            av.create_text(A / 2, A / 2, text=name[:1].upper(), fill=col, font=(FONT, 13, "bold"))
             info = tk.Frame(row, bg=C["card"]); info.pack(side="left", fill="x", expand=True)
             top = tk.Frame(info, bg=C["card"]); top.pack(anchor="w")
             tk.Label(top, text=name, bg=C["card"], fg=C["text"], font=(FONT, 11, "bold")).pack(side="left")
@@ -1080,7 +1380,7 @@ class App:
             tk.Label(info, text="ID %s  ·  %s" % (pid, T("reports", n=o.get("mails", 0), t=last)), bg=C["card"], fg=C["dim"], font=(FONT, 9)).pack(anchor="w")
             if ln and ln.get("status") == "pending":
                 tk.Label(info, text=T("pending_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w")
-            btns = tk.Frame(row, bg=C["card"]); btns.pack(side="right", padx=12)
+            btns = tk.Frame(row, bg=C["card"]); btns.pack(side="right", padx=px(4))
             if ln:
                 Btn(btns, T("unbind"), lambda p=pid: self.bind_acc(p, False), "ghost", small=True).pack(side="right")
             elif prof and str(pid) == prof:
@@ -1128,8 +1428,9 @@ class App:
         for m in mks[:150]:
             ball = m["_ball"]
             fresh = time.time() - m["t"] < 1800
-            row = tk.Frame(sc.inner, bg=C["card"], highlightthickness=1, highlightbackground=C["bad"] if ball else C["line"])
-            row.pack(fill="x", pady=3, padx=(0, 6))
+            rc = Card(sc.inner, pad=10, border=C["bad"] if ball else C["line"], radius=14)
+            rc.pack(fill="x", pady=px(4), padx=(0, px(6)))
+            row = rc.body
             left = tk.Frame(row, bg=C["card"]); left.pack(side="left", padx=12, pady=8)
             tk.Label(left, text="🎯" if ball else "📍", bg=C["card"], fg=C["text"], font=(FONT, 16)).pack()
             info = tk.Frame(row, bg=C["card"]); info.pack(side="left", fill="x", expand=True, pady=6)
@@ -1142,7 +1443,7 @@ class App:
                 tk.Label(info, text=m["text"], bg=C["card"], fg=C["text"], font=(FONT, 10), wraplength=520, justify="left").pack(anchor="w")
             meta = " · ".join(x for x in (T("mk_by", n=m["by"]) if m.get("by") else "", datetime.fromtimestamp(m["t"]).strftime("%d.%m. %H:%M") if m.get("t") else "", m.get("title", "")) if x)
             tk.Label(info, text=meta, bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w")
-            Btn(row, "📋 " + T("mk_copy"), lambda m=m: self.copy_xy(m), "ghost", small=True).pack(side="right", padx=12)
+            Btn(row, "📋 " + T("mk_copy"), lambda m=m: self.copy_xy(m), "ghost", small=True).pack(side="right", padx=px(4))
         o, c = card(body, None); o.pack(fill="x", pady=(10, 0))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
         tk.Label(r, text=T("mk_words"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
@@ -1317,6 +1618,7 @@ class App:
         self.run_bg(lambda: self.api("link" if on else "unlink", {"governor_id": str(pid), "gov_name": name, "kind": kind}), done)
 
     def set_opt(self, key, val):
+        self._sig = None
         self.cfg["overlay"][key] = val
         save_cfg(self.cfg)
         if key == "show":
@@ -1355,6 +1657,7 @@ class App:
         self.overlay.draw()
 
     def set_range(self, rk):
+        self._sig = None
         self.cfg["overlay"]["range"] = rk; save_cfg(self.cfg)
         if self.page == "ov":
             for k, ch in self.range_chips.items():
@@ -1376,6 +1679,7 @@ class App:
             pass
 
     def reset_session(self):
+        self._sig = None
         self.session_start = time.time()
         self.set_range("r_session")
 
@@ -1443,9 +1747,15 @@ class App:
                      and (x.get("kind") != "pilot" or ov.get("count_pilot"))]
             ids = {int(x["governor_id"]) for x in links} if self.cfg.get("links") else None    # None = alle Accounts
             with self.scanner.lock:
-                bs = list(self.scanner.battles.values())
-            with self.scanner.lock:
                 nm, self.scanner.new_markers = self.scanner.new_markers, []
+                nb = len(self.scanner.battles)
+            sig = (nb, rng, since if rng != "r_24h" and rng != "r_7d" else int(since // 60), ov.get("pvp_only", True),
+                   tuple(sorted(ids)) if ids is not None else None, self.cfg.get("lang"), int(now // 30))
+            if sig != getattr(self, "_sig", None):
+                self._sig = sig
+                with self.scanner.lock:
+                    bs = list(self.scanner.battles.values())
+                self._vals = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
             words = self.ball_words()
             for mk in sorted(nm, key=lambda m: m["t"]):
                 ball = is_ball(mk, words)
@@ -1453,15 +1763,13 @@ class App:
                     self.alarm(mk, ball)
                 elif self.page == "mk":
                     self.render()
-            vals = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
-            self.overlay.update(vals)
+            self.overlay.update(self._vals)
             msg, ts = self._flash
             self.status.configure(text=msg if msg and now - ts < 8 else self.scanner.status)
             self._ticks = getattr(self, "_ticks", 0) + 1
-            if self._ticks % 10 == 0 and self.page == "acc":
-                n = sum(o.get("mails", 0) for o in self.scanner.owners.values())
-                if n != getattr(self, "_owners_n", -1):
-                    self._owners_n = n; self.render()
+            if self._ticks % 5 == 0 and self.page == "acc":           # nur neu zeichnen, wenn ein neuer Account auftaucht
+                if tuple(sorted(self.scanner.owners)) != getattr(self, "_owners_keys", None):
+                    self.render()
         except Exception:
             log("tick:\n" + traceback.format_exc())
         self.root.after(1000, self.tick)
@@ -1473,7 +1781,11 @@ class App:
 
 FONT, MONO, TITLE = "Segoe UI", "Consolas", "Georgia"
 
+START_LINK = next((a for a in sys.argv[1:] if a.lower().startswith(PROTO + ":")), "")
+
 if __name__ == "__main__":
+    if hand_over(START_LINK):        # App laeuft schon -> Link dorthin, diese Kopie endet
+        sys.exit(0)
     try:
         App().root.mainloop()
     except Exception:
