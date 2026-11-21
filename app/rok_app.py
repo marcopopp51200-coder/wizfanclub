@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wiz fan Club App (Testversion 0.7)
+Wiz fan Club App (Testversion 0.11)
 ----------------------------------
 * Verbinden: Code von der Website (uploader.html) eingeben -> App ist mit deinem Account gekoppelt.
 * Accounts: erkennt die Governor-IDs aus dem Mailcache und bindet sie an deinen Website-Account.
@@ -10,14 +10,14 @@ Wiz fan Club App (Testversion 0.7)
 Liest nur Dateien im Ordner <Spiel>\\save\\mailcache. Veraendert nichts am Spiel, liest keinen Netzwerkverkehr.
 Braucht nur Python 3 (tkinter ist dabei). Start ohne Konsolenfenster: pythonw rok_app.py
 """
-import glob, json, os, struct, sys, threading, time, traceback
+import glob, json, os, re, struct, sys, threading, time, traceback
 import urllib.request, urllib.error
 from datetime import datetime, date
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.7-test"
+APP_VERSION = "0.11-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -51,7 +51,11 @@ def log(msg):
 # ---------------------------------------------------------------- Texte DE / EN
 TXT = {
     "de": {
-        "title": "Wiz fan Club App", "tab_conn": "Verbinden", "tab_acc": "Accounts", "tab_ov": "Overlay", "tab_set": "Einstellungen",
+        "tab_home": "Übersicht", "sub_home": "Deine Werte und die neuesten Ball-Marker auf einen Blick.", "h_last": "Letzter Kampf & Zeitraum",
+    "h_noball": "Noch kein Ball-Marker. Neue erscheinen hier und im Overlay.", "off": "Aus",
+    "ov_source": "Zahlen von", "src_web": "Website", "src_local": "nur PC", "ov_style": "Stil", "st_tiles": "Kacheln", "st_list": "Liste", "st_bar": "Leiste",
+    "ov_balls": "Ball-Marker", "ov_ball_n": "Ball-Marker im Overlay", "mk_clear": "Alle löschen", "mk_keep": "Ball-Marker behalten",
+    "title": "Wiz fan Club App", "tab_conn": "Verbinden", "tab_acc": "Accounts", "tab_ov": "Overlay", "tab_set": "Einstellungen",
         "site": "Website-Adresse", "code": "Code von der Website", "pair": "Verbinden", "connected": "Verbunden als {n}",
         "not_conn": "Nicht verbunden. Öffne auf der Website die Seite „App verbinden“ (/uploader.html), erzeuge einen Code und gib ihn hier ein.",
         "disconnect": "Trennen", "open_page": "Seite öffnen",
@@ -76,7 +80,11 @@ TXT = {
         "no_data": "noch keine Kämpfe",
     },
     "en": {
-        "title": "Wiz fan Club App", "tab_conn": "Connect", "tab_acc": "Accounts", "tab_ov": "Overlay", "tab_set": "Settings",
+        "tab_home": "Overview", "sub_home": "Your stats and the latest ball markers at a glance.", "h_last": "Last battle & period",
+    "h_noball": "No ball marker yet. New ones appear here and in the overlay.", "off": "Off",
+    "ov_source": "Numbers from", "src_web": "Website", "src_local": "PC only", "ov_style": "Style", "st_tiles": "Tiles", "st_list": "List", "st_bar": "Bar",
+    "ov_balls": "Ball markers", "ov_ball_n": "Ball markers in overlay", "mk_clear": "Delete all", "mk_keep": "Keep ball markers",
+    "title": "Wiz fan Club App", "tab_conn": "Connect", "tab_acc": "Accounts", "tab_ov": "Overlay", "tab_set": "Settings",
         "site": "Website address", "code": "Code from the website", "pair": "Connect", "connected": "Connected as {n}",
         "not_conn": "Not connected. On the website open “Connect the app” (/uploader.html), create a code and enter it here.",
         "disconnect": "Disconnect", "open_page": "Open page",
@@ -110,9 +118,9 @@ DEFAULT_CFG = {
     "game_folders": [], "links": [],
     "overlay": {"show": True, "x": 60, "y": 60, "alpha": 0.85, "locked": False, "size": 11,
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
-                "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False},
+                "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web"},
     "upload": False, "upload_days": 14, "start_min": False,
-    "markers": {"filter": "all", "sort": "new", "words": "ball, garrison, garni, stack, def, rally", "sound": True, "overlay": True,
+    "markers": {"filter": "all", "sort": "new", "keep_ball": 5, "words": "ball, garrison, garni, stack, def, rally", "sound": True, "overlay": True,
                 "alarm_all": False, "show_min": 10},
 }
 
@@ -189,9 +197,16 @@ def _rd(b, i):
     raise ValueError("Typ %d" % t)
 
 
+_OWNER_RE = re.compile(rb"player_(\d{5,12})")
+_MARK_RE = re.compile(rb"(?i)mark|sign|flag")
+
+
 def read_mail(path):
     with open(path, "rb") as f:
-        b = f.read()
+        return read_mail_bytes(f.read())
+
+
+def read_mail_bytes(b):
     start = b.find(b"\x05\x04")
     while 0 <= start <= 32:
         n = struct.unpack_from("<I", b, start + 2)[0] if start + 6 <= len(b) else 0
@@ -371,6 +386,8 @@ class Scanner:
         self.markers = {}     # schluessel -> marker
         self.samples = deque(maxlen=12)   # Pfade der letzten Nicht-Kampf-Mails (fuer Beispiel-Export)
         self.new_markers = []             # waehrend die App laeuft neu dazugekommen
+        self.deleted = set()              # vom Nutzer geloeschte Marker (kommen nicht wieder)
+        self.dirty, self.saved_at = False, 0.0
         self.owners = {}      # pid -> {"name", "mails", "last"}
         self.uploaded = set()
         self.status = ""
@@ -384,14 +401,56 @@ class Scanner:
             if d.get("v") == CACHE_VER:
                 self.seen, self.battles = d.get("seen", {}), d.get("battles", {})
                 self.markers = d.get("markers", {})
+                self.deleted = set(d.get("deleted", []))
+                for k, m in self.markers.items():
+                    m["key"] = k
                 self.owners = {int(k): v for k, v in d.get("owners", {}).items()}
                 self.uploaded = set(d.get("uploaded", []))
         except Exception:
             pass
 
-    def save(self):
+    def add_marker(self, mk):
+        mkey = "%d_%d_%s" % (mk["x"], mk["y"], mk["text"][:30])   # gleicher Marker bei Main + Filler nur einmal
         with self.lock:
-            d = {"v": CACHE_VER, "seen": self.seen, "battles": self.battles, "markers": self.markers, "owners": self.owners, "uploaded": sorted(self.uploaded)}
+            if mkey in self.deleted:
+                return
+            old = self.markers.get(mkey)
+            if old and mk["t"] <= old["t"] + 600:                  # schon bekannt
+                return
+            mk["key"] = mkey
+            self.markers[mkey] = mk
+            self.dirty = True
+            if self.app.started and mk["t"] >= self.app.started - 300:
+                self.new_markers.append(mk)
+        self.prune_markers()
+
+    def prune_markers(self):
+        """Nur die neuesten Ball-Marker (Standard 5) und 60 normale behalten – aeltere loeschen sich selbst."""
+        keep_b = max(1, int(self.app.cfg["markers"].get("keep_ball", 5)))
+        words = self.app.ball_words()
+        with self.lock:
+            items = sorted(self.markers.items(), key=lambda kv: -kv[1]["t"])
+            nb = nn = 0
+            for k, m in items:
+                if is_ball(m, words):
+                    nb += 1
+                    if nb > keep_b:
+                        del self.markers[k]
+                else:
+                    nn += 1
+                    if nn > 60:
+                        del self.markers[k]
+
+    def delete_marker(self, key):
+        with self.lock:
+            self.markers.pop(key, None)
+            self.deleted.add(key)
+            self.dirty = True
+
+    def save(self):
+        self.saved_at = time.time(); self.dirty = False
+        with self.lock:
+            d = {"v": CACHE_VER, "seen": self.seen, "battles": self.battles, "markers": self.markers, "deleted": sorted(self.deleted)[-500:], "owners": self.owners, "uploaded": sorted(self.uploaded)}
         try:
             tmp = CACHE_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -427,23 +486,29 @@ class Scanner:
                     time.sleep(0.004)            # beim grossen Einlesen Luft lassen -> Fenster und Spiel ruckeln nicht
                 if i % 200 == 0 and len(todo) > 200:
                     self.status = T("status_scan", n="%d/%d" % (i, len(todo)))
+                m = s = mk = None
                 try:
-                    m = read_mail(path)
-                except Exception:
-                    m = None
-                s = summarize(m)
-                own = owner_of(m)
-                mk = None if s else marker_of(m)
-                if not s and isinstance(m, dict):
+                    with open(path, "rb") as f:
+                        raw = f.read()
+                except OSError:
+                    raw = b""
+                is_battle = b"Battle" in raw
+                is_mark = not is_battle and _MARK_RE.search(raw) is not None
+                if is_battle or is_mark:            # nur diese Mails komplett entschluesseln (spart ~90 % Rechenzeit)
+                    try:
+                        m = read_mail_bytes(raw)
+                    except Exception:
+                        m = None
+                    s = summarize(m) if is_battle else None
+                    mk = None if s else marker_of(m)
+                if is_mark or (b"Alliance" in raw and not is_battle):
                     self.samples.append(path)
+                own = owner_of(m) if m else None
+                if own is None:
+                    om = _OWNER_RE.search(raw[:4000])
+                    own = int(om.group(1)) if om else None
                 if mk:
-                    mkey = "%d_%d_%s" % (mk["x"], mk["y"], mk["text"][:30])   # gleicher Marker bei Main + Filler nur einmal
-                    with self.lock:
-                        old = self.markers.get(mkey)
-                        if not old or mk["t"] > old["t"] + 600:              # neu oder spaeter erneut gesetzt
-                            self.markers[mkey] = mk
-                            if self.app.started and mk["t"] >= self.app.started - 300:
-                                self.new_markers.append(mk)
+                    self.add_marker(mk)
                 with self.lock:
                     self.seen[key] = sig
                     if own:
@@ -459,7 +524,7 @@ class Scanner:
                         if s["id"] not in self.battles:
                             new += 1
                         self.battles[s["id"]] = s
-                if i and i % 2000 == 0:          # beim ersten grossen Einlesen zwischendurch sichern
+                if i and i % 3000 == 0:          # beim ersten grossen Einlesen zwischendurch sichern
                     self.save()
         if new:
             self.last_new = time.time()
@@ -478,13 +543,47 @@ class Scanner:
         while True:
             try:
                 n = self.scan_once()
-                if n:
+                if (n or self.dirty) and time.time() - self.saved_at > 30:     # hoechstens alle 30 s auf die Platte
                     self.save()
                 if self.app.cfg.get("upload") and self.app.cfg.get("token"):
                     self.upload_new()
             except Exception:
                 log("scan:\n" + traceback.format_exc())
-            time.sleep(5)
+            self.wait_change(5)
+
+    # ---------- sofort reagieren, sobald das Spiel eine neue Mail speichert ----------
+    def wait_change(self, timeout):
+        """Wartet, bis Windows meldet, dass sich im mailcache etwas getan hat (max. timeout Sekunden).
+        So kommen neue Marker und Kaempfe sofort – statt nur alle paar Sekunden nachzuschauen."""
+        if not IS_WIN:
+            time.sleep(2); return
+        try:
+            import ctypes
+            from ctypes import wintypes
+            k = ctypes.windll.kernel32
+            k.FindFirstChangeNotificationW.restype = wintypes.HANDLE
+            dirs = tuple(os.path.join(g, "save", "mailcache") for g in self.app.cfg["game_folders"]
+                         if os.path.isdir(os.path.join(g, "save", "mailcache")))
+            if dirs != getattr(self, "_w_dirs", None):            # Ordner geaendert -> Beobachter neu anlegen
+                for h in getattr(self, "_w_handles", []):
+                    k.FindCloseChangeNotification(h)
+                self._w_handles = []
+                for d in dirs:
+                    h = k.FindFirstChangeNotificationW(d, False, 0x1 | 0x10)   # neue Datei / Datei geschrieben
+                    if h and h != wintypes.HANDLE(-1).value:
+                        self._w_handles.append(h)
+                self._w_dirs = dirs
+            hs = self._w_handles
+            if not hs:
+                time.sleep(timeout); return
+            arr = (wintypes.HANDLE * len(hs))(*hs)
+            r = k.WaitForMultipleObjects(len(hs), arr, False, int(timeout * 1000))
+            if 0 <= r < len(hs):
+                k.FindNextChangeNotification(hs[r])
+                time.sleep(0.25)          # kurz warten, bis das Spiel die Datei fertig geschrieben hat
+        except Exception as e:
+            log("watch: %s" % e)
+            time.sleep(timeout)
 
     # ---------- Hochladen ueber die Website-API (fuer Freunde) ----------
     def upload_new(self):
@@ -579,6 +678,10 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
             last_t = b["t"]
             last_kp = sum(f[1] for f in b["fights"] if f[0])
             last_enemy = next((f[10] for f in b["fights"] if f[0] and f[10]), "")
+    return fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang)
+
+
+def fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang):
     span = (t_last - t_first) if t_first and t_last else 0
     hours = span / 3600 if span >= 600 else 0            # erst ab 10 Min. Kampfzeit sinnvoll
     F = lambda v: fmt_num(v, lang)
@@ -629,7 +732,7 @@ TXT["de"].update({
     "mk_copy": "Kopieren", "mk_copied": "Koordinaten kopiert", "mk_ago_m": "vor {n} Min.", "mk_ago_h": "vor {n} Std.", "mk_ago_d": "vor {n} Tg.",
     "mk_words": "Ball-Wörter (mit Komma)", "mk_sound": "Ton bei neuem Ball-Marker", "mk_overlay": "Neuen Ball-Marker im Overlay zeigen",
     "mk_export": "Beispiel speichern", "mk_exported": "Gespeichert: {p}", "mk_by": "von {n}", "mk_new_ball": "NEUER BALL", "mk_new": "Neuer Marker",
-    "mk_all_alarm": "Alarm auch bei normalen Markern",
+    "mk_all_alarm": "Alarm auch bei normalen Markern", "mk_clear": "Alle löschen", "mk_keep": "Ball-Marker behalten",
     "kinds_info": "Main = die ID aus deinem Website-Profil · Zweitaccount = gehört auch dir (Filler, Farm) · Pilot = Account eines anderen, den du spielst",
 })
 TXT["en"].update({
@@ -653,9 +756,20 @@ TXT["en"].update({
     "mk_copy": "Copy", "mk_copied": "Coordinates copied", "mk_ago_m": "{n} min ago", "mk_ago_h": "{n} h ago", "mk_ago_d": "{n} d ago",
     "mk_words": "Ball words (comma separated)", "mk_sound": "Sound on new ball marker", "mk_overlay": "Show new ball marker in overlay",
     "mk_export": "Save example", "mk_exported": "Saved: {p}", "mk_by": "by {n}", "mk_new_ball": "NEW BALL", "mk_new": "New marker",
-    "mk_all_alarm": "Alert for normal markers too",
+    "mk_all_alarm": "Alert for normal markers too", "mk_clear": "Delete all", "mk_keep": "Keep ball markers",
     "kinds_info": "Main = the ID from your website profile · Alt = also yours (filler, farm) · Pilot = someone else's account that you play",
 })
+
+
+def web_vals(st, local, lang):
+    """Summen von der Website + 'letzter Kampf' vom PC (der ist lokal immer am aktuellsten)."""
+    tot = {k: float(st.get(k) or 0) for k in ("kp", "ekp", "dead", "sev", "wnd", "edead", "esev", "pw", "epw", "pvp", "pve", "kp_all")}
+    v = fmt_totals(tot, st.get("first"), st.get("last"), None, "", lang)
+    for k in ("m_kp_last", "m_last_enemy"):
+        v[k] = local.get(k, "–")
+    v["_n"] = local.get("_n", 0)
+    v["_src"] = "web"
+    return v
 
 
 # ---------------------------------------------------------------- Design-Bausteine (rund, scharf auf hochaufloesenden Bildschirmen)
@@ -905,7 +1019,81 @@ def draw_logo(cv, size):
     cv.create_text(s / 2, s / 2 + 1, text="W", fill=C["gold"], font=(TITLE, int(s / SCALE * 0.42), "bold"))
 
 
+class MarkerList(tk.Canvas):
+    """Alle Marker auf EINER Zeichenflaeche – auch bei vielen Eintraegen fluessig."""
+    ROW = 78
+
+    def __init__(self, parent, app):
+        super().__init__(parent, bg=C["bg"], highlightthickness=0, bd=0)
+        self.app, self.items = app, []
+        self.bind("<Configure>", lambda e: self.draw())
+        self.bind("<MouseWheel>", lambda e: self.yview_scroll(int(-e.delta / 120) * 2, "units"))
+        self.bind("<Button-4>", lambda e: self.yview_scroll(-2, "units"))
+        self.bind("<Button-5>", lambda e: self.yview_scroll(2, "units"))
+        self.configure(yscrollincrement=px(20))
+
+    def set(self, items):
+        self.items = items; self.draw()
+
+    def _btn(self, x2, y, label, tag, col, cmd):
+        f = (FONT, 9, "bold")
+        w = tkfont.Font(font=f).measure(label) + px(22)
+        x1 = x2 - w
+        rrect(self, x1, y - px(14), x2, y + px(14), px(12), fill=C["card2"], outline=C["line2"], tags=(tag, tag + "b"))
+        self.create_text((x1 + x2) / 2, y, text=label, fill=col, font=f, tags=(tag,))
+        self.tag_bind(tag, "<ButtonRelease-1>", lambda e: cmd())
+        self.tag_bind(tag, "<Enter>", lambda e: (self.itemconfigure(tag + "b", fill=C["line2"]), self.configure(cursor="hand2")))
+        self.tag_bind(tag, "<Leave>", lambda e: (self.itemconfigure(tag + "b", fill=C["card2"]), self.configure(cursor="")))
+        return x1
+
+    def draw(self):
+        self.delete("all")
+        W = self.winfo_width()
+        if W < 50:
+            return
+        T, R, gap = self.app.t, px(self.ROW), px(8)
+        if not self.items:
+            self.create_text(px(4), px(20), text=T("mk_none"), anchor="nw", fill=C["dim"], font=(FONT, 10), width=W - px(20))
+            self.configure(scrollregion=(0, 0, W, px(80)))
+            return
+        now = time.time()
+        for i, m in enumerate(self.items):
+            y0 = i * (R + gap)
+            ball, fresh = m.get("_ball"), now - m["t"] < 1800
+            rrect(self, 1, y0 + 1, W - px(8), y0 + R, px(14), fill=C["card"], outline=C["bad"] if ball else C["line"])
+            if ball:
+                rrect(self, 1, y0 + 1, px(6), y0 + R, px(3), fill=C["bad"], outline="")
+            cy = y0 + R / 2
+            self.create_text(px(26), cy, text="🎯" if ball else "📍", font=(FONT, 16), fill=C["text"])
+            x = px(52)
+            t1 = self.create_text(x, y0 + px(12), text="X %d · Y %d" % (m["x"], m["y"]), anchor="nw", fill=C["gold"], font=(FONT, 11, "bold"))
+            bx = self.bbox(t1)[2] + px(10)
+            if ball:
+                rrect(self, bx, y0 + px(13), bx + px(44), y0 + px(31), px(9), fill=C["bad"], outline="")
+                self.create_text(bx + px(22), y0 + px(22), text="BALL", fill="#0b0e16", font=(FONT, 8, "bold"))
+                bx += px(54)
+            self.create_text(bx, y0 + px(14), text=self.app.ago(m["t"]), anchor="nw", fill=C["good"] if fresh else C["dim"],
+                             font=(FONT, 9, "bold" if fresh else "normal"))
+            txt = (m.get("text") or "").replace("\n", " ")
+            bx2 = W - px(20)
+            k = m.get("key", "")
+            bx2 = self._btn(bx2, cy, "✕", "del%d" % i, C["muted"], lambda k=k: self.app.del_marker(k)) - px(6)
+            bx2 = self._btn(bx2, cy, "📋 " + T("mk_copy"), "cp%d" % i, C["text"], lambda m=m: self.app.copy_xy(m))
+            self.create_text(x, y0 + px(36), text=txt[:90] + ("…" if len(txt) > 90 else ""), anchor="nw", fill=C["text"], font=(FONT, 10),
+                             width=bx2 - x - px(12))
+            meta = " · ".join(v for v in (T("mk_by", n=m["by"]) if m.get("by") else "",
+                                           datetime.fromtimestamp(m["t"]).strftime("%d.%m. %H:%M") if m.get("t") else "") if v)
+            self.create_text(x, y0 + R - px(10), text=meta, anchor="sw", fill=C["dim"], font=(FONT, 8))
+        self.configure(scrollregion=(0, 0, W, len(self.items) * (R + gap)))
+
+
 # ---------------------------------------------------------------- Overlay-Fenster
+ICONS = {"m_kp": "⚔", "m_kp_all": "Σ", "m_kp_last": "⚡", "m_kp_trade": "⚖", "m_loss_trade": "🩸", "m_power_trade": "💪",
+         "m_dead": "💀", "m_severe": "✚", "m_wounded": "🩹", "m_enemy_out": "☠", "m_enemy_dead": "✝", "m_pvp": "🗡",
+         "m_pve": "🐗", "m_kph": "⏱", "m_last_enemy": "👤"}
+OV_STYLES = ["tiles", "list", "bar"]
+
+
 class Overlay:
     PAD = 12
 
@@ -916,6 +1104,7 @@ class Overlay:
         self.flash_until = 0
         self.alert = None           # (marker, ball, bis)
         self._drawn = None
+        self.hwnd = None
 
     def build(self):
         ov = self.app.cfg["overlay"]
@@ -932,74 +1121,231 @@ class Overlay:
                 pass
         self.cv = tk.Canvas(w, bg=bg, highlightthickness=0, bd=0)
         self.cv.pack()
-        w.geometry("+%d+%d" % (int(ov.get("x", 60)), int(ov.get("y", 60))))
+        x, y = self._on_screen(int(ov.get("x", 60)), int(ov.get("y", 60)))
+        w.geometry("+%d+%d" % (x, y))
         self.cv.bind("<ButtonPress-1>", self._start)
         self.cv.bind("<B1-Motion>", self._move)
         self.cv.bind("<ButtonRelease-1>", self._stop)
         self.cv.bind("<Button-3>", self._menu)
         self.cv.bind("<Double-Button-1>", lambda e: self.alert and self.app.copy_xy(self.alert[0]))
+        self._drawn = None
         self.draw()
+        if IS_WIN:
+            w.after(200, self._win_style)
+
+    # ---------- immer sichtbar bleiben ----------
+    def _on_screen(self, x, y):
+        """Position zurueck auf den Bildschirm holen (z. B. nach Wechsel von 2 auf 1 Monitor)."""
+        r = self.app.root
+        try:
+            if IS_WIN:
+                import ctypes
+                u = ctypes.windll.user32
+                vx, vy, vw, vh = u.GetSystemMetrics(76), u.GetSystemMetrics(77), u.GetSystemMetrics(78), u.GetSystemMetrics(79)
+            else:
+                vx, vy, vw, vh = 0, 0, r.winfo_screenwidth(), r.winfo_screenheight()
+            x = min(max(x, vx), vx + vw - px(120)); y = min(max(y, vy), vy + vh - px(60))
+        except Exception:
+            pass
+        return x, y
+
+    def _win_style(self):
+        """Werkzeugfenster: kein Taskleisten-Eintrag, klaut dem Spiel nicht den Fokus, bleibt ganz oben."""
+        try:
+            import ctypes
+            u = ctypes.windll.user32
+            self.hwnd = u.GetParent(self.win.winfo_id()) or self.win.winfo_id()
+            GWL_EXSTYLE, WS_EX_TOOLWINDOW, WS_EX_NOACTIVATE, WS_EX_TOPMOST, WS_EX_APPWINDOW = -20, 0x80, 0x08000000, 0x8, 0x40000
+            st = u.GetWindowLongW(self.hwnd, GWL_EXSTYLE)
+            u.SetWindowLongW(self.hwnd, GWL_EXSTYLE, (st | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST) & ~WS_EX_APPWINDOW)
+            self.keep_top()
+        except Exception as e:
+            log("overlay style: %s" % e)
+
+    def keep_top(self):
+        if not self.win:
+            return
+        try:
+            if IS_WIN and self.hwnd:
+                import ctypes
+                # HWND_TOPMOST, ohne Verschieben/Groesse/Fokus -> kein Flackern
+                ctypes.windll.user32.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
+            else:
+                self.win.attributes("-topmost", True); self.win.lift()
+            if not self.win.winfo_viewable():           # verschwunden (z. B. nach Minimieren) -> wieder zeigen
+                self.win.deiconify()
+        except tk.TclError:
+            pass
 
     def rebuild_rows(self):
-        self.draw()
+        self._drawn = None; self.draw()
 
     @staticmethod
     def _round(cv, x1, y1, x2, y2, r, **kw):
-        pts = [x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r, x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2, x1, y2, x1, y2 - r, x1, y1 + r, x1, y1]
-        return cv.create_polygon(pts, smooth=True, **kw)
+        return rrect(cv, x1, y1, x2, y2, r, **kw)
 
+    def ball_list(self):
+        """Neueste Ball-Marker fuers Overlay (ohne den, der gerade als Alarm oben steht)."""
+        n = int(self.app.cfg["overlay"].get("ball_n", 3))
+        if n <= 0:
+            return []
+        words = self.app.ball_words()
+        skip = self.alert[0].get("key") if self.alert and time.time() < self.alert[2] else None
+        with self.app.scanner.lock:
+            ms = [m for m in self.app.scanner.markers.values() if m.get("key") != skip and is_ball(m, words)]
+        ms.sort(key=lambda m: -m["t"])
+        return ms[:n]
+
+    # ---------- Zeichnen ----------
     def draw(self):
         if not self.win:
             return
         ov, T = self.app.cfg["overlay"], self.app.t
+        style = ov.get("style", "tiles")
+        now = time.time()
         fs = int(ov.get("size", 11))
-        f_lab, f_val, f_head = (FONT, fs), (FONT, fs, "bold"), (FONT, max(7, fs - 3), "bold")
-        fl, fv, fh = tkfont.Font(font=f_lab), tkfont.Font(font=f_val), tkfont.Font(font=f_head)
+        F = {"lab": (FONT, fs), "val": (FONT, fs, "bold"), "big": (FONT, fs + 4, "bold"), "head": (FONT, max(7, fs - 3), "bold"),
+             "small": (FONT, max(7, fs - 2)), "tiny": (FONT, max(7, fs - 3), "bold")}
+        M = {k: tkfont.Font(font=v) for k, v in F.items()}
         rng = T(ov.get("range", "r_session"))
         if ov.get("range") == "r_since" and ov.get("since"):
             rng = "%s %s" % ("seit" if self.app.cfg["lang"] == "de" else "since", ov["since"])
-        head = "⚔  " + rng.upper()
-        rows = [(T(k), self.vals.get(k, "–"), k) for k in ov.get("metrics", [])]
-        lw = max([fl.measure(a) for a, _, _ in rows] + [0])
-        vw = max([fv.measure(b) for _, b, _ in rows] + [fv.measure("0.000")])
-        P, gap, lh = px(self.PAD), px(18), fl.metrics("linespace") + px(5)
-        width = max(P * 2 + lw + gap + vw, fh.measure(head) + P * 2 + px(50), px(170))
-        hh = fh.metrics("linespace") + P + 4
-        al = self.alert if self.alert and time.time() < self.alert[2] else None
-        ah = 0
-        if al:
-            mk, ball = al[0], al[1]
-            a1 = "%s  X %d · Y %d" % ("🎯 " + T("mk_new_ball") if ball else "📍 " + T("mk_new"), mk["x"], mk["y"])
-            a2 = (mk.get("text") or "")[:48] + ("  · " + self.app.ago(mk["t"]))
-            width = max(width, fv.measure(a1) + P * 2 + 12, fl.measure(a2) + P * 2 + 12)
-            ah = lh * 2 + 12
-        height = hh + ah + len(rows) * lh + P - 2 + (6 if rows else 0)
+        keys = ov.get("metrics", [])
+        tone = self.vals.get("_tone", {})
+        flashing = now < self.flash_until
+        al = self.alert if self.alert and now < self.alert[2] else None
+        balls = self.ball_list()
+
+        def vcol(k):
+            if tone.get(k) == "good":
+                return C["good"]
+            if tone.get(k) == "bad":
+                return C["bad"]
+            return C["gold"] if (k in ("m_kp", "m_kp_last") and (flashing or k == "m_kp")) else C["text"]
+
         cv = self.cv
         cv.delete("all")
-        cv.configure(width=width + 1, height=height + 1)
-        self._round(cv, 0, 0, width, height, px(14), fill=C["side"], outline=C["gold2"], width=1)
-        cv.create_line(P, hh - 2, width - P, hh - 2, fill=C["line2"])
-        cv.create_text(P, P - 2, text=head, anchor="nw", fill=C["gold"], font=f_head)
-        flashing = time.time() < self.flash_until
-        dot = C["gold"] if flashing else (C["good"] if self.app.scanner.status and "…" not in self.app.scanner.status else C["dim"])
-        cv.create_oval(width - P - 8, P + 1, width - P - 1, P + 8, fill=dot, outline="")
-        cv.create_text(width - P - 12, P - 2, text=T("live"), anchor="ne", fill=C["dim"], font=f_head)
-        tone = self.vals.get("_tone", {})
-        y = hh + 4
+        if style == "bar":
+            self._draw_bar(cv, F, M, rng, keys, vcol, al, balls, now)
+        else:
+            self._draw_card(cv, F, M, rng, keys, vcol, al, balls, now, style)
+
+    def _head(self, cv, F, M, x, y, w, rng, now):
+        P = px(self.PAD)
+        lg = px(18)
+        rrect(cv, x, y, x + lg, y + lg, px(5), fill="#0b0e16", outline=C["gold2"])
+        cv.create_text(x + lg / 2, y + lg / 2 + 1, text="W", fill=C["gold"], font=(TITLE, max(7, int(lg / SCALE * 0.5)), "bold"))
+        cv.create_text(x + lg + px(8), y + lg / 2, text=rng.upper(), anchor="w", fill=C["gold"], font=F["head"])
+        ok = self.app.scanner.status and "…" not in self.app.scanner.status
+        dot = C["gold"] if now < self.flash_until else (C["good"] if ok else C["dim"])
+        r = px(4)
+        cv.create_oval(x + w - 2 * r, y + lg / 2 - r, x + w, y + lg / 2 + r, fill=dot, outline="")
+        if ok and int(now) % 2 == 0:
+            cv.create_oval(x + w - 2 * r - px(3), y + lg / 2 - r - px(3), x + w + px(3), y + lg / 2 + r + px(3), outline=dot, width=1)
+        cv.create_text(x + w - 2 * r - px(8), y + lg / 2, text=self.app.t("live").upper(), anchor="e", fill=C["dim"], font=F["tiny"])
+        return lg
+
+    def _alert_box(self, cv, F, M, x, y, w, al, now):
+        mk, ball = al[0], al[1]
+        T = self.app.t
+        a1 = "%s  X %d · Y %d" % ("🎯 " + T("mk_new_ball") if ball else "📍 " + T("mk_new"), mk["x"], mk["y"])
+        a2 = (mk.get("text") or "")[:44] + ("  · " + self.app.ago(mk["t"]))
+        lh = M["lab"].metrics("linespace") + px(4)
+        h = lh * 2 + px(14)
+        blink = int(now) % 2 == 0 and ball
+        rrect(cv, x, y, x + w, y + h, px(10), fill="#3b1d24" if ball else C["gold_dim"], outline=(C["bad"] if blink else "#7f1d1d") if ball else C["gold2"])
+        cv.create_text(x + px(10), y + px(7), text=a1, anchor="nw", fill=C["bad"] if ball else C["gold"], font=F["val"])
+        cv.create_text(x + px(10), y + px(7) + lh, text=a2, anchor="nw", fill=C["text"], font=F["lab"])
+        return h
+
+    def _draw_card(self, cv, F, M, rng, keys, vcol, al, balls, now, style):
+        T, P = self.app.t, px(self.PAD)
+        lh = M["lab"].metrics("linespace") + px(7)
+        cols = 2 if len(keys) > 1 else 1
+        # Breite bestimmen
+        if style == "tiles":
+            tw = max([max(M["tiny"].measure(ICONS.get(k, "") + "  " + T(k).upper()), M["big"].measure(self.vals.get(k, "–"))) for k in keys] + [px(70)]) + px(22)
+            inner = cols * tw + (cols - 1) * px(8)
+        else:
+            lw = max([M["lab"].measure(ICONS.get(k, "") + "  " + T(k)) for k in keys] + [0])
+            vw = max([M["val"].measure(self.vals.get(k, "–")) for k in keys] + [M["val"].measure("0.000")])
+            inner = lw + px(24) + vw
+        bl = [("X %d · Y %d" % (m["x"], m["y"]), self.app.ago(m["t"]), m) for m in balls]
+        inner = max(inner, max([M["val"].measure(a) + M["small"].measure(b) + px(46) for a, b, _ in bl] + [0]),
+                    M["head"].measure(rng.upper()) + px(90), px(180))
         if al:
-            blink = int(time.time()) % 2 == 0 and ball
-            self._round(cv, P - 4, y - 2, width - P + 4, y + ah - 8, 8, fill="#3b1d24" if ball else C["gold_dim"],
-                        outline=(C["bad"] if blink else "#7f1d1d") if ball else C["gold2"])
-            cv.create_text(P + 4, y + 2, text=a1, anchor="nw", fill=C["bad"] if ball else C["gold"], font=f_val)
-            cv.create_text(P + 4, y + 2 + lh, text=a2, anchor="nw", fill=C["text"], font=f_lab)
-            y += ah
-        for lab, val, k in rows:
-            col = C["good"] if tone.get(k) == "good" else C["bad"] if tone.get(k) == "bad" else (C["gold"] if flashing and k in ("m_kp", "m_kp_last") else C["text"])
-            cv.create_text(P, y, text=lab, anchor="nw", fill=C["muted"], font=f_lab)
-            cv.create_text(width - P, y, text=val, anchor="ne", fill=col, font=f_val)
-            y += lh
-        if not rows:
-            pass
+            inner = max(inner, M["val"].measure("🎯 " + T("mk_new_ball") + "  X 0000 · Y 0000") + px(24))
+        W = inner + 2 * P
+        # Hoehe vorab berechnen (zeichnen in zwei Durchgaengen waere teurer)
+        y = P
+        hh = px(18) + px(12)
+        tile_h = M["tiny"].metrics("linespace") + M["big"].metrics("linespace") + px(18)
+        rows_h = (((len(keys) + cols - 1) // cols) * (tile_h + px(8))) if style == "tiles" else len(keys) * lh
+        al_h = (M["lab"].metrics("linespace") + px(4)) * 2 + px(14) + px(8) if al else 0
+        b_h = (M["tiny"].metrics("linespace") + px(8) + len(bl) * lh + px(6)) if bl else 0
+        H = P + hh + al_h + b_h + rows_h + P - (px(8) if style == "tiles" and keys else 0)
+        cv.configure(width=W + 1, height=H + 1)
+        rrect(cv, 0, 0, W, H, px(18), fill="#090c13", outline="#4a3a10")
+        rrect(cv, 1, 1, W - 1, P + hh - px(2), px(17), fill="#101522", outline="")
+        cv.create_rectangle(1, P + hh - px(16), W - 1, P + hh - px(2), fill="#101522", outline="")
+        cv.create_line(P, P + hh - px(2), W - P, P + hh - px(2), fill=C["gold2"])
+        self._head(cv, F, M, P, y, inner, rng, now)
+        y = P + hh + px(6)
+        if al:
+            y += self._alert_box(cv, F, M, P, y, inner, al, now) + px(8)
+        if bl:
+            cv.create_text(P, y, text="🎯 " + T("ov_balls").upper(), anchor="nw", fill=C["bad"], font=F["tiny"])
+            y += M["tiny"].metrics("linespace") + px(8)
+            for i, (xy, ago, m) in enumerate(bl):
+                fresh = now - m["t"] < 600
+                cy = y + lh / 2 - px(2)
+                cv.create_oval(P + px(1), cy - px(4), P + px(9), cy + px(4), fill=C["bad"] if fresh else "#5b1a1a", outline="")
+                cv.create_text(P + px(17), y, text=xy, anchor="nw", fill="#fecaca" if fresh else C["text"], font=F["val"])
+                cv.create_text(W - P, y + px(2), text=ago, anchor="ne", fill=C["bad"] if fresh else C["dim"], font=F["small"])
+                y += lh
+            y += px(2)
+            cv.create_line(P, y, W - P, y, fill=C["line"])
+            y += px(4)
+        if style == "tiles":
+            tw = (inner - (cols - 1) * px(8)) / cols
+            for i, k in enumerate(keys):
+                c, r = i % cols, i // cols
+                x0 = P + c * (tw + px(8)); y0 = y + r * (tile_h + px(8))
+                rrect(cv, x0, y0, x0 + tw, y0 + tile_h, px(10), fill="#111725", outline="#1c2436")
+                cv.create_text(x0 + px(10), y0 + px(8), text=ICONS.get(k, "") + "  " + T(k).upper(), anchor="nw", fill=C["muted"], font=F["tiny"])
+                cv.create_text(x0 + px(10), y0 + tile_h - px(7), text=self.vals.get(k, "–"), anchor="sw", fill=vcol(k), font=F["big"])
+        else:
+            for i, k in enumerate(keys):
+                if i:
+                    cv.create_line(P, y - px(3), W - P, y - px(3), fill="#151b29")
+                cv.create_text(P, y, text=ICONS.get(k, "") + "  " + T(k), anchor="nw", fill=C["muted"], font=F["lab"])
+                cv.create_text(W - P, y, text=self.vals.get(k, "–"), anchor="ne", fill=vcol(k), font=F["val"])
+                y += lh
+
+    def _draw_bar(self, cv, F, M, rng, keys, vcol, al, balls, now):
+        """Schmale Leiste: alle Werte nebeneinander."""
+        P = px(10)
+        parts = [(ICONS.get(k, ""), self.vals.get(k, "–"), vcol(k)) for k in keys]
+        if al:
+            parts.insert(0, ("🎯" if al[1] else "📍", "X %d Y %d" % (al[0]["x"], al[0]["y"]), C["bad"] if al[1] else C["gold"]))
+        for m in balls[:2]:
+            parts.append(("🎯", "X %d Y %d · %s" % (m["x"], m["y"], self.app.ago(m["t"])), C["bad"] if now - m["t"] < 600 else "#fca5a5"))
+        h = M["val"].metrics("linespace") + px(16)
+        widths = [M["lab"].measure(i + " ") + M["val"].measure(v) for i, v, _ in parts]
+        W = px(30) + sum(widths) + px(22) * max(0, len(parts)) + P
+        cv.configure(width=W + 1, height=h + 1)
+        blink = al and al[1] and int(now) % 2 == 0
+        rrect(cv, 0, 0, W, h, h / 2, fill="#090c13", outline=C["bad"] if blink else "#4a3a10")
+        ok = self.app.scanner.status and "…" not in self.app.scanner.status
+        r = px(4)
+        cv.create_oval(P + px(4), h / 2 - r, P + px(4) + 2 * r, h / 2 + r, fill=C["good"] if ok else C["dim"], outline="")
+        x = px(30)
+        for (ico, val, col), w in zip(parts, widths):
+            t1 = cv.create_text(x, h / 2, text=ico + " ", anchor="w", fill=C["muted"], font=F["lab"])
+            cv.create_text(cv.bbox(t1)[2], h / 2, text=val, anchor="w", fill=col, font=F["val"])
+            x += w + px(11)
+            cv.create_line(x, px(8), x, h - px(8), fill=C["line2"])
+            x += px(11)
 
     def update(self, vals):
         if not self.win:
@@ -1008,19 +1354,13 @@ class Overlay:
         if self.vals and vals.get("_n", 0) > self.vals.get("_n", 0):
             self.flash_until = now + 4                        # neuer Kampf: kurz golden
         al = self.alert and now < self.alert[2]
-        key = (id(vals), now < self.flash_until, bool(al), int(now) % 2 if al else 0,
-               int(now // 60) if al else 0, getattr(self, "_status_ok", None))
-        if key != getattr(self, "_drawn", None):            # nur neu zeichnen, wenn sich etwas sichtbar aendert
+        bsig = (len(self.app.scanner.markers), int(now // 30)) if self.app.cfg["overlay"].get("ball_n", 3) else 0
+        key = (id(vals), now < self.flash_until, bool(al), int(now) % 2, int(now // 60) if al else 0, bsig)
+        if key != self._drawn:                               # nur neu zeichnen, wenn sich etwas sichtbar aendert
             self._drawn = key
             self.vals = vals
             self.draw()
-        self._tick = getattr(self, "_tick", 0) + 1
-        if self._tick % 5 == 1:
-            try:
-                self.win.attributes("-topmost", True)
-                self.win.lift()
-            except tk.TclError:
-                pass
+        self.keep_top()                                      # jede Sekunde: ganz nach oben (ohne Flackern)
 
     def show(self, on):
         if on and not self.win:
@@ -1059,6 +1399,11 @@ class Overlay:
         for r in RANGES:
             mr.add_radiobutton(label=T(r), value=r, variable=rv, command=lambda r=r: self.app.set_range(r))
         m.add_cascade(label=T("menu_range"), menu=mr)
+        ms = mk(m)
+        sv = tk.StringVar(value=ov.get("style", "tiles")); self._vars.append(sv)
+        for st in OV_STYLES:
+            ms.add_radiobutton(label=T("st_" + st), value=st, variable=sv, command=lambda st=st: self.app.set_style(st))
+        m.add_cascade(label=T("ov_style"), menu=ms)
         m.add_command(label=T("ov_reset"), command=self.app.reset_session)
         if self.alert:
             m.add_command(label="📋 X %d Y %d" % (self.alert[0]["x"], self.alert[0]["y"]), command=lambda: self.app.copy_xy(self.alert[0]))
@@ -1072,7 +1417,7 @@ class Overlay:
 
 
 # ---------------------------------------------------------------- Hauptfenster
-PAGES = [("conn", "🔗", "tab_conn", "sub_conn"), ("acc", "👤", "tab_acc", "sub_acc"), ("mk", "📍", "tab_mk", "sub_mk"),
+PAGES = [("home", "🏠", "tab_home", "sub_home"), ("conn", "🔗", "tab_conn", "sub_conn"), ("acc", "👤", "tab_acc", "sub_acc"), ("mk", "📍", "tab_mk", "sub_mk"),
          ("ov", "🪟", "tab_ov", "sub_ov"), ("set", "⚙", "tab_set", "sub_set")]
 
 
@@ -1105,7 +1450,7 @@ class App:
                 ctypes.windll.dwmapi.DwmSetWindowAttribute(hwnd, 20, ctypes.byref(v), ctypes.sizeof(v))
             except Exception:
                 pass
-        self.page = "conn" if not self.cfg.get("token") else "ov"
+        self.page = "conn" if not self.cfg.get("token") else "home"
         self.started = time.time()
         self.scanner = Scanner(self)
         self.overlay = Overlay(self)
@@ -1313,6 +1658,69 @@ class App:
         self._owners_keys = tuple(sorted(self.scanner.owners))
 
     # ---------- Seiten ----------
+    def page_home(self, body):
+        T, ov = self.t, self.cfg["overlay"]
+        bar = tk.Frame(body, bg=C["bg"]); bar.pack(fill="x", pady=(0, px(12)))
+        tk.Label(bar, text=T("ov_range") + ":", bg=C["bg"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
+        self.range_chips = {}
+        for rk in RANGES:
+            if rk == "r_since" and not ov.get("since"):
+                continue
+            ch = Chip(bar, T(rk).split(" (")[0], ov.get("range") == rk, lambda rk=rk: self.set_range(rk))
+            ch.pack(side="left", padx=(0, px(5))); self.range_chips[rk] = ch
+        self.home = {}
+        tiles = tk.Frame(body, bg=C["bg"]); tiles.pack(fill="x")
+        for i, (k, ico) in enumerate((("m_kp", "⚔"), ("m_kp_trade", "⚖"), ("m_loss_trade", "🩸"), ("m_dead", "💀"))):
+            c = Card(tiles, pad=14, radius=16)
+            c.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else px(6), 0))
+            tiles.columnconfigure(i, weight=1, uniform="t")
+            tk.Label(c.body, text="%s  %s" % (ico, T(k).upper()), bg=C["card"], fg=C["muted"], font=(FONT, 8, "bold")).pack(anchor="w")
+            v = tk.Label(c.body, text="–", bg=C["card"], fg=C["text"], font=(FONT, 22, "bold")); v.pack(anchor="w", pady=(px(4), 0))
+            self.home[k] = v
+        row = tk.Frame(body, bg=C["bg"]); row.pack(fill="both", expand=True, pady=(px(12), 0))
+        row.columnconfigure(0, weight=1, uniform="r"); row.columnconfigure(1, weight=1, uniform="r")
+        c = Card(row, T("h_last")); c.grid(row=0, column=0, sticky="nsew", padx=(0, px(6)))
+        for k in ("m_kp_last", "m_last_enemy", "m_kph", "m_pvp", "m_pve", "m_enemy_out"):
+            r = tk.Frame(c.body, bg=C["card"]); r.pack(fill="x", pady=px(2))
+            tk.Label(r, text=T(k), bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left")
+            v = tk.Label(r, text="–", bg=C["card"], fg=C["text"], font=(FONT, 10, "bold")); v.pack(side="right")
+            self.home[k] = v
+        c = Card(row, "🎯 " + T("ov_balls")); c.grid(row=0, column=1, sticky="nsew", padx=(px(6), 0))
+        self.home_balls = tk.Frame(c.body, bg=C["card"]); self.home_balls.pack(fill="both", expand=True)
+        self._home_bsig = None
+        self.update_home()
+
+    def update_home(self):
+        if self.page != "home" or not getattr(self, "home", None):
+            return
+        vals = getattr(self, "_vals", {}) or {}
+        tone = vals.get("_tone", {})
+        try:
+            for k, lb in self.home.items():
+                col = C["good"] if tone.get(k) == "good" else C["bad"] if tone.get(k) == "bad" else (C["gold"] if k == "m_kp" else C["text"])
+                txt = vals.get(k, "–")
+                if lb.cget("text") != txt or lb.cget("fg") != col:
+                    lb.configure(text=txt, fg=col)
+            words = self.ball_words()
+            with self.scanner.lock:
+                ms = sorted([m for m in self.scanner.markers.values() if is_ball(m, words)], key=lambda m: -m["t"])[:4]
+            sig = tuple((m.get("key"), int((time.time() - m["t"]) // 60)) for m in ms)
+            if sig != self._home_bsig:
+                self._home_bsig = sig
+                for w in self.home_balls.winfo_children():
+                    w.destroy()
+                if not ms:
+                    tk.Label(self.home_balls, text=self.t("h_noball"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(300), justify="left").pack(anchor="w")
+                for m in ms:
+                    r = tk.Frame(self.home_balls, bg=C["card"]); r.pack(fill="x", pady=px(3))
+                    fresh = time.time() - m["t"] < 600
+                    tk.Label(r, text="●", bg=C["card"], fg=C["bad"] if fresh else "#7f1d1d", font=(FONT, 9)).pack(side="left")
+                    tk.Label(r, text="X %d · Y %d" % (m["x"], m["y"]), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold")).pack(side="left", padx=px(6))
+                    tk.Label(r, text=self.ago(m["t"]), bg=C["card"], fg=C["bad"] if fresh else C["dim"], font=(FONT, 9)).pack(side="left")
+                    Btn(r, "📋", lambda m=m: self.copy_xy(m), "ghost", small=True).pack(side="right")
+        except tk.TclError:
+            pass
+
     def page_conn(self, body):
         T = self.t
         o, c = card(body, T("card_status")); o.pack(fill="x")
@@ -1413,14 +1821,37 @@ class App:
 
     def page_mk(self, body):
         T, mc = self.t, self.cfg["markers"]
-        bar = tk.Frame(body, bg=C["bg"]); bar.pack(fill="x", pady=(0, 8))
+        bar = tk.Frame(body, bg=C["bg"]); bar.pack(fill="x", pady=(0, px(10)))
         for key, lab in (("all", "mk_all"), ("ball", "mk_ball")):
-            Chip(bar, T(lab), mc.get("filter") == key, lambda key=key: (self.set_mk("filter", key), self.render())).pack(side="left", padx=(0, 6))
-        tk.Frame(bar, bg=C["bg"], width=16).pack(side="left")
+            Chip(bar, T(lab), mc.get("filter") == key, lambda key=key: (self.set_mk("filter", key), self.refresh_markers(True))).pack(side="left", padx=(0, px(6)))
+        tk.Frame(bar, bg=C["bg"], width=px(14)).pack(side="left")
         for key, lab in (("new", "mk_sort_new"), ("ball", "mk_sort_ball")):
-            Chip(bar, T(lab), mc.get("sort") == key, lambda key=key: (self.set_mk("sort", key), self.render())).pack(side="left", padx=(0, 6))
+            Chip(bar, T(lab), mc.get("sort") == key, lambda key=key: (self.set_mk("sort", key), self.refresh_markers(True))).pack(side="left", padx=(0, px(6)))
         Btn(bar, "💾 " + T("mk_export"), self.export_samples, "ghost", small=True).pack(side="right")
-        words = self.ball_words()
+        Btn(bar, "🗑 " + T("mk_clear"), self.clear_markers, "danger", small=True).pack(side="right", padx=px(6))
+        o, c = card(body, None); o.pack(side="bottom", fill="x", pady=(px(10), 0))
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+        tk.Label(r, text=T("mk_words"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
+        self.v_words = tk.StringVar(value=mc.get("words", ""))
+        e = entry(r, self.v_words, 30); e.pack(side="left", padx=px(8))
+        e.bind("<FocusOut>", lambda _e: self.set_words()); e.bind("<Return>", lambda _e: self.set_words())
+        tk.Label(r, text=T("mk_keep"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(px(10), px(4)))
+        kl = tk.Label(r, text=str(mc.get("keep_ball", 5)), bg=C["card"], fg=C["text"], font=(FONT, 10, "bold"), width=3)
+        def kstep(d):
+            n = max(1, min(20, int(self.cfg["markers"].get("keep_ball", 5)) + d)); kl.configure(text=str(n))
+            self.set_mk("keep_ball", n); self.scanner.prune_markers(); self.refresh_markers(True)
+        Btn(r, "−", lambda: kstep(-1), "ghost", small=True).pack(side="left"); kl.pack(side="left"); Btn(r, "+", lambda: kstep(1), "ghost", small=True).pack(side="left")
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        for i, (key, lab) in enumerate((("sound", "mk_sound"), ("overlay", "mk_overlay"), ("alarm_all", "mk_all_alarm"))):
+            v = tk.BooleanVar(value=mc.get(key, False))
+            Toggle(r, T(lab), v, lambda key=key, v=v: self.set_mk(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+        self.mk_list = MarkerList(body, self)
+        self.mk_list.pack(fill="both", expand=True)
+        self._mk_sig = None
+        self.refresh_markers(True)
+
+    def marker_items(self):
+        mc, words = self.cfg["markers"], self.ball_words()
         with self.scanner.lock:
             mks = list(self.scanner.markers.values())
         for m in mks:
@@ -1428,38 +1859,34 @@ class App:
         if mc.get("filter") == "ball":
             mks = [m for m in mks if m["_ball"]]
         mks.sort(key=lambda m: ((not m["_ball"]) if mc.get("sort") == "ball" else 0, -m["t"]))
-        sc = Scroll(body, C["bg"]); sc.pack(fill="both", expand=True)
-        if not mks:
-            tk.Label(sc.inner, text=T("mk_none"), bg=C["bg"], fg=C["dim"], font=(FONT, 10), wraplength=600, justify="left").pack(anchor="w", pady=20)
-        for m in mks[:150]:
-            ball = m["_ball"]
-            fresh = time.time() - m["t"] < 1800
-            rc = Card(sc.inner, pad=10, border=C["bad"] if ball else C["line"], radius=14)
-            rc.pack(fill="x", pady=px(4), padx=(0, px(6)))
-            row = rc.body
-            left = tk.Frame(row, bg=C["card"]); left.pack(side="left", padx=12, pady=8)
-            tk.Label(left, text="🎯" if ball else "📍", bg=C["card"], fg=C["text"], font=(FONT, 16)).pack()
-            info = tk.Frame(row, bg=C["card"]); info.pack(side="left", fill="x", expand=True, pady=6)
-            top = tk.Frame(info, bg=C["card"]); top.pack(anchor="w")
-            tk.Label(top, text="X %d · Y %d" % (m["x"], m["y"]), bg=C["card"], fg=C["gold"], font=(FONT, 11, "bold")).pack(side="left")
-            if ball:
-                tk.Label(top, text="BALL", bg=C["bad"], fg="#0b0e16", font=(FONT, 8, "bold"), padx=6).pack(side="left", padx=8)
-            tk.Label(top, text=self.ago(m["t"]), bg=C["card"], fg=C["good"] if fresh else C["dim"], font=(FONT, 9, "bold" if fresh else "normal")).pack(side="left", padx=8)
-            if m.get("text"):
-                tk.Label(info, text=m["text"], bg=C["card"], fg=C["text"], font=(FONT, 10), wraplength=520, justify="left").pack(anchor="w")
-            meta = " · ".join(x for x in (T("mk_by", n=m["by"]) if m.get("by") else "", datetime.fromtimestamp(m["t"]).strftime("%d.%m. %H:%M") if m.get("t") else "", m.get("title", "")) if x)
-            tk.Label(info, text=meta, bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w")
-            Btn(row, "📋 " + T("mk_copy"), lambda m=m: self.copy_xy(m), "ghost", small=True).pack(side="right", padx=px(4))
-        o, c = card(body, None); o.pack(fill="x", pady=(10, 0))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        tk.Label(r, text=T("mk_words"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
-        self.v_words = tk.StringVar(value=mc.get("words", ""))
-        e = entry(r, self.v_words, 34); e.pack(side="left", padx=8, ipady=3)
-        e.bind("<FocusOut>", lambda _e: self.set_mk("words", self.v_words.get())); e.bind("<Return>", lambda _e: (self.set_mk("words", self.v_words.get()), self.render()))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(8, 0))
-        for i, (key, lab) in enumerate((("sound", "mk_sound"), ("overlay", "mk_overlay"), ("alarm_all", "mk_all_alarm"))):
-            v = tk.BooleanVar(value=mc.get(key, False))
-            Toggle(r, T(lab), v, lambda key=key, v=v: self.set_mk(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, 20), pady=2)
+        return mks[:80]
+
+    def refresh_markers(self, force=False):
+        if self.page != "mk" or not getattr(self, "mk_list", None):
+            return
+        with self.scanner.lock:
+            sig = (len(self.scanner.markers), max((m["t"] for m in self.scanner.markers.values()), default=0), int(time.time() // 60))
+        if force or sig != self._mk_sig:
+            self._mk_sig = sig
+            try:
+                self.mk_list.set(self.marker_items())
+            except tk.TclError:
+                pass
+
+    def del_marker(self, key):
+        self.scanner.delete_marker(key); self.refresh_markers(True); self.overlay.draw()
+
+    def clear_markers(self):
+        if messagebox.askyesno("Wiz fan Club", self.t("mk_clear") + "?"):
+            with self.scanner.lock:
+                keys = list(self.scanner.markers)
+            for k in keys:
+                self.scanner.delete_marker(k)
+            self.overlay.alert = None
+            self.refresh_markers(True); self.overlay.draw()
+
+    def set_words(self):
+        self.set_mk("words", self.v_words.get()); self.refresh_markers(True); self.overlay.draw()
 
     def set_mk(self, key, val):
         self.cfg["markers"][key] = val; save_cfg(self.cfg)
@@ -1493,8 +1920,7 @@ class App:
                 winsound.MessageBeep(winsound.MB_ICONEXCLAMATION if ball else winsound.MB_OK)
             except Exception:
                 self.root.bell()
-        if self.page == "mk":
-            self.render()
+        self.refresh_markers(True)
 
     def page_ov(self, body):
         T, ov = self.t, self.cfg["overlay"]
@@ -1515,6 +1941,24 @@ class App:
         def step(d):
             n = max(8, min(22, int(self.cfg["overlay"].get("size", 11)) + d)); sz.configure(text=str(n)); self.set_opt("size", n)
         Btn(r, "−", lambda: step(-1), "ghost", small=True).pack(side="left"); sz.pack(side="left"); Btn(r, "+", lambda: step(1), "ghost", small=True).pack(side="left")
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text=T("ov_source"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+        self.src_chips = {}
+        for sv in ("web", "local"):
+            ch = Chip(r, T("src_" + sv), ov.get("source", "web") == sv, lambda sv=sv: self.set_source(sv))
+            ch.pack(side="left", padx=(0, px(4))); self.src_chips[sv] = ch
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text=T("ov_style"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+        self.style_chips = {}
+        for st in OV_STYLES:
+            ch = Chip(r, T("st_" + st), ov.get("style", "tiles") == st, lambda st=st: self.set_style(st))
+            ch.pack(side="left", padx=(0, px(4))); self.style_chips[st] = ch
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text="🎯 " + T("ov_ball_n"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+        self.balln_chips = {}
+        for n in range(0, 6):
+            ch = Chip(r, T("off") if n == 0 else str(n), int(ov.get("ball_n", 3)) == n, lambda n=n: self.set_ball_n(n))
+            ch.pack(side="left", padx=(0, px(4))); self.balln_chips[n] = ch
 
         o, c = card(top, T("card_range")); o.pack(side="left", fill="both", expand=True, padx=(7, 0))
         chips = tk.Frame(c, bg=C["card"]); chips.pack(anchor="w")
@@ -1644,6 +2088,32 @@ class App:
             except tk.TclError:
                 pass
 
+    def set_source(self, sv):
+        self.cfg["overlay"]["source"] = sv; save_cfg(self.cfg); self._sig = None; self._web_due = 0
+        for k, ch in getattr(self, "src_chips", {}).items():
+            try:
+                ch.set(k == sv)
+            except tk.TclError:
+                pass
+
+    def set_style(self, st):
+        self.cfg["overlay"]["style"] = st; save_cfg(self.cfg)
+        for k, ch in getattr(self, "style_chips", {}).items():
+            try:
+                ch.set(k == st)
+            except tk.TclError:
+                pass
+        self.overlay._drawn = None; self.overlay.draw()
+
+    def set_ball_n(self, n):
+        self.cfg["overlay"]["ball_n"] = n; save_cfg(self.cfg)
+        for k, ch in getattr(self, "balln_chips", {}).items():
+            try:
+                ch.set(k == n)
+            except tk.TclError:
+                pass
+        self.overlay._drawn = None; self.overlay.draw()
+
     def set_cfg(self, key, val):
         self.cfg[key] = val; save_cfg(self.cfg)
 
@@ -1665,7 +2135,7 @@ class App:
     def set_range(self, rk):
         self._sig = None
         self.cfg["overlay"]["range"] = rk; save_cfg(self.cfg)
-        if self.page == "ov":
+        if self.page in ("ov", "home"):
             for k, ch in self.range_chips.items():
                 try:
                     ch.set(k == rk)
@@ -1761,18 +2231,48 @@ class App:
                 self._sig = sig
                 with self.scanner.lock:
                     bs = list(self.scanner.battles.values())
-                self._vals = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
+                self._local = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
+                self._vals = self._local
+            web = ov.get("source", "web") == "web" and self.cfg.get("token")
+            q = "stats&since=%d&pvp=%d&pilot=%d" % (int(since) // 60 * 60, 1 if ov.get("pvp_only", True) else 0, 1 if ov.get("count_pilot") else 0)
+            if web and getattr(self, "_web_q", None) == q and getattr(self, "_web_stats", None) and self._vals.get("_src") != "web":
+                self._vals = web_vals(self._web_stats, self._local, self.cfg.get("lang", "de"))     # letzte Website-Zahlen behalten
+            if web and getattr(self, "_web_q", None) != q:
+                self._web_due = 0                                   # Zeitraum/Filter geaendert -> sofort fragen
+            if web and now >= getattr(self, "_web_due", 0) and not getattr(self, "_web_busy", False):
+                self._web_due = now + 30                            # alle 30 s
+                self._web_busy = True
+                lang = self.cfg.get("lang", "de")
+
+                def got(d, err, q=q):
+                    self._web_busy = False
+                    if err or not d or not d.get("stats"):
+                        self._web_err = str(err) if err else ""
+                        if getattr(self, "_web_q", None) != q:
+                            self._web_q, self._web_stats = q, None       # nicht jede Sekunde neu versuchen
+                        return
+                    self._web_err, self._web_q, self._web_stats = "", q, d["stats"]
+                    self._vals = web_vals(d["stats"], getattr(self, "_local", {}), lang)
+                self.run_bg(lambda: self.api(q), got)
+            if ov.get("source", "web") != "web" and getattr(self, "_vals", {}).get("_src") == "web":
+                self._vals = getattr(self, "_local", {})
             words = self.ball_words()
             for mk in sorted(nm, key=lambda m: m["t"]):
                 ball = is_ball(mk, words)
                 if ball or self.cfg["markers"].get("alarm_all"):
                     self.alarm(mk, ball)
-                elif self.page == "mk":
-                    self.render()
+            if nm:
+                self.refresh_markers(True); self.overlay.draw()
             self.overlay.update(self._vals)
             msg, ts = self._flash
-            self.status.configure(text=msg if msg and now - ts < 8 else self.scanner.status)
+            st = msg if msg and now - ts < 8 else self.scanner.status
+            if self.status.cget("text") != st:
+                self.status.configure(text=st)
             self._ticks = getattr(self, "_ticks", 0) + 1
+            if self.page == "home":
+                self.update_home()
+            if self._ticks % 5 == 0 and self.page == "mk":
+                self.refresh_markers()
             if self._ticks % 5 == 0 and self.page == "acc":           # nur neu zeichnen, wenn ein neuer Account auftaucht
                 if tuple(sorted(self.scanner.owners)) != getattr(self, "_owners_keys", None):
                     self.render()
