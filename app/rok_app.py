@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wiz fan Club App (Testversion 0.11)
+Wiz fan Club App (Testversion 0.14)
 ----------------------------------
 * Verbinden: Code von der Website (uploader.html) eingeben -> App ist mit deinem Account gekoppelt.
 * Accounts: erkennt die Governor-IDs aus dem Mailcache und bindet sie an deinen Website-Account.
@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.11-test"
+APP_VERSION = "0.14-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -26,7 +26,7 @@ CFG_FILE = os.path.join(DATA, "app_config.json")
 CACHE_FILE = os.path.join(DATA, "app_cache.json")
 LOG_FILE = os.path.join(DATA, "app_log.txt")
 RES = getattr(sys, "_MEIPASS", HERE)            # mitgelieferte Dateien (Icon)
-CACHE_VER = 2          # 2: + Marker-Mails (einmal alles neu einlesen)
+CACHE_VER = 3          # 2: + Marker-Mails (einmal alles neu einlesen)
 
 try:                                    # vorhandener Uploader (v16) im selben Ordner -> fuer Hochladen
     sys.path.insert(0, HERE)
@@ -52,7 +52,9 @@ def log(msg):
 TXT = {
     "de": {
         "tab_home": "Übersicht", "sub_home": "Deine Werte und die neuesten Ball-Marker auf einen Blick.", "h_last": "Letzter Kampf & Zeitraum",
+    "h_nomarch": "Noch kein PvP-Gegner – nach dem nächsten Kampf siehst du hier seine Märsche.", "h_march_info": "{e}: {n} verschiedene Märsche in den letzten 7 Tagen",
     "h_noball": "Noch kein Ball-Marker. Neue erscheinen hier und im Overlay.", "off": "Aus",
+    "now_active": "gerade aktiv", "acc_focus": "Account:", "f_auto": "Automatisch", "f_all": "Alle", "add_id": "ID hinzufügen (z. B. neuer Pilot-Account)", "add_btn": "Als Pilot binden", "add_alt": "Als Zweitaccount",
     "ov_source": "Zahlen von", "src_web": "Website", "src_local": "nur PC", "ov_style": "Stil", "st_tiles": "Kacheln", "st_list": "Liste", "st_bar": "Leiste",
     "ov_balls": "Ball-Marker", "ov_ball_n": "Ball-Marker im Overlay", "mk_clear": "Alle löschen", "mk_keep": "Ball-Marker behalten",
     "title": "Wiz fan Club App", "tab_conn": "Verbinden", "tab_acc": "Accounts", "tab_ov": "Overlay", "tab_set": "Einstellungen",
@@ -70,7 +72,7 @@ TXT = {
         "m_kp": "KP", "m_kp_all": "KP gesamt (alles)", "m_kp_last": "KP letzter Kampf", "m_kp_trade": "KP-Trade", "m_loss_trade": "Verlust-Trade",
         "m_power_trade": "Power-Trade", "m_dead": "Eigene Tote", "m_severe": "Eigene Schwerverw.", "m_wounded": "Eigene Leichtverw.",
         "m_enemy_out": "Gegner ausgeschaltet", "m_enemy_dead": "Gegner tot", "m_pvp": "PvP-Kämpfe", "m_pve": "PvE-Kämpfe", "m_kph": "KP pro Stunde",
-        "m_last_enemy": "Letzter Gegner",
+        "m_last_enemy": "Letzter Gegner", "m_enemy_marches": "Märsche des Gegners", "m_last_marches": "Gegner-Märsche im letzten Kampf",
         "folders": "Spielordner (mit save\\mailcache)", "add": "Hinzufügen…", "remove": "Entfernen", "detect": "Automatisch suchen",
         "upload": "Kampfberichte der gebundenen IDs hochladen", "upload_days": "Beim ersten Mal nur die letzten Tage",
         "upload_hint": "Nicht nötig, wenn der alte Uploader (rok_kampf_upload.py) schon läuft.", "upload_off": "Hochladen geht nur, wenn rok_kampf_upload.py im selben Ordner liegt.",
@@ -81,7 +83,9 @@ TXT = {
     },
     "en": {
         "tab_home": "Overview", "sub_home": "Your stats and the latest ball markers at a glance.", "h_last": "Last battle & period",
+    "h_nomarch": "No PvP enemy yet – after your next battle you see their marches here.", "h_march_info": "{e}: {n} different marches in the last 7 days",
     "h_noball": "No ball marker yet. New ones appear here and in the overlay.", "off": "Off",
+    "now_active": "active now", "acc_focus": "Account:", "f_auto": "Automatic", "f_all": "All", "add_id": "Add ID (e.g. new pilot account)", "add_btn": "Link as pilot", "add_alt": "As alt account",
     "ov_source": "Numbers from", "src_web": "Website", "src_local": "PC only", "ov_style": "Style", "st_tiles": "Tiles", "st_list": "List", "st_bar": "Bar",
     "ov_balls": "Ball markers", "ov_ball_n": "Ball markers in overlay", "mk_clear": "Delete all", "mk_keep": "Keep ball markers",
     "title": "Wiz fan Club App", "tab_conn": "Connect", "tab_acc": "Accounts", "tab_ov": "Overlay", "tab_set": "Settings",
@@ -99,7 +103,7 @@ TXT = {
         "m_kp": "KP", "m_kp_all": "Total KP (all)", "m_kp_last": "KP last battle", "m_kp_trade": "KP trade", "m_loss_trade": "Loss trade",
         "m_power_trade": "Power trade", "m_dead": "Own dead", "m_severe": "Own severely wounded", "m_wounded": "Own slightly wounded",
         "m_enemy_out": "Enemies taken out", "m_enemy_dead": "Enemies dead", "m_pvp": "PvP battles", "m_pve": "PvE battles", "m_kph": "KP per hour",
-        "m_last_enemy": "Last enemy",
+        "m_last_enemy": "Last enemy", "m_enemy_marches": "Enemy's marches", "m_last_marches": "Enemy marches in last battle",
         "folders": "Game folders (containing save\\mailcache)", "add": "Add…", "remove": "Remove", "detect": "Search automatically",
         "upload": "Upload battle reports of linked IDs", "upload_days": "First time only the last days",
         "upload_hint": "Not needed if the old uploader (rok_kampf_upload.py) is already running.", "upload_off": "Uploading needs rok_kampf_upload.py in the same folder.",
@@ -110,7 +114,7 @@ TXT = {
     },
 }
 METRICS = ["m_kp", "m_kp_all", "m_kp_last", "m_kp_trade", "m_loss_trade", "m_power_trade", "m_dead", "m_severe", "m_wounded",
-           "m_enemy_out", "m_enemy_dead", "m_pvp", "m_pve", "m_kph", "m_last_enemy"]
+           "m_enemy_out", "m_enemy_dead", "m_pvp", "m_pve", "m_kph", "m_last_enemy", "m_enemy_marches", "m_last_marches"]
 RANGES = ["r_session", "r_today", "r_24h", "r_7d", "r_since", "r_all"]
 
 DEFAULT_CFG = {
@@ -118,8 +122,8 @@ DEFAULT_CFG = {
     "game_folders": [], "links": [],
     "overlay": {"show": True, "x": 60, "y": 60, "alpha": 0.85, "locked": False, "size": 11,
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
-                "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web"},
-    "upload": False, "upload_days": 14, "start_min": False,
+                "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web", "focus": "auto"},
+    "upload": None, "upload_days": 14, "start_min": False,
     "markers": {"filter": "all", "sort": "new", "keep_ball": 5, "words": "ball, garrison, garni, stack, def, rally", "sound": True, "overlay": True,
                 "alarm_all": False, "show_min": 10},
 }
@@ -144,6 +148,14 @@ def load_cfg():
             pass
     if not cfg["game_folders"]:
         cfg["game_folders"] = detect_folders()
+    if cfg.get("upload") is None:          # erster Start: eigener Uploader da (config.json mit Schluessel)? Dann macht der das.
+        own = False
+        try:
+            with open(os.path.join(HERE, "config.json"), encoding="utf-8") as f:
+                own = bool(json.load(f).get("supabase_key"))
+        except Exception:
+            pass
+        cfg["upload"] = not own
     return cfg
 
 
@@ -242,7 +254,8 @@ def summarize(mail):
         pvp = isinstance(en.get("PId"), int) and en.get("PId") > 0 and bool(en.get("PName"))
         out["fights"].append([1 if pvp else 0, _n(own, "KillScore"), _n(opp, "KillScore"), _n(own, "Death"), _n(own, "BadHurt"),
                               _n(own, "Hurt"), _n(opp, "Death"), _n(opp, "BadHurt"), _n(own, "Power"), _n(opp, "Power"),
-                              (en.get("PName") or "") if pvp else ""])
+                              (en.get("PName") or "") if pvp else "",
+                              en.get("PId") if pvp else 0, en.get("HId") or 0, en.get("HId2") or 0])   # Gegner + seine 2 Kommandanten = ein Marsch
     return out
 
 
@@ -388,6 +401,7 @@ class Scanner:
         self.new_markers = []             # waehrend die App laeuft neu dazugekommen
         self.deleted = set()              # vom Nutzer geloeschte Marker (kommen nicht wieder)
         self.dirty, self.saved_at = False, 0.0
+        self.active = (None, 0)           # (Governor-ID, Zeit) des gerade gespielten Accounts
         self.owners = {}      # pid -> {"name", "mails", "last"}
         self.uploaded = set()
         self.status = ""
@@ -402,6 +416,8 @@ class Scanner:
                 self.seen, self.battles = d.get("seen", {}), d.get("battles", {})
                 self.markers = d.get("markers", {})
                 self.deleted = set(d.get("deleted", []))
+                a = d.get("active") or [None, 0]
+                self.active = (a[0], a[1])
                 for k, m in self.markers.items():
                     m["key"] = k
                 self.owners = {int(k): v for k, v in d.get("owners", {}).items()}
@@ -450,7 +466,7 @@ class Scanner:
     def save(self):
         self.saved_at = time.time(); self.dirty = False
         with self.lock:
-            d = {"v": CACHE_VER, "seen": self.seen, "battles": self.battles, "markers": self.markers, "deleted": sorted(self.deleted)[-500:], "owners": self.owners, "uploaded": sorted(self.uploaded)}
+            d = {"v": CACHE_VER, "seen": self.seen, "battles": self.battles, "markers": self.markers, "active": list(self.active), "deleted": sorted(self.deleted)[-500:], "owners": self.owners, "uploaded": sorted(self.uploaded)}
         try:
             tmp = CACHE_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -480,8 +496,8 @@ class Scanner:
                 key = g + "|" + e.name
                 sig = "%d_%d" % (st.st_size, int(st.st_mtime))
                 if self.seen.get(key) != sig:
-                    todo.append((key, sig, e.path))
-            for i, (key, sig, path) in enumerate(todo):
+                    todo.append((key, sig, e.path, st.st_mtime))
+            for i, (key, sig, path, mt) in enumerate(todo):
                 if len(todo) > 50 and i % 20 == 0:
                     time.sleep(0.004)            # beim grossen Einlesen Luft lassen -> Fenster und Spiel ruckeln nicht
                 if i % 200 == 0 and len(todo) > 200:
@@ -509,6 +525,8 @@ class Scanner:
                     own = int(om.group(1)) if om else None
                 if mk:
                     self.add_marker(mk)
+                if own and mt >= self.active[1]:            # neueste Mail -> dieser Account ist gerade eingeloggt
+                    self.active = (own, mt)
                 with self.lock:
                     self.seen[key] = sig
                     if own:
@@ -620,6 +638,7 @@ class Scanner:
         self.save()
         log("hochgeladen: %d Zeilen aus %d Berichten" % (len(rows), len(done)))
         self.app.flash(self.app.t("uploaded", n=len(rows)))
+        self.app._web_due = 0                       # Overlay gleich mit den neuen Website-Zahlen auffrischen
 
 
 # ---------------------------------------------------------------- Werte berechnen
@@ -650,7 +669,7 @@ def ratio(a, b, lang):
 def compute(battles, ids, rng, since_ts, pvp_only, lang):
     tot = dict(kp=0, ekp=0, dead=0, sev=0, wnd=0, edead=0, esev=0, pw=0, epw=0, pvp=0, pve=0, kp_all=0)
     t_first = t_last = None
-    last_kp, last_enemy, last_t = None, "", 0
+    last_kp, last_enemy, last_t, last_b = None, "", 0, None
     for b in battles:
         if ids is not None and b["pid"] not in ids:
             continue
@@ -658,7 +677,7 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
             continue
         in_r = b["t"] >= since_ts
         for f in b["fights"]:
-            pvp, kp, ekp, dead, sev, wnd, edead, esev, pw, epw, en = f
+            pvp, kp, ekp, dead, sev, wnd, edead, esev, pw, epw, en = f[:11]
             if pvp:
                 tot["kp_all"] += kp
             if not in_r:
@@ -678,7 +697,37 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
             last_t = b["t"]
             last_kp = sum(f[1] for f in b["fights"] if f[0])
             last_enemy = next((f[10] for f in b["fights"] if f[0] and f[10]), "")
-    return fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang)
+            last_b = b
+    out = fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang)
+    out.update(enemy_marches(battles, ids, last_b, lang))
+    return out
+
+
+def enemy_marches(battles, ids, last_b, lang):
+    """Wie viele Maersche hat der Gegner? = verschiedene Kommandanten-Paare, mit denen er dir in den letzten 7 Tagen begegnet ist."""
+    res = {"m_enemy_marches": "–", "m_last_marches": "–", "_marches": [], "_enemy": ""}
+    if not last_b:
+        return res
+    pf = [f for f in last_b["fights"] if f[0] and len(f) > 13]
+    if not pf:
+        return res
+    res["m_last_marches"] = str(len({(f[11], f[12], f[13]) for f in pf}))       # Gegner-Maersche im letzten Kampf
+    epid, name = pf[0][11], pf[0][10]
+    since = last_b["t"] - 7 * 86400
+    seen = {}
+    for b in battles:
+        if b["t"] < since or (ids is not None and b["pid"] not in ids):
+            continue
+        for f in b["fights"]:
+            if len(f) > 13 and f[0] and f[11] == epid and f[12]:
+                k = (f[12], f[13])
+                seen[k] = max(seen.get(k, 0), b["t"])
+    if seen:
+        n = len(seen)
+        res["m_enemy_marches"] = "%d · %s" % (n, name) if name else str(n)
+        res["_marches"] = sorted(seen.items(), key=lambda kv: -kv[1])
+        res["_enemy"] = name
+    return res
 
 
 def fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang):
@@ -765,7 +814,7 @@ def web_vals(st, local, lang):
     """Summen von der Website + 'letzter Kampf' vom PC (der ist lokal immer am aktuellsten)."""
     tot = {k: float(st.get(k) or 0) for k in ("kp", "ekp", "dead", "sev", "wnd", "edead", "esev", "pw", "epw", "pvp", "pve", "kp_all")}
     v = fmt_totals(tot, st.get("first"), st.get("last"), None, "", lang)
-    for k in ("m_kp_last", "m_last_enemy"):
+    for k in ("m_kp_last", "m_last_enemy", "m_enemy_marches", "m_last_marches", "_marches", "_enemy"):
         v[k] = local.get(k, "–")
     v["_n"] = local.get("_n", 0)
     v["_src"] = "web"
@@ -963,6 +1012,29 @@ def card(parent, title=None):
     return c, c.body
 
 
+def responsive(frame, items, cols_wide, bp, gap=8):
+    """Karten nebeneinander, bei schmalem Fenster untereinander (bzw. weniger Spalten)."""
+    state = {"c": None}
+
+    def lay(_e=None):
+        w = frame.winfo_width()
+        if w < 20:
+            return
+        c = cols_wide if w >= px(bp) else max(1, cols_wide // 2 if cols_wide >= 4 else 1)
+        if c == state["c"]:
+            return
+        state["c"] = c
+        for i in range(max(cols_wide, 1)):
+            frame.columnconfigure(i, weight=1 if i < c else 0, uniform="rsp" if i < c else "")
+        for i, w_ in enumerate(items):
+            r, k = divmod(i, c)
+            w_.grid(row=r, column=k, sticky="nsew", padx=(0 if k == 0 else px(gap), 0), pady=(0 if r == 0 else px(gap), 0))
+    frame.bind("<Configure>", lay, add="+")
+    for i, w_ in enumerate(items):
+        w_.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else px(gap), 0))
+        frame.columnconfigure(i, weight=1, uniform="rsp")
+
+
 class Scroll(tk.Frame):
     """Scrollbarer Bereich (Mausrad)."""
 
@@ -971,10 +1043,21 @@ class Scroll(tk.Frame):
         self.cv = tk.Canvas(self, bg=bg, highlightthickness=0)
         self.inner = tk.Frame(self.cv, bg=bg)
         self.win = self.cv.create_window(0, 0, window=self.inner, anchor="nw")
+        self.bar = tk.Canvas(self, width=px(6), bg=bg, highlightthickness=0)
+        self.bar.pack(side="right", fill="y", padx=(px(4), 0))
         self.cv.pack(fill="both", expand=True)
+        self.cv.configure(yscrollcommand=self._bar)
         self.inner.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
         self.cv.bind("<Configure>", lambda e: self.cv.itemconfigure(self.win, width=e.width))
         self.cv.bind_all("<MouseWheel>", self._wheel, add="+")
+
+    def _bar(self, a, b):
+        """Schmaler goldener Scrollbalken (nur sichtbar, wenn es etwas zu scrollen gibt)."""
+        a, b = float(a), float(b)
+        self.bar.delete("all")
+        h = self.bar.winfo_height()
+        if b - a < 0.999 and h > 10:
+            rrect(self.bar, 0, a * h, px(6), b * h, px(3), fill=C["line2"], outline="")
 
     def _wheel(self, e):
         try:
@@ -1090,7 +1173,7 @@ class MarkerList(tk.Canvas):
 # ---------------------------------------------------------------- Overlay-Fenster
 ICONS = {"m_kp": "⚔", "m_kp_all": "Σ", "m_kp_last": "⚡", "m_kp_trade": "⚖", "m_loss_trade": "🩸", "m_power_trade": "💪",
          "m_dead": "💀", "m_severe": "✚", "m_wounded": "🩹", "m_enemy_out": "☠", "m_enemy_dead": "✝", "m_pvp": "🗡",
-         "m_pve": "🐗", "m_kph": "⏱", "m_last_enemy": "👤"}
+         "m_pve": "🐗", "m_kph": "⏱", "m_last_enemy": "👤", "m_enemy_marches": "🛡", "m_last_marches": "⚑"}
 OV_STYLES = ["tiles", "list", "bar"]
 
 
@@ -1210,6 +1293,9 @@ class Overlay:
         rng = T(ov.get("range", "r_session"))
         if ov.get("range") == "r_since" and ov.get("since"):
             rng = "%s %s" % ("seit" if self.app.cfg["lang"] == "de" else "since", ov["since"])
+        fg = self.app.focus_id()
+        if fg:
+            rng = "%s · %s" % (self.app.acc_name(fg), rng)
         keys = ov.get("metrics", [])
         tone = self.vals.get("_tone", {})
         flashing = now < self.flash_until
@@ -1355,7 +1441,7 @@ class Overlay:
             self.flash_until = now + 4                        # neuer Kampf: kurz golden
         al = self.alert and now < self.alert[2]
         bsig = (len(self.app.scanner.markers), int(now // 30)) if self.app.cfg["overlay"].get("ball_n", 3) else 0
-        key = (id(vals), now < self.flash_until, bool(al), int(now) % 2, int(now // 60) if al else 0, bsig)
+        key = (id(vals), now < self.flash_until, bool(al), int(now) % 2, int(now // 60) if al else 0, bsig, self.app.focus_id())
         if key != self._drawn:                               # nur neu zeichnen, wenn sich etwas sichtbar aendert
             self._drawn = key
             self.vals = vals
@@ -1653,13 +1739,18 @@ class App:
         tk.Label(hd, text=self.t(lab), bg=C["bg"], fg=C["text"], font=(FONT, 20, "bold")).pack(anchor="w")
         tk.Label(hd, text=self.t(sub), bg=C["bg"], fg=C["muted"], font=(FONT, 10)).pack(anchor="w", pady=(px(2), 0))
         tk.Frame(hd, bg=C["gold2"], height=2, width=px(48)).pack(anchor="w", pady=(px(10), 0))
-        body = tk.Frame(self.main, bg=C["bg"]); body.pack(fill="both", expand=True, padx=px(30), pady=(0, px(22)))
+        if key in ("acc", "mk"):                      # diese Seiten scrollen selbst
+            body = tk.Frame(self.main, bg=C["bg"]); body.pack(fill="both", expand=True, padx=px(30), pady=(0, px(22)))
+        else:                                         # alle anderen: ganze Seite scrollbar, nichts wird abgeschnitten
+            sc = Scroll(self.main, C["bg"]); sc.pack(fill="both", expand=True, padx=(px(30), px(8)), pady=(0, px(12)))
+            body = tk.Frame(sc.inner, bg=C["bg"]); body.pack(fill="both", expand=True, padx=(0, px(22)), pady=(0, px(10)))
         getattr(self, "page_" + key)(body)
         self._owners_keys = tuple(sorted(self.scanner.owners))
 
     # ---------- Seiten ----------
     def page_home(self, body):
         T, ov = self.t, self.cfg["overlay"]
+        self.focus_bar(body, C["bg"]).pack(fill="x", pady=(0, px(8)))
         bar = tk.Frame(body, bg=C["bg"]); bar.pack(fill="x", pady=(0, px(12)))
         tk.Label(bar, text=T("ov_range") + ":", bg=C["bg"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
         self.range_chips = {}
@@ -1669,24 +1760,26 @@ class App:
             ch = Chip(bar, T(rk).split(" (")[0], ov.get("range") == rk, lambda rk=rk: self.set_range(rk))
             ch.pack(side="left", padx=(0, px(5))); self.range_chips[rk] = ch
         self.home = {}
-        tiles = tk.Frame(body, bg=C["bg"]); tiles.pack(fill="x")
+        tiles = tk.Frame(body, bg=C["bg"]); tiles.pack(fill="x"); tl = []
         for i, (k, ico) in enumerate((("m_kp", "⚔"), ("m_kp_trade", "⚖"), ("m_loss_trade", "🩸"), ("m_dead", "💀"))):
             c = Card(tiles, pad=14, radius=16)
-            c.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else px(6), 0))
-            tiles.columnconfigure(i, weight=1, uniform="t")
+            tl.append(c)
             tk.Label(c.body, text="%s  %s" % (ico, T(k).upper()), bg=C["card"], fg=C["muted"], font=(FONT, 8, "bold")).pack(anchor="w")
             v = tk.Label(c.body, text="–", bg=C["card"], fg=C["text"], font=(FONT, 22, "bold")); v.pack(anchor="w", pady=(px(4), 0))
             self.home[k] = v
+        responsive(tiles, tl, 4, 760)
         row = tk.Frame(body, bg=C["bg"]); row.pack(fill="both", expand=True, pady=(px(12), 0))
-        row.columnconfigure(0, weight=1, uniform="r"); row.columnconfigure(1, weight=1, uniform="r")
-        c = Card(row, T("h_last")); c.grid(row=0, column=0, sticky="nsew", padx=(0, px(6)))
+        c = Card(row, T("h_last")); hl = [c]
         for k in ("m_kp_last", "m_last_enemy", "m_kph", "m_pvp", "m_pve", "m_enemy_out"):
             r = tk.Frame(c.body, bg=C["card"]); r.pack(fill="x", pady=px(2))
             tk.Label(r, text=T(k), bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left")
             v = tk.Label(r, text="–", bg=C["card"], fg=C["text"], font=(FONT, 10, "bold")); v.pack(side="right")
             self.home[k] = v
-        c = Card(row, "🎯 " + T("ov_balls")); c.grid(row=0, column=1, sticky="nsew", padx=(px(6), 0))
+        c = Card(row, "🎯 " + T("ov_balls")); hl.append(c); responsive(row, hl, 2, 760)
         self.home_balls = tk.Frame(c.body, bg=C["card"]); self.home_balls.pack(fill="both", expand=True)
+        self.home_mcard = Card(body, "🛡 " + T("m_enemy_marches")); self.home_mcard.pack(fill="x", pady=(px(12), 0))
+        self.home_marches = tk.Frame(self.home_mcard.body, bg=C["card"]); self.home_marches.pack(fill="x")
+        self._home_msig = None
         self._home_bsig = None
         self.update_home()
 
@@ -1701,6 +1794,25 @@ class App:
                 txt = vals.get(k, "–")
                 if lb.cget("text") != txt or lb.cget("fg") != col:
                     lb.configure(text=txt, fg=col)
+            mar = vals.get("_marches") or []
+            msig = (vals.get("_enemy"), tuple(mar))
+            if msig != self._home_msig:
+                self._home_msig = msig
+                for w in self.home_marches.winfo_children():
+                    w.destroy()
+                if not mar:
+                    tk.Label(self.home_marches, text=self.t("h_nomarch"), bg=C["card"], fg=C["dim"], font=(FONT, 9)).pack(anchor="w")
+                else:
+                    tk.Label(self.home_marches, text=self.t("h_march_info", n=len(mar), e=vals.get("_enemy") or "?"), bg=C["card"],
+                             fg=C["text"], font=(FONT, 10, "bold")).pack(anchor="w", pady=(0, px(6)))
+                    grid = tk.Frame(self.home_marches, bg=C["card"]); grid.pack(fill="x")
+                    for i, ((h1, h2), t) in enumerate(mar[:10]):
+                        cell = tk.Frame(grid, bg=C["card2"], padx=px(10), pady=px(6))
+                        cell.grid(row=i // 2, column=i % 2, sticky="we", padx=(0, px(6)), pady=px(3))
+                        grid.columnconfigure(i % 2, weight=1, uniform="m")
+                        tk.Label(cell, text="%d.  %s + %s" % (i + 1, self.hero_name(h1), self.hero_name(h2)), bg=C["card2"], fg=C["text"],
+                                 font=(FONT, 10, "bold"), anchor="w").pack(side="left")
+                        tk.Label(cell, text=self.ago(t), bg=C["card2"], fg=C["dim"], font=(FONT, 9)).pack(side="right")
             words = self.ball_words()
             with self.scanner.lock:
                 ms = sorted([m for m in self.scanner.markers.values() if is_ball(m, words)], key=lambda m: -m["t"])[:4]
@@ -1764,10 +1876,21 @@ class App:
         if self.cfg.get("token"):
             tk.Label(body, text=T("prof_id", id=prof) if prof else T("prof_none"), bg=C["bg"], fg=C["gold"] if prof else C["bad"],
                      font=(FONT, 9, "bold"), wraplength=640, justify="left").pack(anchor="w", pady=(6, 0))
-        sc = Scroll(body, C["bg"]); sc.pack(fill="both", expand=True, pady=(10, 0))
+        if self.cfg.get("token"):                     # neue ID von Hand (z. B. Pilot-Account, der noch keine Mails hat)
+            ar = tk.Frame(body, bg=C["bg"]); ar.pack(fill="x", pady=(px(10), 0))
+            tk.Label(ar, text=T("add_id"), bg=C["bg"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
+            self.v_addid = tk.StringVar()
+            entry(ar, self.v_addid, 12).pack(side="left")
+            Btn(ar, T("add_btn"), lambda: self.add_id("pilot"), small=True).pack(side="left", padx=(px(8), 0))
+            Btn(ar, T("add_alt"), lambda: self.add_id("alt"), "ghost", small=True).pack(side="left", padx=(px(6), 0))
+        sc = Scroll(body, C["bg"]); sc.pack(fill="both", expand=True, pady=(px(10), 0))
         links = {str(x["governor_id"]): x for x in self.cfg.get("links", [])}
+        act = self.scanner.active[0]
         with self.scanner.lock:
             owners = dict(self.scanner.owners)
+        for gid, x in links.items():                 # gebunden, aber noch keine Mails auf diesem PC
+            if gid.isdigit() and int(gid) not in owners:
+                owners[int(gid)] = {"name": x.get("gov_name") or "", "mails": 0, "last": 0}
         if not owners:
             tk.Label(sc.inner, text=T("no_acc"), bg=C["bg"], fg=C["dim"], font=(FONT, 10), wraplength=560, justify="left").pack(anchor="w", pady=20)
         kcol = {"main": C["gold"], "alt": "#7dd3fc", "pilot": "#c4b5fd"}
@@ -1786,6 +1909,8 @@ class App:
             info = tk.Frame(row, bg=C["card"]); info.pack(side="left", fill="x", expand=True)
             top = tk.Frame(info, bg=C["card"]); top.pack(anchor="w")
             tk.Label(top, text=name, bg=C["card"], fg=C["text"], font=(FONT, 11, "bold")).pack(side="left")
+            if act and int(act) == int(pid):
+                tk.Label(top, text="⚡ " + T("now_active"), bg=C["card"], fg=C["good"], font=(FONT, 8, "bold")).pack(side="left", padx=(px(8), 0))
             if ln:
                 tk.Label(top, text=T("k_" + kind), bg=C["card2"], fg=kcol[kind], font=(FONT, 8, "bold"), padx=6).pack(side="left", padx=8)
                 if ln.get("status") == "pending":
@@ -1810,6 +1935,64 @@ class App:
         if d < 86400:
             return self.t("mk_ago_h", n=int(d // 3600))
         return self.t("mk_ago_d", n=int(d // 86400))
+
+    def focus_id(self):
+        """Welcher Account wird gezaehlt? auto = der gerade gespielte (neueste Mail), all = alle gebundenen, sonst feste ID."""
+        f = str(self.cfg["overlay"].get("focus", "auto"))
+        if f == "all":
+            return None
+        if f == "auto":
+            a = self.scanner.active[0]
+            return int(a) if a else None
+        return int(f) if f.isdigit() else None
+
+    def acc_name(self, gid):
+        if not gid:
+            return ""
+        o = self.scanner.owners.get(int(gid)) or {}
+        ln = next((x for x in self.cfg.get("links", []) if str(x["governor_id"]) == str(gid)), {})
+        return o.get("name") or ln.get("gov_name") or str(gid)
+
+    def set_focus(self, f):
+        self.cfg["overlay"]["focus"] = f; save_cfg(self.cfg); self._sig = None; self._web_due = 0
+        self.overlay._drawn = None
+        if self.page in ("ov", "home"):
+            self.render()
+
+    def focus_bar(self, parent, bg):
+        """Chips: Automatisch (aktiver Account) · Alle · einzelne Accounts."""
+        T, f = self.t, str(self.cfg["overlay"].get("focus", "auto"))
+        bar = tk.Frame(parent, bg=bg)
+        tk.Label(bar, text=T("acc_focus"), bg=bg, fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
+        act = self.scanner.active[0]
+        Chip(bar, "⚡ " + T("f_auto") + (" · " + self.acc_name(act) if act else ""), f == "auto", lambda: self.set_focus("auto")).pack(side="left", padx=(0, px(5)))
+        Chip(bar, T("f_all"), f == "all", lambda: self.set_focus("all")).pack(side="left", padx=(0, px(5)))
+        ids = []
+        for x in self.cfg.get("links", []):
+            if str(x["governor_id"]) not in ids:
+                ids.append(str(x["governor_id"]))
+        for pid in sorted(self.scanner.owners, key=lambda p: -self.scanner.owners[p].get("last", 0)):
+            if str(pid) not in ids:
+                ids.append(str(pid))
+        for gid in ids[:8]:
+            Chip(bar, self.acc_name(gid), f == gid, lambda gid=gid: self.set_focus(gid)).pack(side="left", padx=(0, px(5)))
+        return bar
+
+    def hero_name(self, hid):
+        """Kommandanten-Name aus den Spieldateien (einmal geladen)."""
+        if not hid:
+            return "–"
+        if getattr(self, "_heroes", None) is None:
+            self._heroes = {}
+            if UP is not None:
+                for g in self.cfg.get("game_folders", []):
+                    try:
+                        self._heroes = UP.load_hero_names(g, "de" if self.cfg.get("lang") == "de" else "en") or {}
+                        if self._heroes:
+                            break
+                    except Exception:
+                        pass
+        return self._heroes.get(hid) or self._heroes.get(str(hid)) or "#%s" % hid
 
     def copy_xy(self, mk):
         self.root.clipboard_clear()
@@ -1924,8 +2107,9 @@ class App:
 
     def page_ov(self, body):
         T, ov = self.t, self.cfg["overlay"]
+        self.focus_bar(body, C["bg"]).pack(fill="x", pady=(0, px(10)))
         top = tk.Frame(body, bg=C["bg"]); top.pack(fill="x")
-        o, c = card(top, T("card_view")); o.pack(side="left", fill="both", expand=True, padx=(0, 7))
+        o, c = card(top, T("card_view")); ov_cards = [o]
         for key, lab in (("show", "ov_show"), ("locked", "ov_lock"), ("pvp_only", "ov_pvp_only"), ("count_pilot", "ov_pilot")):
             v = tk.BooleanVar(value=ov.get(key, key in ("show", "pvp_only")))
             Toggle(c, T(lab), v, lambda k=key, v=v: self.set_opt(k, v.get())).pack(anchor="w", pady=3)
@@ -1954,13 +2138,14 @@ class App:
             ch = Chip(r, T("st_" + st), ov.get("style", "tiles") == st, lambda st=st: self.set_style(st))
             ch.pack(side="left", padx=(0, px(4))); self.style_chips[st] = ch
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text="🎯 " + T("ov_ball_n"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+        tk.Label(r, text="🎯 " + T("ov_ball_n"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(anchor="w", pady=(0, px(4)))
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
         self.balln_chips = {}
         for n in range(0, 6):
             ch = Chip(r, T("off") if n == 0 else str(n), int(ov.get("ball_n", 3)) == n, lambda n=n: self.set_ball_n(n))
             ch.pack(side="left", padx=(0, px(4))); self.balln_chips[n] = ch
 
-        o, c = card(top, T("card_range")); o.pack(side="left", fill="both", expand=True, padx=(7, 0))
+        o, c = card(top, T("card_range")); ov_cards.append(o); responsive(top, ov_cards, 2, 720)
         chips = tk.Frame(c, bg=C["card"]); chips.pack(anchor="w")
         self.range_chips = {}
         for i, rk in enumerate(RANGES):
@@ -1995,7 +2180,7 @@ class App:
         Btn(r, "🔍 " + T("detect"), self.detect, "ghost", small=True).pack(side="left", padx=6)
 
         row = tk.Frame(body, bg=C["bg"]); row.pack(fill="x", pady=14)
-        o, c = card(row, T("card_upload")); o.pack(side="left", fill="both", expand=True, padx=(0, 7))
+        o, c = card(row, T("card_upload")); set_cards = [o]
         v = tk.BooleanVar(value=self.cfg.get("upload", False))
         tg = Toggle(c, T("upload"), v, lambda: self.set_cfg("upload", v.get())); tg.pack(anchor="w")
         if UP is None:
@@ -2010,7 +2195,7 @@ class App:
             n = max(1, min(365, int(self.cfg.get("upload_days", 14)) + d)); dl.configure(text=str(n)); self.set_cfg("upload_days", n)
         Btn(r, "−", lambda: dstep(-7), "ghost", small=True).pack(side="left", padx=(6, 0)); dl.pack(side="left"); Btn(r, "+", lambda: dstep(7), "ghost", small=True).pack(side="left")
 
-        o, c = card(row, T("card_start")); o.pack(side="left", fill="both", expand=True, padx=(7, 0))
+        o, c = card(row, T("card_start")); set_cards.append(o); responsive(row, set_cards, 2, 720)
         Btn(c, "🪟  " + T("autostart"), self.autostart, "ghost", small=True).pack(anchor="w")
         v2 = tk.BooleanVar(value=self.cfg.get("start_min", False))
         Toggle(c, T("start_min"), v2, lambda: self.set_cfg("start_min", v2.get())).pack(anchor="w", pady=8)
@@ -2055,6 +2240,12 @@ class App:
         self.cfg["api_base"] = self.v_site.get().strip().rstrip("/") or DEFAULT_CFG["api_base"]
         save_cfg(self.cfg)
         webbrowser.open(self.cfg["api_base"] + "/uploader.html")
+
+    def add_id(self, kind):
+        gid = "".join(ch for ch in self.v_addid.get() if ch.isdigit())
+        if not (5 <= len(gid) <= 12):
+            messagebox.showwarning("Wiz fan Club", self.t("c_id") + "?"); return
+        self.bind_acc(int(gid), True, kind)
 
     def bind_acc(self, pid, on, kind="alt"):
         if not self.cfg.get("token"):
@@ -2219,9 +2410,13 @@ class App:
                 since = datetime.strptime(ov["since"], "%Y-%m-%d").timestamp()
             else:
                 since = 0
-            links = [x for x in self.cfg.get("links", []) if x.get("status", "ok") == "ok"
-                     and (x.get("kind") != "pilot" or ov.get("count_pilot"))]
-            ids = {int(x["governor_id"]) for x in links} if self.cfg.get("links") else None    # None = alle Accounts
+            fgid = self.focus_id()
+            if fgid:                                                # ein Account (automatisch der gerade gespielte, oder gewaehlt)
+                ids = {fgid}
+            else:
+                links = [x for x in self.cfg.get("links", []) if x.get("status", "ok") == "ok"
+                         and (x.get("kind") != "pilot" or ov.get("count_pilot"))]
+                ids = {int(x["governor_id"]) for x in links} if self.cfg.get("links") else None    # None = alle Accounts
             with self.scanner.lock:
                 nm, self.scanner.new_markers = self.scanner.new_markers, []
                 nb = len(self.scanner.battles)
@@ -2234,7 +2429,8 @@ class App:
                 self._local = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
                 self._vals = self._local
             web = ov.get("source", "web") == "web" and self.cfg.get("token")
-            q = "stats&since=%d&pvp=%d&pilot=%d" % (int(since) // 60 * 60, 1 if ov.get("pvp_only", True) else 0, 1 if ov.get("count_pilot") else 0)
+            q = "stats&since=%d&pvp=%d&pilot=%d&only=%s" % (int(since) // 60 * 60, 1 if ov.get("pvp_only", True) else 0,
+                                                             1 if ov.get("count_pilot") else 0, fgid or "")
             if web and getattr(self, "_web_q", None) == q and getattr(self, "_web_stats", None) and self._vals.get("_src") != "web":
                 self._vals = web_vals(self._web_stats, self._local, self.cfg.get("lang", "de"))     # letzte Website-Zahlen behalten
             if web and getattr(self, "_web_q", None) != q:
@@ -2246,6 +2442,10 @@ class App:
 
                 def got(d, err, q=q):
                     self._web_busy = False
+                    if not err and d and d.get("empty"):                 # z. B. neuer Pilot-Account noch nicht bestaetigt -> PC-Zahlen
+                        self._web_q, self._web_stats = q, None
+                        self._vals = getattr(self, "_local", {})
+                        return
                     if err or not d or not d.get("stats"):
                         self._web_err = str(err) if err else ""
                         if getattr(self, "_web_q", None) != q:
