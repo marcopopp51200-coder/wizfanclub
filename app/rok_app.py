@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Wiz fan Club App (Testversion 0.4)
+Wiz fan Club App (Testversion 0.5)
 ----------------------------------
 * Verbinden: Code von der Website (uploader.html) eingeben -> App ist mit deinem Account gekoppelt.
 * Accounts: erkennt die Governor-IDs aus dem Mailcache und bindet sie an deinen Website-Account.
@@ -10,14 +10,14 @@ Wiz fan Club App (Testversion 0.4)
 Liest nur Dateien im Ordner <Spiel>\\save\\mailcache. Veraendert nichts am Spiel, liest keinen Netzwerkverkehr.
 Braucht nur Python 3 (tkinter ist dabei). Start ohne Konsolenfenster: pythonw rok_app.py
 """
-import glob, json, os, platform, struct, sys, threading, time, traceback
+import glob, json, os, struct, sys, threading, time, traceback
 import urllib.request, urllib.error
 from datetime import datetime, date
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.4-test"
+APP_VERSION = "0.5-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -553,7 +553,7 @@ TXT["de"].update({
     "k_main": "Main", "k_alt": "Zweitaccount", "k_pilot": "Pilot", "pending": "wartet auf Besitzer",
     "prof_id": "Governor-ID in deinem Website-Profil: {id}", "prof_none": "In deinem Website-Profil ist noch keine Governor-ID eingetragen – trag sie dort ein, dann kannst du deinen Main binden.",
     "pending_info": "Der Besitzer muss das auf der Website unter „App verbinden“ erlauben.", "ov_pilot": "Pilot-Accounts mitzählen",
-    "tab_mk": "Marker", "sub_mk": "Koalitions- und Allianz-Marker aus deinen Mails.", "mk_all": "Alle", "mk_ball": "Nur Ball", "mk_sort_new": "Neueste zuerst", "mk_sort_ball": "Ball zuerst",
+    "dev_name": "Name für diesen PC", "tab_mk": "Marker", "sub_mk": "Koalitions- und Allianz-Marker aus deinen Mails.", "mk_all": "Alle", "mk_ball": "Nur Ball", "mk_sort_new": "Neueste zuerst", "mk_sort_ball": "Ball zuerst",
     "mk_none": "Noch keine Marker-Mails gefunden. Falls doch welche im Spiel sind: unten „Beispiel speichern“ und mir die Datei schicken.",
     "mk_copy": "Kopieren", "mk_copied": "Koordinaten kopiert", "mk_ago_m": "vor {n} Min.", "mk_ago_h": "vor {n} Std.", "mk_ago_d": "vor {n} Tg.",
     "mk_words": "Ball-Wörter (mit Komma)", "mk_sound": "Ton bei neuem Ball-Marker", "mk_overlay": "Neuen Ball-Marker im Overlay zeigen",
@@ -573,7 +573,7 @@ TXT["en"].update({
     "k_main": "Main", "k_alt": "Alt account", "k_pilot": "Pilot", "pending": "waiting for owner",
     "prof_id": "Governor ID in your website profile: {id}", "prof_none": "There is no governor ID in your website profile yet – add it there, then you can link your main.",
     "pending_info": "The owner has to allow this on the website under “Connect the app”.", "ov_pilot": "Count pilot accounts",
-    "tab_mk": "Markers", "sub_mk": "Coalition and alliance markers from your mails.", "mk_all": "All", "mk_ball": "Ball only", "mk_sort_new": "Newest first", "mk_sort_ball": "Ball first",
+    "dev_name": "Name for this PC", "tab_mk": "Markers", "sub_mk": "Coalition and alliance markers from your mails.", "mk_all": "All", "mk_ball": "Ball only", "mk_sort_new": "Newest first", "mk_sort_ball": "Ball first",
     "mk_none": "No marker mails found yet. If there are some in the game: click “Save example” below and send me the file.",
     "mk_copy": "Copy", "mk_copied": "Coordinates copied", "mk_ago_m": "{n} min ago", "mk_ago_h": "{n} h ago", "mk_ago_d": "{n} d ago",
     "mk_words": "Ball words (comma separated)", "mk_sound": "Sound on new ball marker", "mk_overlay": "Show new ball marker in overlay",
@@ -1034,6 +1034,9 @@ class App:
         entry(r, self.v_site, 30).pack(side="left", ipady=5)
         Btn(r, T("open_page") + " ↗", self.open_page, "ghost", small=True).pack(side="left", padx=8)
         right = tk.Frame(c, bg=C["card"]); right.pack(side="right", padx=(20, 0))
+        tk.Label(right, text=T("dev_name").upper(), bg=C["card"], fg=C["muted"], font=(FONT, 8, "bold")).pack(anchor="w")
+        self.v_dev = tk.StringVar(value=self.cfg.get("device_name") or self.default_dev_name())
+        entry(right, self.v_dev, 18).pack(fill="x", ipady=4, pady=(2, 8))
         tk.Label(right, text=T("code").upper(), bg=C["card"], fg=C["muted"], font=(FONT, 8, "bold")).pack(anchor="w")
         self.v_code = tk.StringVar()
         e = entry(right, self.v_code, 8, big=True, center=True); e.pack(ipady=6, pady=4)
@@ -1278,7 +1281,18 @@ class App:
             self.cfg["token"] = d["token"]; self.cfg["user_name"] = (d.get("user") or {}).get("name", "")
             save_cfg(self.cfg); self.page = "acc"
             self.run_bg(self.refresh_me)
-        self.run_bg(lambda: self.api("pair", {"code": code, "device_name": platform.node() or "PC"}, auth=False), done)
+        dev = (self.v_dev.get().strip() or "PC")[:40]           # selbst gewaehlter Name – nie der Windows-Computername
+        self.cfg["device_name"] = dev; save_cfg(self.cfg)
+        self.run_bg(lambda: self.api("pair", {"code": code, "device_name": dev}, auth=False), done)
+
+    def default_dev_name(self):
+        """Vorschlag: In-Game-Name des zuletzt aktiven Accounts, sonst „PC“."""
+        try:
+            with self.scanner.lock:
+                o = max(self.scanner.owners.values(), key=lambda x: x.get("last", 0), default=None)
+            return ("%s PC" % o["name"])[:40] if o and o.get("name") else "PC"
+        except Exception:
+            return "PC"
 
     def disconnect(self):
         if messagebox.askyesno("Wiz fan Club", self.t("disconnect") + "?"):
