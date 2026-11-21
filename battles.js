@@ -113,16 +113,21 @@ window.RokMods.battles = (R) => {
       }
       if (miss) { miss.forEach(i => kbCache.set(i, [])); all.forEach(r => { const k = String(r.player_id); (kbCache.get(k) || kbCache.set(k, []).get(k)).push(r); }); } else kbAllRows = all;
     } catch (e) { if (miss) miss.forEach(i => { if (!kbCache.has(i)) kbCache.set(i, []); }); else kbAllRows = kbAllRows || []; kbErr = /rok_battles|relation|schema cache/i.test(e?.message || '') ? 'missing' : (e?.message || String(e)); }
-    kbLoading = false; kbCurKey = null; kbApply(); if (R.view === 'battles') renderKampf();
+    kbLoading = false; kbCurKey = null; kbFreshT = Date.now(); kbApply(); if (R.view === 'battles') renderKampf();
   }
   // Live: nur Kämpfe nachladen, die neuer sind als der neueste geladene
-  async function kbLoadNew() {
-    if (kbLoading || !kbRows) return 0;
-    try { const db = RokAuth.db?.(); if (!db) return 0; const newest = kbRows.reduce((m, r) => (r.battle_start || '') > m ? r.battle_start : m, ''), ids = kbScopeIds();
-      let q = db.from('rok_battles').select(kbSel()).gte('battle_start', newest || '2000-01-01'); if (ids) q = q.in('player_id', ids.length ? ids : ['0']); q = await q.order('battle_start', { ascending: false }).limit(2000); if (q.error) return 0;
+  var kbFreshT = 0, kbFreshing = false;
+  async function kbLoadNew() {   // neue Kämpfe nachladen – pro ID ab ihrem neuesten Kampf (minus 3 h, weil der Uploader Berichte auch später nachliefert)
+    if (kbLoading || !kbRows || kbFreshing) return 0; kbFreshing = true; kbFreshT = Date.now();
+    try { const db = RokAuth.db?.(); if (!db) return 0; const ids = kbScopeIds(), newest = new Map();
+      kbRows.forEach(r => { const k = String(r.player_id), t = r.battle_start || ''; if (t > (newest.get(k) || '')) newest.set(k, t); });
+      const base = ids ? ids.map(i => newest.get(String(i)) || '') : [...newest.values()], low = base.some(x => !x) ? '' : base.sort()[0] || '';
+      const since = low ? new Date(Date.parse(low) - 3 * 36e5).toISOString() : new Date(Date.now() - 2 * 864e5).toISOString();
+      let q = db.from('rok_battles').select(kbSel()).gte('battle_start', since); if (ids) q = q.in('player_id', ids.length ? ids : ['0']); q = await q.order('battle_start', { ascending: false }).limit(5000); if (q.error) return 0;
       const have = new Set(kbRows.map(r => r.mail_id + '|' + r.opponent_id)), add = (q.data || []).filter(r => !have.has(r.mail_id + '|' + r.opponent_id));
-      if (add.length) { add.slice().reverse().forEach(r => { const c = kbCache.get(String(r.player_id)); if (c) c.unshift(r); if (kbAllRows && kbAllRows !== c) kbAllRows.unshift(r); }); kbCurKey = null; kbApply(); }
-      return add.length; } catch { return 0; }
+      if (add.length) { const touched = new Set(); add.forEach(r => { const c = kbCache.get(String(r.player_id)); if (c) { c.push(r); touched.add(c); } if (kbAllRows && kbAllRows !== c) { kbAllRows.push(r); touched.add(kbAllRows); } });
+        touched.forEach(c => c.sort((x, y) => (y.battle_start || '').localeCompare(x.battle_start || ''))); kbCurKey = null; kbApply(); }
+      return add.length; } catch { return 0; } finally { kbFreshing = false; }
   }
   function kbSt() { const s = (S.kampf = S.kampf || { acc: '', type: 'pvp', days: 30, from: '', to: '' }); if (s.type !== 'pvp' && s.type !== 'pve') s.type = 'pvp'; return s; }
   // PvE-Arten: NpcBType aus dem Bericht → Kategorie (1 = Barbar sicher, Rest einstellbar unter „PvE-Gegnerarten“)
@@ -345,6 +350,7 @@ window.RokMods.battles = (R) => {
     const wip = `<div class="text-center"><span class="inline-flex items-center gap-2 rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-1.5 font-display text-sm sm:text-base tracking-widest uppercase text-amber-300">🚧 <span>In Work</span> 🚧</span></div>`;
     if (!st0.accV2 && kbProfileId()) { st0.accV2 = 1; st0.acc = kbProfileId(); }   // Standard: dein Profil-Account
     if ((st0.page || 'battles') !== 'res' && !kbApply()) { kbRows = null; kbCurKey = null; if (!kbLoading) loadBattles(); }
+    else if ((st0.page || 'battles') !== 'res' && kbRows && !kbLoading && !kbFreshing && Date.now() - kbFreshT > 90e3) kbLoadNew().then(n => { if (n && R.view === 'battles') renderKampf(); });   // gemerkte Accounts: neue Kämpfe alle 90 s nachladen
     kbCharts.forEach(c => { try { c.destroy(); } catch {} }); kbCharts = [];
     const st = kbSt(); let tab = st.tab || 'march'; let cards = (st.cards = st.cards || { kp: true, eLoss: true, sDead: true, sSev: true });
     const segBtn = (attr, k, l, on, cls) => `<button type="button" ${attr}="${k}" aria-pressed="${on}" class="seg-btn rounded-lg ${cls || 'px-2 py-1'} text-xs font-semibold transition">${l}</button>`;
