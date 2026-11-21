@@ -149,7 +149,14 @@ window.RokMods.battles = (R) => {
   // Meine IDs: Governor-ID aus dem Profil + selbst verknüpfte IDs (z. B. Filler oder zweiter Account).
   // Battles und Loot zeigen nur Daten dieser IDs – spielst du auf einem anderen Account, trag dessen ID im Profil ein.
   function kbProfileId() { try { return String((window.RokAuth?.ownMeta?.() || {}).governor_id || '').replace(/\D/g, ''); } catch { return ''; } }
-  function kbMyIds() { const s = new Set((kbSt().linkIds || []).map(String)); const p = kbProfileId(); if (p) s.add(p); return s; }
+  function kbMyIds() { const s = new Set((kbSt().linkIds || []).map(String)); const p = kbProfileId(); if (p) s.add(p); (kbAppIds || []).forEach(x => s.add(x)); if (!kbAppIds) kbLoadAppIds(); return s; }
+  // In der Wiz-fan-Club-App gebundene IDs (Main + Zweitaccounts, bestätigt) zählen automatisch mit
+  var kbAppIds = null;
+  async function kbLoadAppIds() { if (kbAppIds) return; kbAppIds = new Set();
+    try { const db = RokAuth?.db?.(); if (!db || !RokAuth?.userId?.()) { kbAppIds = null; return; }
+      const q = await db.from('governor_links').select('governor_id,kind,status').eq('status', 'ok');
+      (q.data || []).filter(x => x.kind !== 'pilot').forEach(x => kbAppIds.add(String(x.governor_id))); } catch {}
+    if (kbAppIds.size && R.view === 'battles') renderKampf(); }
   var kbSiteNames = null;   // Governor-ID → Name auf der Website (leaderboard)
   async function kbLoadSiteNames() { if (kbSiteNames) return; kbSiteNames = new Map();
     try { const db = RokAuth?.db?.(), ids = [...kbMyIds()]; if (!db || !ids.length) return; const q = await db.from('leaderboard').select('username,governor_id').in('governor_id', ids);
@@ -412,7 +419,8 @@ window.RokMods.battles = (R) => {
     const idChip = (id, own) => `<span class="inline-flex items-center gap-1 rounded-lg border ${own ? 'border-gold-500/60 bg-gold-500/10 text-gold-200' : 'border-ink-600 text-slate-300'} px-2 py-0.5" translate="no">${own ? '👤' : '🔗'} ${esc(kbIdName(id, names))} <span class="tabular-nums text-slate-400">${esc(id)}</span>${own ? ' <span class="text-[10px] text-slate-500">Profil</span>' : `<button type="button" data-kbunlink="${esc(id)}" class="text-slate-500 hover:text-red-300" title="Verknüpfung lösen">✕</button>`}</span>`;
     const idBar = `<div class="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]"><span class="text-slate-500">🆔 <span>Angezeigt für</span>:</span>
         ${pidP ? idChip(pidP, true) : '<span class="text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}${links.filter(x => x !== pidP).map(x => idChip(x, false)).join('')}
-        <input data-kblinkid inputmode="numeric" placeholder="+ ID verknüpfen" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-0.5 text-[11px] w-32 text-slate-100 focus:outline-none focus:border-gold-500"></div>`;
+        <input data-kblinkid inputmode="numeric" placeholder="+ ID verknüpfen" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-0.5 text-[11px] w-32 text-slate-100 focus:outline-none focus:border-gold-500">
+        <a href="/uploader.html" class="ml-auto inline-flex items-center gap-1 rounded-lg border border-gold-500/60 bg-gold-500/10 text-gold-200 hover:bg-gold-500/20 px-2 py-0.5">📲 <span>App &amp; Overlay</span></a></div>`;
     const info = note + `<div class="text-[11px] text-slate-500 mb-4">${nJoin ? `<span class="text-sky-300">🛡️ ${fmt(nJoin)}</span> <span>${pvp ? 'Rally-/Garnisonskämpfe als Teilnehmer (unten)' : 'Rallys als Teilnehmer mitgezählt'}</span> · ` : ''}${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
     // 1) Karten
     const cardHtml = KB_METRICS.filter(m => pvp || m.k !== 'kp').map(m => { const v = m.v(A), on = !!cards[m.k];
