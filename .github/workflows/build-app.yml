@@ -11,6 +11,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: app-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: windows-latest
@@ -41,8 +45,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="app-${{ github.ref_name }}"
-          gh release delete "$TAG" -y --cleanup-tag || true
-          gh release create "$TAG" dist/WizFanClubApp.exe --target "${{ github.sha }}" \
-            --title "Wiz fan Club App (${{ github.ref_name }})" \
-            --notes "Automatisch gebaut aus Commit ${{ github.sha }}" \
-            --prerelease=${{ github.ref_name != 'main' }}
+          # Release nur aktualisieren statt loeschen -> der Download-Link funktioniert auch waehrend des Bauens
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" dist/WizFanClubApp.exe --clobber
+            gh release edit "$TAG" --notes "Automatisch gebaut aus Commit ${{ github.sha }}"
+          else
+            gh release create "$TAG" dist/WizFanClubApp.exe --target "${{ github.sha }}" \
+              --title "Wiz fan Club App (${{ github.ref_name }})" \
+              --notes "Automatisch gebaut aus Commit ${{ github.sha }}" \
+              --prerelease=${{ github.ref_name != 'main' }}
+          fi
