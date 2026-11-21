@@ -337,6 +337,7 @@ window.RokMods.battles = (R) => {
       ${ids.length > 1 || farms.length ? chip('', '🌍', '<span>Alle</span>') : ''}${own}
       ${farms.length ? `<span class="w-px h-7 bg-ink-700 mx-1"></span><span class="text-xs text-slate-500">🌾 <span>Farmen</span></span>${farms.map(([id, l]) => chip(id, '🌾', esc(l))).join('')}` : ''}
       <input data-kblinkid inputmode="numeric" placeholder="+ ID" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1.5 text-xs w-24 text-slate-100 focus:outline-none focus:border-gold-500">
+      <a href="/uploader.html" class="inline-flex items-center gap-1.5 rounded-xl border border-gold-500/60 bg-gold-500/10 text-gold-200 hover:bg-gold-500/20 px-3 py-1.5 text-sm font-semibold whitespace-nowrap">📲 <span>App &amp; Overlay</span></a>
       ${ids.length ? '' : '<span class="text-[11px] text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}</div>`;
   }
   function renderKampf() {
