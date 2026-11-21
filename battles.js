@@ -173,7 +173,11 @@ window.RokMods.battles = (R) => {
     add('cav', 'Cao Cao,Minamoto no Yoshitsune,Pelagius,Baibars,Saladin,Attila,Takeda Shingen,Xiang Yu,Chandragupta Maurya,Alexander Nevsky,Belisarius,William I,Achilles,Ivan IV,Huo Qubing,El Cid,Lancelot,Bertrand du Guesclin,Jadwiga,Arthur Pendragon,Subutai,Genghis Khan,Tomoe Gozen');
     add('arch', 'Yi Seong-Gye,Hermann,Hermann Prime,Ramesses II,Henry V,Artemisia I,Nebuchadnezzar II,Amanitore,Zhuge Liang,Ashurbanipal,Dido,Yi Sun-sin,Edward of Woodstock,Tomyris,Gilgamesh,Shapur I,Kublai Khan,Qin Shi Huang,Boudica');
     add('siege', 'Mehmed II,Babur,Wu Zetian,Ivar the Boneless'); return o; })();
-  function kbTroop(f, h1) { return KB_FORM[+f] || KB_HERO_T[String(h1 || '').trim().toLowerCase()] || null; }
+  var KB_HERO_TI = null;   // Truppentyp nach Bild-ID → funktioniert für deutsche und englische Namen (Iwan IV. = Ivan IV)
+  function kbHeroT(n) { n = String(n || '').trim(); if (!n) return null; const d = KB_HERO_T[n.toLowerCase()]; if (d) return d;
+    if (!KB_HERO_TI) { KB_HERO_TI = new Map(); Object.entries(KB_HERO_T).forEach(([k, t]) => { const id = hmIconId(k); if (id && !KB_HERO_TI.has(id)) KB_HERO_TI.set(id, t); }); }
+    const id = hmIconId(n); return id ? KB_HERO_TI.get(id) || null : null; }
+  function kbTroop(f, h1) { return KB_FORM[+f] || kbHeroT(h1) || null; }
   function kbTT(r, side) { return side === 'enemy' ? kbTroop(r.enemy_formation, r.enemy_hero1) : kbTroop(r.self_formation, r.self_hero1); }
   function kbTTChip(t, big) { if (!t) return ''; const x = KB_TT[t]; return `<span class="inline-flex items-center gap-1 rounded-md border border-ink-600 bg-ink-900 px-1.5 py-0.5 ${big ? 'text-xs' : 'text-[10px]'} text-slate-200" title="Truppentyp (geschätzt nach Formation / Kommandant)">${x[0]} <span>${x[1]}</span></span>`; }
   function kbMarchOf(r) { return [r.self_hero1, r.self_hero2].filter(Boolean).join(' / ') || '–'; }
@@ -1499,7 +1503,7 @@ window.RokMods.battles = (R) => {
     if (dm === 'fight') {   // nur Kampftage, gruppiert nach Schlacht: „Zone 4 · 7 8 9“, „Kingsland · 20“
       const nm = {}; (S.fights || []).forEach(f => { const i = Math.floor((f.a - a) / 864e5); if (i < 0 || i >= N) return; const n = h.fn[f.id] || f.base || f.auto; (nm[i] = nm[i] || {})[n] = (nm[i][n] || 0) + f.kp; });
       const G = []; for (let i = 0; i < N; i++) { if (!kp[i]) continue; const top = (o) => o ? Object.entries(o).sort((x, y) => y[1] - x[1])[0]?.[0] : null, n = top(nm[i]) || top(zk[i]) || 'Kampf', last = G[G.length - 1]; if (last && last.n === n) last.d.push(i); else G.push({ n, d: [i] }); }
-      rowHtml = G.length ? G.map(g => `<span class="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/5 pl-2 pr-1 py-0.5"><span class="text-[11px] text-red-200 font-semibold mr-0.5" translate="no">${esc(g.n)}</span>${g.d.map(i => btn(i)).join('')}</span>`).join('') : '<span class="text-[11px] text-slate-500">Noch keine Kampftage</span>';
+      rowHtml = G.length ? G.map(g => `<span class="inline-flex items-center gap-1 rounded-lg border border-red-500/30 bg-red-500/5 pl-2 pr-1 py-0.5"><button type="button" data-hmdgrp="${esc(g.n)}" title="Alle Kämpfe in ${esc(g.n)} über das ganze KvK" class="text-[11px] font-semibold mr-0.5 rounded px-1 ${h.t === 'kvk' && !h.fight && h.zb === g.n ? 'bg-gold-500/25 text-gold-100 ring-1 ring-gold-400' : 'text-red-200 hover:bg-red-500/20 hover:text-white'}" translate="no">${esc(g.n)}</button>${g.d.map(i => btn(i)).join('')}</span>`).join('') : '<span class="text-[11px] text-slate-500">Noch keine Kampftage</span>';
     } else { const out = []; for (let i = 0; i < N; i++) out.push(btn(i)); rowHtml = out.join(''); }
     return `<div class="flex flex-wrap items-center gap-1 mb-2"><span class="text-[11px] text-slate-500 mr-1">KvK-Tag:</span>${rowHtml}</div>`;
   }
@@ -1625,6 +1629,7 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-hmhx]')?.addEventListener('click', () => { h.hf = ''; h.ht = ''; re(); });
     el.querySelector('[data-hmflexmin]')?.addEventListener('change', (ev) => { h.flexMin = +ev.target.value; re(); });
     el.querySelector('[data-hmflex]')?.addEventListener('toggle', (ev) => { h.flexOpen = ev.target.open; savePassive(); });
+    el.querySelectorAll('[data-hmdgrp]').forEach(b => b.onclick = () => { const n = b.dataset.hmdgrp; if (h.t === 'kvk' && !h.fight && h.zb === n) h.zb = ''; else { h.t = 'kvk'; h.zb = n; } h.tl = null; h.fight = null; h.pop = null; re(); });   // Gruppen-Name (z. B. Pass 7) = ganzes KvK, nur diese Zone
     el.querySelectorAll('[data-hmzb]').forEach(b => b.onclick = () => { h.zb = b.dataset.hmzb || ''; h.pop = null; re(); });
     el.querySelectorAll('[data-hmtcb]').forEach(b => b.onclick = () => { h.tcB = +b.dataset.hmtcb; re(); });
     const bDur = () => Math.min(24, Math.max(0.5, +(el.querySelector('[data-hmbuffd]')?.value) || 4));
