@@ -833,7 +833,7 @@ window.RokMods.battles = (R) => {
   // ================= 📊 Analyse: Gegner, Allianzen, Matchups, Leistung, Farm =================
   function anaRows(st) {   // eigene PvP-Kämpfe (Weltkarte, ohne Ark of Osiris, ohne Rally/Garnison) im Zeitraum oben
     return (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kbIsPvp(r) && !kbIsAoo(r) && !(+r.group_size > 1) && kxInRange(r.battle_start))
-      .filter(r => !(r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 30));
+      .filter(r => !(+r.group_size > 1 && r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 30));
   }
   function anaSum(rows) { const o = { n: 0, kp: 0, ekp: 0, my: 0, en: 0, dead: 0 }; rows.forEach(r => { o.n++; o.kp += +r.kill_points || 0; o.ekp += +r.enemy_kill_points || 0; o.my += (+r.self_severe || 0) + (+r.self_dead || 0); o.en += (+r.enemy_severe || 0) + (+r.enemy_dead || 0); o.dead += +r.self_dead || 0; });
     o.kpt = o.ekp > 0 ? o.kp / o.ekp : (o.kp ? Infinity : null); o.trade = o.my > 0 ? o.en / o.my : (o.en ? Infinity : null); return o; }
@@ -1251,7 +1251,7 @@ window.RokMods.battles = (R) => {
     const h = hmCfg(st), m = hmMap(h), sid = hmSid(h), acc = hmAcc(h), [from, to] = range, mates = withMates && hmMates ? new Map(hmMates.map((f, i) => [f.gid, i])) : new Map();
     const tm = (x) => { const q = /^(\d{1,2}):(\d{2})$/.exec(x || ''); return q ? +q[1] * 60 + +q[2] : null; }, hf = tm(h.hf) ?? (h.ht ? 0 : null), ht = tm(h.ht) ?? 1439; hmPT = hmPhaseTimes(h);
     const sp = hmSpect(), ws = sp ? hmWatchSet(h) : null, out = [], own = (pid) => acc ? String(pid) === acc : sp ? ((!ws || ws.has(String(pid))) && (!h.watch || String(pid) === h.watch)) : kbMine(pid);
-    const add = (r, joined) => { const kd = hmKind(r); if (!kd) return; const city = !joined && kd === 'pvp' && r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 30;
+    const add = (r, joined) => { const kd = hmKind(r); if (!kd) return; const city = !joined && kd === 'pvp' && +r.group_size > 1 && r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 30;   // City-Rally nur bei Gruppenkampf (Garnison) – normale Kämpfe neben der Stadt zählen normal
       const grp = joined || city || (+r.group_size > 1 && kd === 'pvp');
       if (src === 'rally' ? !(grp && kd === 'pvp') : ((src !== 'all' && kd !== src) || (grp && kd === 'pvp'))) return;   // Rally/Garnison/City-Rally zählen nicht zu den normalen Kämpfen
       if (!joined && sid && r.server_id != null && +r.server_id !== sid) return;
