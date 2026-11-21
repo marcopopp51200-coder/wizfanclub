@@ -13,7 +13,7 @@ window.RokMods.battles = (R) => {
   const KEY = 'rok_battles_' + (R.PROFILE?.id || 'x');
   let S = {}; try { S = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { S = {}; }
   // Farm-Namen, Gruppen, verknüpfte IDs usw. zusätzlich in Supabase (rok_mydata_settings) → gleich auf jedem Gerät / jeder Vercel-Adresse
-  const CLOUD_KEYS = ['rsNames', 'rsGroups', 'rsGroupNames', 'linkIds', 'rsKvk', 'idNames', 'accKvk', 'heatAcc'];
+  const CLOUD_KEYS = ['rsNames', 'rsGroups', 'rsGroupNames', 'linkIds', 'rsKvk', 'idNames', 'accKvk', 'heatAcc', 'buffRes', 'buffAck', 'buffHide'];
   let cloudReady = false, cloudLast = '', cloudMissing = false;
   const cloudPick = () => { const k = S.kampf || {}, o = {}; CLOUD_KEYS.forEach(x => { if (k[x] != null) o[x] = k[x]; }); return o; };
   const cloudSave = () => {
@@ -341,7 +341,7 @@ window.RokMods.battles = (R) => {
       ${ids.length ? '' : '<span class="text-[11px] text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}</div>`;
   }
   function renderKampf() {
-    const el = $('battlesView'); if (!el) return; const st0 = kbSt();
+    const el = $('battlesView'); if (!el) return; const st0 = kbSt(); kbBuffStart();
     const wip = `<div class="text-center"><span class="inline-flex items-center gap-2 rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-1.5 font-display text-sm sm:text-base tracking-widest uppercase text-amber-300">🚧 <span>In Work</span> 🚧</span></div>`;
     if (!st0.accV2 && kbProfileId()) { st0.accV2 = 1; st0.acc = kbProfileId(); }   // Standard: dein Profil-Account
     if ((st0.page || 'battles') !== 'res' && !kbApply()) { kbRows = null; kbCurKey = null; if (!kbLoading) loadBattles(); }
@@ -842,6 +842,124 @@ window.RokMods.battles = (R) => {
     const f = (r) => kbKdNum(r.enemy_kingdom) || P.get(String(r.enemy_player_id)) || AA.get(r.enemy_alliance) || null;
     anaKdCache = { src: kbRows, f }; return f;
   }
+  // ===== Buff abgelaufen (System-Mail „Buff Ended“ aus rok_mails) → blinkender Hinweis + automatisch im Buff-Rechner =====
+  var kbBuffs = null, kbBuffLoading = false, kbBuffTimer = null, kbTitle0 = null, kbTitleT = null;
+  const KB_BUFF = { exp: ['🪖', 'Army Expansion'], atk: ['⚔️', 'Angriffs-Buff'], def: ['🛡️', 'Verteidigungs-Buff'], shield: ['🕊️', 'Friedensschild'] };
+  function kbBuffKind(x) { x = String(x || '').toLowerCase(); return /army expansion/.test(x) ? 'exp' : /peace shield/.test(x) ? 'shield' : /attack/.test(x) ? 'atk' : /defen[cs]e/.test(x) ? 'def' : null; }
+  function kbLocalIso(t) { const d = new Date(t), z = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}T${z(d.getHours())}:${z(d.getMinutes())}`; }
+  async function kbBuffLoad() {
+    if (kbBuffLoading) return; kbBuffLoading = true;
+    try { const db = RokAuth.db?.(); if (!db) throw 0; const since = new Date(Date.now() - 21 * 864e5).toISOString(), cols = 'mail_id,player_id,account,sent_at,content';
+      let q = await db.from('rok_mails').select(cols).eq('mail_type', 'System').eq('content->>title', 'Buff Ended').gte('sent_at', since).order('sent_at', { ascending: false }).limit(500);
+      if (q.error) q = await db.from('rok_mails').select(cols).eq('mail_type', 'System').gte('sent_at', since).order('sent_at', { ascending: false }).limit(2000);
+      if (q.error) throw q.error;
+      const seen = new Set();
+      kbBuffs = (q.data || []).filter(r => r.content && (r.content.title === 'Buff Ended' || +r.content.subType === 340)).map(r => { const sub = r.content.subTitle || r.content.content || '';
+        return { id: String(r.mail_id), pid: String(r.player_id || ''), acc: r.account, t: Date.parse(r.sent_at), kind: kbBuffKind(sub), txt: sub }; })
+        .filter(b => b.kind && b.t && !seen.has(b.pid + '|' + b.kind + '|' + Math.round(b.t / 6e4)) && seen.add(b.pid + '|' + b.kind + '|' + Math.round(b.t / 6e4)));
+    } catch { kbBuffs = kbBuffs || []; }
+    kbBuffLoading = false; kbBuffAlertUI();
+  }
+  function kbBuffAlertUI() {
+    const st = kbSt(), ack = st.buffAck || {}, names = new Map(Object.entries(st.idAuto || {}));
+    const L = (kbBuffs || []).filter(b => ['exp', 'atk', 'def'].includes(b.kind) && kbMine(b.pid) && Date.now() - b.t < 3 * 36e5 && !ack[b.id]);
+    let box = document.getElementById('kbBuffAlert');
+    if (!L.length) { if (box) box.remove(); if (kbTitleT) { clearInterval(kbTitleT); kbTitleT = null; if (kbTitle0 != null) document.title = kbTitle0; } return; }
+    if (!document.getElementById('kbBuffCss')) { const c = document.createElement('style'); c.id = 'kbBuffCss'; c.textContent = '@keyframes kbBlink{0%,100%{box-shadow:0 0 0 0 rgba(248,113,113,.9);background:#7f1d1d}50%{box-shadow:0 0 28px 6px rgba(248,113,113,.7);background:#b91c1c}}.kb-blink{animation:kbBlink 1s ease-in-out infinite}'; document.head.appendChild(c); }
+    if (!box) { box = document.createElement('div'); box.id = 'kbBuffAlert'; box.className = 'fixed top-3 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-2 w-[min(94vw,34rem)]'; document.body.appendChild(box); }
+    box.innerHTML = L.map(b => { const k = KB_BUFF[b.kind], n = kbIdName(b.pid, names) || b.acc || b.pid, ago = Math.max(0, Math.round((Date.now() - b.t) / 6e4));
+      return `<div class="kb-blink rounded-xl border-2 border-red-300 text-white px-4 py-2.5 flex items-center gap-3 shadow-2xl"><span class="text-2xl">${k[0]}</span><div class="flex-1 min-w-0"><div class="font-bold">${k[1]} <span>abgelaufen!</span></div>
+        <div class="text-xs text-red-100 truncate"><span translate="no">${esc(n)}</span> · ${new Date(b.t).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} <span>Uhr</span> · <span>vor</span> ${ago} min</div></div>
+        <button type="button" data-kbbuffok="${esc(b.id)}" class="rounded-lg bg-white/90 text-red-800 font-bold px-3 py-1 text-sm hover:bg-white">✓ OK</button></div>`; }).join('');
+    box.querySelectorAll('[data-kbbuffok]').forEach(x => x.onclick = () => { st.buffAck = { ...(st.buffAck || {}), [x.dataset.kbbuffok]: 1 }; savePassive(); kbBuffAlertUI(); });
+    if (!kbTitleT) { kbTitle0 = document.title; let on = false; kbTitleT = setInterval(() => { on = !on; document.title = on ? '⚠️ Buff abgelaufen!' : kbTitle0; }, 1000); }
+  }
+  function kbBuffStart() { if (kbBuffTimer) return; kbBuffLoad(); kbBuffTimer = setInterval(() => { if (document.visibilityState === 'visible') kbBuffLoad(); }, 60000); }
+  // ===== ⚡ Schnell-Übersicht ganz links (Heute / letzte Stunde) =====
+  function hmQuickHtml(st, h) {
+    if (hmSpect()) return '';
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0); const acc = hmAcc(h), names = new Map(Object.entries(st.idAuto || {}));
+    const P = (from) => hmPoints(st, 'pvp', [from, null], false).filter(p => p.mine && p.k === 'pvp');
+    const a = hmSum(P(d0.getTime())), b = hmSum(P(Date.now() - 36e5));
+    const tile = (i, l, v, v1, c) => `<div class="rounded-lg bg-ink-900/80 border border-ink-700 px-2 py-1.5"><div class="text-[10px] text-slate-400 whitespace-nowrap">${i} <span>${l}</span></div><div class="text-base font-bold tabular-nums leading-tight ${c || 'text-slate-100'}">${v}</div><div class="text-[10px] text-slate-500 tabular-nums">1 h: ${v1}</div></div>`;
+    const kc = (t) => t == null ? 'text-slate-300' : t >= 1 ? 'text-emerald-300' : 'text-red-300';
+    return `<div class="lg:col-span-2 xl:col-span-1 rounded-xl border border-gold-500/40 bg-ink-950/70 p-2 xl:sticky xl:top-2">
+      <div class="flex items-center justify-between mb-1.5"><div class="text-xs font-bold text-gold-200">⚡ <span>Heute</span></div><div class="text-[10px] text-slate-500 truncate max-w-[6rem]" translate="no">${esc(kbIdName(acc, names) || acc || '')}</div></div>
+      <div class="grid grid-cols-3 sm:grid-cols-6 xl:grid-cols-1 gap-1.5">
+        ${tile('🏆', 'KP', short(a.kp), short(b.kp), 'text-gold-200')}
+        ${tile('🎖️', 'Acclaim', a.acc ? short(a.acc) : '–', b.acc ? short(b.acc) : '–', 'text-sky-200')}
+        ${tile('⚖️', 'Trade', hmTradeTxt(a.trade), hmTradeTxt(b.trade), kc(a.trade))}
+        ${tile('🔁', 'KP-Trade', hmKptTxt(a.kpt), hmKptTxt(b.kpt), kc(a.kpt))}
+        ${tile('⚔️', 'Kämpfe', fmt(a.n), fmt(b.n))}
+        ${tile('💀', 'Verluste', short(a.dead + a.sev), short(b.dead + b.sev), 'text-red-200')}
+      </div></div>`;
+  }
+  // ===== 📌 Koalitions-/Allianz-Marker (Test): aus den Allianz-Mails „New … Marker Placed“ =====
+  var kbMarks = { rows: null, t: 0, loading: false, err: '' };
+  function kbMarksLoad(force) {
+    if (kbMarks.loading || (!force && kbMarks.rows && Date.now() - kbMarks.t < 120e3)) return; kbMarks.loading = true;
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); const since = new Date(Date.now() - 7 * 864e5).toISOString(), cols = 'mail_id,player_id,account,sent_at,content';
+        let q = null; try { q = await db.from('rok_mails').select(cols).eq('mail_type', 'Alliance').ilike('content->>title', '%Marker%').gte('sent_at', since).order('sent_at', { ascending: false }).limit(1000); } catch { q = { error: 1 }; }
+        if (q.error) q = await db.from('rok_mails').select(cols).eq('mail_type', 'Alliance').gte('sent_at', since).order('sent_at', { ascending: false }).limit(3000);
+        if (q.error) throw q.error;
+        const seen = new Set(); kbMarks = { rows: (q.data || []).filter(r => /marker/i.test(r.content?.title || '') && r.content?.kvs).map(r => ({ ...r.content.kvs, title0: r.content.title, sub: r.content.subTitle, t: Date.parse(r.sent_at), by: r.account }))
+          .filter(x => { const k = [Math.round(x.x), Math.round(x.y), x.comment, Math.round(x.t / 6e4)].join('|'); if (seen.has(k)) return false; seen.add(k); return true; }), t: Date.now(), loading: false, err: '' }; }
+      catch (e) { kbMarks = { rows: kbMarks.rows || [], t: Date.now(), loading: false, err: e?.message || String(e) }; }
+      if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); })();
+  }
+  function hmMarksHtml(st, h, m) {
+    if (hmSpect()) return '';
+    if (h.markOpen) kbMarksLoad();
+    const L = kbMarks.rows || [], zoneOf = (x) => { if (x.x == null || x.y == null) return ''; const [u, v] = hmXY(+x.x, +x.y, h, m); const z = hmZoneAt(u, v, m, true); return z >= 0 ? hmZName(h, m, z) : ''; };
+    const body = !h.markOpen ? '' : !kbMarks.rows ? '<div class="text-xs text-slate-500 py-2">Lädt …</div>' : kbMarks.err ? `<div class="text-xs text-red-300 py-2">${esc(kbMarks.err)}</div>` : !L.length ? '<div class="text-xs text-slate-500 py-2">Keine Marker-Mails in den letzten 7 Tagen.</div>' : `
+      <div class="max-h-96 overflow-y-auto"><table class="w-full text-xs"><thead><tr class="text-slate-500 sticky top-0 bg-ink-950"><th class="text-left py-1 pr-2"><span>Zeit</span></th><th class="text-left pr-2"><span>Gesetzt von</span></th><th class="text-left pr-2"><span>Kommentar</span></th><th class="text-right pr-2">X</th><th class="text-right pr-2">Y</th><th class="text-left pr-2"><span>Zone</span></th><th class="text-left pr-2"><span>Art</span></th><th class="text-right pr-2">mark</th><th class="text-right pr-2">title</th><th class="text-left"><span>Postfach</span></th></tr></thead><tbody>
+      ${L.map(x => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2 whitespace-nowrap text-slate-300">${hmWhen(x.t)}</td><td class="pr-2 text-slate-100" translate="no">${esc(x.name || '')}</td><td class="pr-2 text-amber-200" translate="no">${esc(x.comment || '')}</td>
+        <td class="pr-2 text-right tabular-nums">${Math.round(+x.x / 6)}</td><td class="pr-2 text-right tabular-nums">${Math.round(+x.y / 6)}</td><td class="pr-2 whitespace-nowrap">${esc(zoneOf(x))}</td><td class="pr-2 text-slate-400 whitespace-nowrap">${/coalition/i.test(x.title0 || '') ? 'Koalition' : /alliance/i.test(x.title0 || '') ? 'Allianz' : esc(x.title0 || '')}</td>
+        <td class="pr-2 text-right tabular-nums text-slate-500">${esc(x.mark ?? '')}</td><td class="pr-2 text-right tabular-nums text-slate-500">${esc(x.title ?? '')}</td><td class="text-slate-500" translate="no">${esc(x.by || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<details data-hmmarks ${h.markOpen ? 'open' : ''} class="mt-3 rounded-xl border border-violet-500/50 bg-violet-500/5"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-violet-200">📌 <span>Marker (Test)</span>${L.length ? ` <span class="rounded-full bg-violet-500/25 border border-violet-400/60 px-2 text-xs tabular-nums">${L.length}</span>` : ''} <span class="text-[11px] text-slate-500 font-normal">– alle Marker-Mails der letzten 7 Tage, roh zum Durchschauen</span></summary><div class="px-3 pb-3">${body}</div></details>`;
+  }
+  // ===== 🔥 Gegner-Märsche auf dem Feld: aus den Kampfberichten der letzten Minuten (du + alle aus deinem KvK, die den Uploader nutzen) =====
+  var kbField = { key: '', rows: null, t: 0, loading: false, err: '' };
+  function kbFieldLoad(ids, force) {
+    const key = ids.slice().sort().join(','); if (kbField.loading || (!force && kbField.key === key && Date.now() - kbField.t < 55e3)) return;
+    kbField.loading = true;
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); const since = new Date(Date.now() - 65 * 6e4).toISOString();
+        let q = db.from('rok_battles').select('player_id,self_name,mail_id,opponent_id,enemy_player_id,enemy_name,enemy_alliance,enemy_kingdom,enemy_hero1,enemy_hero2,enemy_formation,battle_start,pos_x,pos_y,kill_points,enemy_severe,enemy_dead,is_pvp').gte('battle_start', since).eq('is_pvp', true);
+        if (ids.length) q = q.in('player_id', ids);
+        const r = await q.order('battle_start', { ascending: false }).limit(5000); if (r.error) throw r.error;
+        kbField = { key, rows: r.data || [], t: Date.now(), loading: false, err: '' }; }
+      catch (e) { kbField = { key, rows: kbField.rows || [], t: Date.now(), loading: false, err: e?.message || String(e) }; }
+      if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); })();
+  }
+  function hmFieldHtml(st, h, m) {
+    const win = [5, 10, 15, 30, 60].includes(+h.fw) ? +h.fw : 15, acc = hmAcc(h), code = hmKvkCode(h), ids = new Set();   // nur IDs mit derselben C-Nummer wie der gewählte Account
+    if (acc) ids.add(String(acc));
+    let kvkN = 0; if (code) { const i = hmWInfo[code]; if (!i) hmLoadWInfo(code); else if (!i.loading && i.ids) { i.ids.forEach(x => ids.add(String(x))); kvkN = i.ids.size; } }
+    if (h.fieldOpen !== false && ids.size) kbFieldLoad([...ids]);
+    const since = Date.now() - win * 6e4, rows = (kbField.rows || []).filter(r => r.is_pvp && +r.enemy_player_id > 0 && Date.parse(r.battle_start) >= since && ids.has(String(r.player_id)));
+    const M = new Map(), P = new Set(), rep = new Set();
+    rows.forEach(r => { const k = r.enemy_player_id + '|' + (r.enemy_hero1 || '') + '|' + (r.enemy_hero2 || ''), t = Date.parse(r.battle_start);
+      const o = M.get(k) || { pid: r.enemy_player_id, name: r.enemy_name, ally: r.enemy_alliance, kd: kbKdNum(r.enemy_kingdom), pair: anaEnemyPair(r), tt: kbTT(r, 'enemy'), t: 0, n: 0, by: new Set(), x: null, y: null };
+      o.n++; o.by.add(String(r.player_id)); if (t > o.t) { o.t = t; o.x = r.pos_x; o.y = r.pos_y; } M.set(k, o); P.add(String(r.enemy_player_id)); rep.add(String(r.player_id)); });
+    const L = [...M.values()].sort((a, b) => b.t - a.t), zoneOf = (o) => { if (o.x == null || o.y == null) return ''; const [u, v] = hmXY(o.x, o.y, h, m); const z = hmZoneAt(u, v, m, false, o.t); return z >= 0 ? hmBaseName(hmZName(h, m, z)) : ''; };
+    const cnt = (f) => { const c = new Map(); L.forEach(o => { const k = f(o); if (k) c.set(k, (c.get(k) || 0) + 1); }); return [...c.entries()].sort((a, b) => b[1] - a[1]); };
+    const perP = cnt(o => o.pid), multi = perP.filter(x => x[1] >= 2).length;
+    const chip = (t, n) => `<span class="inline-flex items-center gap-1 rounded-lg border border-ink-600 bg-ink-900 px-2 py-0.5 text-xs text-slate-200">${t} <b class="tabular-nums">${n}</b></span>`;
+    const ago = (t) => { const mi = Math.max(0, Math.round((Date.now() - t) / 6e4)); return mi < 1 ? '<span>gerade</span>' : `<span>vor</span> ${mi} min`; };
+    const tierOf = anaTierOf();
+    const body = !kbField.rows ? '<div class="text-xs text-slate-500 py-2">Lädt …</div>' : kbField.err ? `<div class="text-xs text-red-300 py-2">${esc(kbField.err)}</div>` : !L.length ? `<div class="text-xs text-slate-500 py-2">In den letzten ${win} min keine Kämpfe gegen Spieler.</div>` : `
+      <div class="flex flex-wrap items-end gap-4 mb-2"><div><div class="text-4xl font-bold text-red-300 tabular-nums leading-none">${fmt(L.length)}</div><div class="text-[11px] text-slate-400">Gegner-Märsche</div></div>
+        <div><div class="text-2xl font-bold text-slate-100 tabular-nums leading-none">${fmt(P.size)}</div><div class="text-[11px] text-slate-400">Spieler${multi ? ` · ${multi} <span>mit 2+ Märschen</span>` : ''}</div></div>
+        <div class="text-[11px] text-slate-500 pb-0.5">👀 <span>gesehen von</span> <b class="text-slate-300">${fmt(rep.size)}</b> <span>eigenen Leuten</span>${code ? ` · KvK <span translate="no">${esc(code)}</span>: ${fmt(kvkN)} IDs` : ' · <span class="text-amber-300">C-Nummer setzen, damit alle aus deinem KvK mitzählen</span>'}</div></div>
+      <div class="flex flex-wrap gap-1.5 mb-2">${cnt(o => o.tt).map(([t, n]) => chip(KB_TT[t][0] + ' <span>' + KB_TT[t][1] + '</span>', n)).join('')}${cnt(o => o.kd ? '#' + o.kd : '').slice(0, 6).map(([k, n]) => chip('👑 ' + k, n)).join('')}${cnt(zoneOf).slice(0, 6).map(([k, n]) => chip('📍 ' + esc(k), n)).join('')}</div>
+      <div class="max-h-80 overflow-y-auto pr-1"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th class="text-left py-1">Spieler</th><th class="text-left"><span>Kommandanten</span></th><th class="text-left"><span>Ort</span></th><th class="text-right"><span>Kämpfe</span></th><th class="text-right"><span>zuletzt</span></th></tr></thead><tbody>
+      ${L.slice(0, 60).map(o => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2"><div class="text-slate-100 truncate max-w-[11rem]" translate="no">${o.ally ? `<span class="text-slate-500">[${esc(o.ally)}]</span> ` : ''}${esc(o.name || o.pid)}</div><div class="text-[10px] text-slate-500">${o.kd ? '#' + o.kd : ''} ${anaTierChip(tierOf({ enemy_player_id: o.pid }))}</div></td>
+        <td class="pr-2"><div class="flex items-center gap-1"><span class="flex gap-0.5">${hmHeroes(o.pair)}</span>${kbTTChip(o.tt)}</div></td><td class="pr-2 text-slate-300 whitespace-nowrap">${esc(zoneOf(o))}</td><td class="pr-2 text-right tabular-nums">${fmt(o.n)}${o.by.size > 1 ? ` <span class="text-[10px] text-sky-300" title="von mehreren eigenen Leuten gesehen">👀${o.by.size}</span>` : ''}</td><td class="text-right whitespace-nowrap text-slate-400">${ago(o.t)}</td></tr>`).join('')}</tbody></table></div>`;
+    return `<details data-hmfield ${h.fieldOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-red-500/50 bg-red-500/5"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-red-200 flex items-center gap-2">🔥 <span>Gegner-Märsche auf dem Feld</span>${L.length ? ` <span class="rounded-full bg-red-500/25 border border-red-400/60 px-2 text-xs tabular-nums">${L.length}</span>` : ''}
+        <span class="ml-auto flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700" onclick="event.stopPropagation()">${[5, 10, 15, 30, 60].map(v => `<button type="button" data-hmfw="${v}" aria-pressed="${win === v}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">${v} min</button>`).join('')}</span>
+        <button type="button" data-hmfrel onclick="event.stopPropagation()" class="text-xs text-slate-400 hover:text-gold-300" title="Neu laden">↻</button></summary>
+      <div class="px-3 pb-3"><div class="text-[10px] text-slate-500 mb-2">Gezählt aus den Kampfberichten: jeder Gegner mit eigenem Kommandanten-Paar = 1 Marsch. Je mehr Leute aus deinem KvK den Uploader nutzen, desto genauer. Mit „🔴 Live“ aktualisiert es sich jede Minute.</div>${body}</div></details>`;
+  }
   // Main oder Farm? KP pro schwer verletzter/toter Einheit: T4 = 10, T5 = 20 (gemessen über alle Kämpfe gegen den Spieler)
   var KB_TIER = { main: ['🐋', 'Main', 'meist T5'], mix: ['🔀', 'Gemischt', 'T4 + T5'], farm: ['🐟', 'Farm', 'meist T4'] };
   var anaTierCache = { src: null, f: null };
@@ -854,6 +972,36 @@ window.RokMods.battles = (R) => {
     anaTierCache = { src: kbRows, f }; return f;
   }
   function anaTierChip(x) { if (!x) return ''; const t = KB_TIER[x.t]; return `<span class="inline-flex items-center gap-0.5 rounded border border-ink-600 px-1 text-[10px] text-slate-300" title="${t[2]} · ${dec(x.v, 1)} KP pro Einheit">${t[0]} <span>${t[1]}</span></span>`; }
+  // Online-Zeit aus dem Spiel-Log (Tabelle rok_play, Uploader v24) – nur PC-Client
+  var kbPlay = { key: null, rows: null, loading: false, err: '' };
+  function kbPlayLoad(ids) {
+    const key = (ids || []).slice().sort().join(','); if (kbPlay.key === key && (kbPlay.rows || kbPlay.loading)) return;
+    kbPlay = { key, rows: null, loading: true, err: '' };
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); let q = db.from('rok_play').select('player_id,start_at,end_at,minutes,marches'); if (ids && ids.length) q = q.in('player_id', ids);
+        const r = await q.order('start_at', { ascending: false }).limit(5000); if (r.error) throw r.error; kbPlay.rows = r.data || []; }
+      catch (e) { kbPlay.rows = []; kbPlay.err = /rok_play|relation|schema cache/i.test(e?.message || '') ? 'missing' : (e?.message || String(e)); }
+      kbPlay.loading = false; if (R.view === 'battles') renderKampf(); })();
+  }
+  function anaOnline(st, mineAll) {
+    const ids = st.acc ? [String(st.acc)] : [...kbMyIds()]; kbPlayLoad(ids);
+    const box = (inner) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3 mt-5"><h4 class="font-semibold text-slate-100">🖥️ <span>Online-Zeit</span> <span class="text-[11px] text-slate-500 font-normal">– aus dem Spiel-Log, nur PC-Client (nicht MuMu)</span></h4>${inner}</div>`;
+    if (kbPlay.loading || !kbPlay.rows) return box('<div class="text-xs text-slate-500 py-2">Lädt …</div>');
+    if (kbPlay.err === 'missing') return box('<div class="text-xs text-amber-300 py-2">Tabelle rok_play fehlt – SQL v24 ausführen und Uploader v24 laufen lassen.</div>');
+    const S = kbPlay.rows.filter(r => r.start_at && kxInRange(r.start_at));
+    if (!S.length) return box('<div class="text-xs text-slate-500 py-2">Noch keine Sitzungen im Zeitraum. Der Uploader v24 liest das Spiel-Log alle 10 Minuten.</div>');
+    const day = (t) => { const d = new Date(t); return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    const D = new Map(); S.forEach(r => { const k = day(r.start_at), o = D.get(k) || { m: 0, n: 0, s: 0, kp: 0 }; o.m += +r.minutes || 0; o.n += +r.marches || 0; o.s++; D.set(k, o); });
+    mineAll.forEach(r => { if (!kbIsPvp(r) || kbIsAoo(r)) return; const o = D.get(day(r.battle_start)); if (o) o.kp += +r.kill_points || 0; });
+    const L = [...D.entries()].sort((a, b) => a[0] < b[0] ? -1 : 1).slice(-21), mx = Math.max(1, ...L.map(x => x[1].m));
+    const totM = S.reduce((a, r) => a + (+r.minutes || 0), 0), totN = S.reduce((a, r) => a + (+r.marches || 0), 0), kpOn = L.reduce((a, x) => a + x[1].kp, 0), mOn = L.reduce((a, x) => a + x[1].m, 0);
+    const hm = (m) => m >= 60 ? Math.floor(m / 60) + ' h ' + String(Math.round(m % 60)).padStart(2, '0') : Math.round(m) + ' min';
+    const tile = (i, l, v, sub) => `<div class="rounded-lg border border-ink-700 p-2"><div class="text-[11px] text-slate-400">${i} <span>${l}</span></div><div class="text-lg font-bold text-slate-100 tabular-nums">${v}</div>${sub ? `<div class="text-[10px] text-slate-500">${sub}</div>` : ''}</div>`;
+    return box(`<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 my-2">${tile('⏱️', 'Online gesamt', hm(totM), fmt(S.length) + ' <span>Sitzungen</span>')}${tile('📅', 'Pro Tag', hm(totM / Math.max(1, D.size)), fmt(D.size) + ' <span>Tage</span>')}
+        ${tile('🏆', 'KP pro Online-Stunde', mOn ? short(kpOn / (mOn / 60)) : '–')}${tile('🏹', 'Märsche gesendet', fmt(totN), '<span>laut Spiel-Log</span>')}</div>
+      <div class="flex items-end gap-1 h-28 mt-3">${L.map(([k, o]) => `<div class="flex-1 flex flex-col items-center justify-end h-full" title="${k}: ${hm(o.m)} online · ${o.s} Sitzungen · ${o.n} Märsche · ${short(o.kp)} KP"><span class="text-[9px] text-slate-400 tabular-nums">${(o.m / 60).toFixed(1)}</span><div class="w-full rounded-t bg-sky-400/70" style="height:${Math.max(3, o.m / mx * 100)}%"></div></div>`).join('')}</div>
+      <div class="flex gap-1 mt-0.5">${L.map(([k]) => `<span class="flex-1 text-center text-[9px] text-slate-600">${k.slice(8)}.${k.slice(5, 7)}</span>`).join('')}</div>
+      <div class="text-[10px] text-slate-500 mt-1">Balken = Stunden online pro Tag · Mauszeiger = Details (KP, Märsche)</div>`);
+  }
   function anaHours(list, col, label, sub) {   // 24 Balken (0–23 Uhr) + Hauptzeit (beste 3 Stunden)
     const hr = new Array(24).fill(0); list.forEach(r => { const t = Date.parse(r.battle_start); if (t) hr[new Date(t).getHours()]++; }); const mx = Math.max(1, ...hr);
     let best = -1, bi = 0; for (let i = 0; i < 24; i++) { const v = hr[i] + hr[(i + 1) % 24] + hr[(i + 2) % 24]; if (v > best) { best = v; bi = i; } }
@@ -900,7 +1048,7 @@ window.RokMods.battles = (R) => {
               return `<td class="py-2 px-1.5 text-center tabular-nums"><div class="text-xs ${pct >= 35 ? 'text-slate-100 font-bold' : 'text-slate-400'}">${pct} %</div>${w && w.n ? `<div class="text-[10px] ${kptC(w.kpt)}">🔁 ${hmKptTxt(w.kpt)}</div>` : ''}</td>`; }).join('')}</tr>`; };
         body = `<div class="text-[11px] text-slate-500 mb-2">Wann gekämpft wird – deine Zeit (0–23 Uhr). Je heller das Kästchen, desto mehr Kämpfe in der Stunde. Rechts: Anteil der Kämpfe pro Tageszeit und dein KP-Trade gegen das Königreich zu dieser Zeit.</div>
           <div class="overflow-x-auto"><table class="text-sm"><thead><tr><th class="${th} text-left">Königreich</th><th class="${th} text-left"><div class="flex gap-px">${myH.map((_, i) => `<span class="w-3.5 text-center text-[9px]">${i % 3 ? '' : i}</span>`).join('')}</div></th><th class="${th} text-right">Hauptzeit</th>${BL.map(x => `<th class="px-1.5 text-center text-[11px] font-medium text-slate-500 whitespace-nowrap">${x[2]} <span>${x[3]}</span><div class="text-[9px] text-slate-600">${x[4]}</div></th>`).join('')}</tr></thead>
-          <tbody>${row('🙋 Du', mineAll, '245,197,66', true)}${row('😈 Alle', L.flatMap(o => o.rows), '248,113,113')}${L.slice(0, 15).map(o => row('👑 #' + o.kd, o.rows, '248,113,113')).join('')}</tbody></table></div>`;
+          <tbody>${row('🙋 Du', mineAll, '245,197,66', true)}${row('😈 Alle', L.flatMap(o => o.rows), '248,113,113')}${L.slice(0, 15).map(o => row('👑 #' + o.kd, o.rows, '248,113,113')).join('')}</tbody></table></div>${anaOnline(st, mineAll)}`;
       }
     } else if (tab === 'match') {   // dein Marsch gegen ihre Paare + Gegner-Meta
       const mine = [...new Set(rows.map(kbMarchOf))].map(k => [k, rows.filter(r => kbMarchOf(r) === k).length]).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
@@ -1337,7 +1485,19 @@ window.RokMods.battles = (R) => {
       if (h.tcZ && !zopts.includes(h.tcZ)) h.tcZ = '';
       const P = h.tcZ ? P0.filter(p => zbOf(p.z) === h.tcZ) : P0, bucket = new Map();
       P.forEach(p => { const k = Math.floor(p.t / BM) * BM; (bucket.get(k) || bucket.set(k, []).get(k)).push(p); });
-      const buffs = (h.buffs || []).map(b => typeof b === 'string' ? { a: b, d: 4 } : b).filter(b => b && !isNaN(Date.parse(b.a))).map(b => ({ ...b, s: Date.parse(b.a), e: Date.parse(b.a) + (+b.d || 4) * 36e5 }));
+      const accB = String(hmAcc(h) || ''), hideB = st.buffHide || {};
+      const autoB = (kbBuffs || []).filter(b => b.kind === 'exp' && b.pid === accB && !hideB[b.id]).map(b => ({ a: kbLocalIso(b.t - 4 * 36e5), d: 4, s: b.t - 4 * 36e5, e: b.t, auto: b.id }));   // 🪖 Army Expansion abgelaufen → die 4 h davor
+      const buffs = (h.buffs || []).map(b => typeof b === 'string' ? { a: b, d: 4 } : b).filter(b => b && !isNaN(Date.parse(b.a))).map(b => ({ ...b, s: Date.parse(b.a), e: Date.parse(b.a) + (+b.d || 4) * 36e5 })).concat(autoB);
+      // Ergebnis jedes automatischen Buffs speichern (bleibt, auch wenn die Kämpfe später nicht mehr geladen sind)
+      const BR = (st.buffRes = st.buffRes || {}); let brCh = false;
+      autoB.forEach(b => { if (Date.now() < b.e) return; const pts = hmPoints(st, 'pvp', [b.s - 4 * 36e5, b.e], false).filter(p => p.mine && p.k === 'pvp' && !p.grp);
+        const wi = hmSum(pts.filter(p => p.t >= b.s)), wb = hmSum(pts.filter(p => p.t < b.s)), old = BR[b.auto];
+        if (!old || (wi.n > (old.n || 0)) || (wb.n > (old.bn || 0))) { BR[b.auto] = { pid: accB, s: b.s, e: b.e, kp: wi.kp, ekp: wi.ekp, n: wi.n, kpt: wi.kpt === Infinity ? 999 : wi.kpt, trade: wi.trade === Infinity ? 999 : wi.trade, dead: wi.sev + wi.dead, bkp: wb.kp, bn: wb.n, bkpt: wb.kpt === Infinity ? 999 : wb.kpt }; brCh = true; } });
+      if (brCh) setTimeout(savePassive, 0);
+      const brList = Object.entries(BR).filter(([, r]) => r.pid === accB).sort((x, y) => y[1].e - x[1].e).slice(0, 15);
+      const brHtml = brList.length ? `<div class="mt-3"><div class="text-xs font-semibold text-amber-200 mb-1">📜 <span>Army-Expansion-Verlauf</span> <span class="text-[10px] text-slate-500 font-normal">– automatisch aus der Mail „Buff Ended“: jeweils die 4 h davor, gespeichert</span></div>
+        <div class="overflow-x-auto"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th class="text-left pr-2"><span>Buff</span></th><th class="text-right pr-2">🏆 KP</th><th class="text-right pr-2">🔁 KP-Trade</th><th class="text-right pr-2">⚔️</th><th class="text-right pr-2">💀</th><th class="text-right pr-2"><span>4 h davor</span></th><th class="text-right"><span>Unterschied</span></th></tr></thead><tbody>
+        ${brList.map(([id, r]) => { const dif = r.kp - (r.bkp || 0); return `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2 whitespace-nowrap text-amber-100">🪖 ${hmWhen(r.s)} – ${new Date(r.e).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })}</td><td class="pr-2 text-right tabular-nums text-gold-200">${short(r.kp)}</td><td class="pr-2 text-right tabular-nums ${r.kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">${r.n ? hmKptTxt(r.kpt >= 999 ? Infinity : r.kpt) : '–'}</td><td class="pr-2 text-right tabular-nums">${fmt(r.n)}</td><td class="pr-2 text-right tabular-nums text-red-200">${short(r.dead || 0)}</td><td class="pr-2 text-right tabular-nums text-slate-400">${short(r.bkp || 0)}</td><td class="text-right tabular-nums font-semibold ${dif >= 0 ? 'text-emerald-300' : 'text-red-300'}">${dif >= 0 ? '+' : '−'}${short(Math.abs(dif))}</td></tr>`; }).join('')}</tbody></table></div></div>` : '';
       const inBuff = (t) => buffs.some(b => t >= b.s && t < b.e);
       const ks = [...bucket.keys()].sort((a, b) => a - b), rowsT = ks.map(k => ({ k, w: hmSum(bucket.get(k)) }));
       hmTC = { labels: rowsT.map(x => new Date(x.k).toLocaleString('de-DE', bk >= 1440 ? { day: '2-digit', month: '2-digit' } : { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })), trade: rowsT.map(x => x.w.trade === Infinity || x.w.trade == null ? null : Math.round(x.w.trade * 100)), kpt: rowsT.map(x => x.w.kpt === Infinity || x.w.kpt == null ? null : +x.w.kpt.toFixed(2)), kp: rowsT.map(x => x.w.kp), buff: rowsT.map(x => buffs.some(b => x.k + BM > b.s && x.k < b.e)) };
@@ -1354,12 +1514,13 @@ window.RokMods.battles = (R) => {
             <span class="text-slate-400"><span>Dauer</span></span><input type="number" data-hmbuffd min="0.5" max="24" step="0.5" value="${esc(h.buffD || 4)}" class="w-16 bg-ink-950 border border-amber-500/50 rounded-lg px-2 py-1 text-xs text-slate-100"> <span class="text-slate-400">h</span>
             <span class="text-slate-500 mx-1">·</span><span class="text-slate-400"><span>oder Start</span></span><input type="datetime-local" data-hmbuffin class="bg-ink-950 border border-amber-500/50 rounded-lg px-2 py-1 text-xs text-slate-100"><button type="button" data-hmbuffadd class="px-2.5 py-1 rounded-lg border border-amber-500/50 text-amber-200 hover:bg-amber-500/10">+ <span>Buff</span></button>
           </div>
-          ${buffs.length ? `<div class="flex flex-wrap gap-1.5 mt-2">${buffs.map((b, i) => `<span class="inline-flex items-center gap-1 rounded-lg border ${now >= b.s && now < b.e ? 'border-amber-300 bg-amber-500/25' : 'border-amber-500/40 bg-amber-500/10'} px-2 py-0.5 text-xs text-amber-100">⚡ ${hmWhen(b.s)} – ${new Date(b.e).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} <span class="text-slate-400">(${+b.d || 4} h)</span><button type="button" data-hmbuffx="${i}" class="text-slate-400 hover:text-red-300">✕</button></span>`).join('')}</div>
+          ${buffs.length ? `<div class="flex flex-wrap gap-1.5 mt-2">${buffs.map((b, i) => `<span class="inline-flex items-center gap-1 rounded-lg border ${now >= b.s && now < b.e ? 'border-amber-300 bg-amber-500/25' : 'border-amber-500/40 bg-amber-500/10'} px-2 py-0.5 text-xs text-amber-100" ${b.auto ? 'title="Automatisch aus der Mail „Army Expansion abgelaufen“"' : ''}>${b.auto ? '🪖' : '⚡'} ${hmWhen(b.s)} – ${new Date(b.e).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })} <span class="text-slate-400">(${+b.d || 4} h${b.auto ? ' · auto' : ''})</span>${b.auto ? `<button type="button" data-hmbuffhide="${esc(b.auto)}" class="text-slate-400 hover:text-red-300">✕</button>` : `<button type="button" data-hmbuffx="${i}" class="text-slate-400 hover:text-red-300">✕</button>`}</span>`).join('')}</div>
           <div class="mt-3 grid sm:grid-cols-[minmax(0,1fr)_15rem] gap-3 items-start"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th></th><th class="text-right pr-3">⚡ <span>mit Buff</span></th><th class="text-right"><span>ohne</span></th></tr></thead><tbody>
             ${cell('🏆 KP pro Kampfstunde', rIn, rOut, short)}${cell('🏆 KP gesamt', wi.kp, wo.kp, short)}${cell('⚖️ Trade', wi.trade, wo.trade, hmTradeTxt)}${cell('🔁 KP-Trade', wi.kpt, wo.kpt, hmKptTxt)}${cell('💀 Verluste (schwer + tot)', wi.sev + wi.dead, wo.sev + wo.dead, short)}${cell('⚔️ Kämpfe', wi.n, wo.n, fmt)}</tbody></table>
             <div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3"><div class="text-[11px] text-slate-400"><span>Der Buff hat gebracht</span></div><div class="text-2xl font-bold tabular-nums ${gain == null ? 'text-slate-400' : gain >= 0 ? 'text-emerald-300' : 'text-red-300'}">${gain == null ? '–' : (gain >= 0 ? '+' : '−') + short(Math.abs(gain)) + ' KP'}</div>
               <div class="text-[11px] text-slate-400">${!pin.length ? '<span>Keine Kämpfe im Buff-Zeitraum.</span>' : !pout.length ? '<span>Zum Vergleich fehlen Kämpfe ohne Buff im Zeitraum.</span>' : rOut > 0 ? `${rIn >= rOut ? '+' : ''}${Math.round((rIn / rOut - 1) * 100)} % <span>KP pro Stunde</span>` : ''}</div>
               <div class="text-[10px] text-slate-500 mt-1"><span>Gerechnet mit</span>: ${sc === 'kvk' ? '<span>Ganzes KvK</span>' : sc === 'today' ? '<span>Heute</span>' : sc === 'h24' ? '24 h' : '<span>Zeitraum oben</span>'}${h.tcZ ? ' · ' + esc(h.tcZ) : ''}</div></div></div>` : '<div class="text-xs text-slate-500 mt-2">Noch kein Buff eingetragen.</div>'}
+          ${brHtml}
         </div></details>`;
       tcHtml = buffHtml + `<details data-hmtc ${h.tcOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">📈 <span>Trade-Verlauf</span></summary>
         <div class="px-3 pb-3"><div class="flex flex-wrap items-center gap-2 mb-2 text-xs">
@@ -1404,7 +1565,7 @@ window.RokMods.battles = (R) => {
           ${h.ux ? '<button type="button" data-hmcalx class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="Kalibrierung zurücksetzen">↺</button>' : ''}</span>
       </div>
       ${matesBar}
-      <div class="grid lg:grid-cols-[minmax(0,1fr)_19rem] gap-3 items-start mt-2"><div id="hmWrap" class="bg-ink-950 rounded-xl">
+      <div class="grid lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[9.5rem_minmax(0,1fr)_19rem] gap-3 items-start mt-2">${hmQuickHtml(st, h)}<div id="hmWrap" class="bg-ink-950 rounded-xl">
         ${h.iso != null ? `<div class="flex items-center gap-2 mb-1 text-xs"><span class="text-amber-300 font-semibold">🔍 <span translate="no">${esc(hmZName(h, m, h.iso))}</span></span><button type="button" data-hmiso="${h.iso}" class="px-2 py-0.5 rounded-lg border border-ink-600 hover:border-gold-500/60">✕ <span>Alle Zonen</span></button></div>` : ''}
         <div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950 ${hmCalMode ? 'cursor-crosshair' : 'cursor-grab'} touch-none select-none">
           <div id="hmStage" class="absolute inset-0 origin-top-left">
@@ -1437,7 +1598,7 @@ window.RokMods.battles = (R) => {
       <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3>${marchSel}</div>
       <div class="flex flex-wrap gap-1.5 mt-2">${[{ b: '', kp: S.zbList.reduce((a, x) => a + x.kp, 0), n: S.zbList.reduce((a, x) => a + x.n, 0) }, ...S.zbList].map(x => `<button type="button" data-hmzb="${esc(x.b)}" aria-pressed="${(h.zb || '') === x.b}" class="seg-btn rounded-xl px-3 py-2 text-left"><div class="text-sm font-bold" translate="no">${x.b ? esc(x.b) : '🗺️ <span>Alle</span>'}</div><div class="text-xs tabular-nums text-gold-300">${pvp ? '🏆 ' + short(x.kp) : (h.src === 'barb' ? '🪓 ' : '👹 ') + fmt(x.n)}</div></button>`).join('')}</div>
       <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
-      ${tcHtml}
+      ${hmSpect() ? '' : hmFieldHtml(st, h, m)}${hmMarksHtml(st, h, m)}${tcHtml}
       ${pvp ? hmCompare(h, S) : ''}
       ${brHtml}
       ${flexHtml || `<details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${h.src === 'rally' ? '🛡️ <span>Rally &amp; Garnison</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '👹 <span>Alle Kahar</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
@@ -1650,6 +1811,11 @@ window.RokMods.battles = (R) => {
     el.querySelectorAll('[data-hmtcz]').forEach(b => b.onclick = () => { h.tcZ = b.dataset.hmtcz; re(); });
     el.querySelector('[data-hmbuff]')?.addEventListener('toggle', (ev) => { h.buffOpen = ev.target.open; savePassive(); });
     el.querySelectorAll('[data-hmbuffx]').forEach(b => b.onclick = () => { h.buffs = (h.buffs || []).filter((_, i) => i !== +b.dataset.hmbuffx); re(); });
+    el.querySelectorAll('[data-hmfw]').forEach(b => b.onclick = (e) => { e.preventDefault(); h.fw = +b.dataset.hmfw; re(); });
+    el.querySelectorAll('[data-hmfrel]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbField.t = 0; kbFieldLoad(kbField.key ? kbField.key.split(',') : [], true); });
+    el.querySelectorAll('[data-hmmarks]').forEach(d => d.ontoggle = () => { if (!!h.markOpen !== d.open) { h.markOpen = d.open; savePassive(); renderKampf(); } });
+    el.querySelectorAll('[data-hmfield]').forEach(d => d.ontoggle = () => { if (h.fieldOpen !== d.open) { h.fieldOpen = d.open; savePassive(); if (d.open) renderKampf(); } });
+    el.querySelectorAll('[data-hmbuffhide]').forEach(b => b.onclick = () => { st.buffHide = { ...(st.buffHide || {}), [b.dataset.hmbuffhide]: 1 }; re(); });
     el.querySelector('[data-hmtc]')?.addEventListener('toggle', (ev) => { h.tcOpen = ev.target.open; savePassive(); });
     el.querySelector('[data-hmbr]')?.addEventListener('toggle', (ev) => { h.brOpen = ev.target.open; savePassive(); });
     try { hmTCc?.destroy(); } catch {} hmTCc = null;
