@@ -26,8 +26,15 @@ jobs:
       - name: Uploader-Modul beilegen
         shell: cmd
         run: copy rok_kampf_upload.py app\rok_kampf_upload.py
+      - name: Titel-Schrift (Cinzel, wie auf der Website) laden
+        shell: bash
+        run: curl -sSL -o app/Cinzel.ttf "https://github.com/google/fonts/raw/main/ofl/cinzel/Cinzel%5Bwght%5D.ttf" || true
       - name: EXE bauen
-        run: pyinstaller --onefile --noconsole --name WizFanClubApp --icon app/icon.ico --add-data "app/icon.ico;." --paths app --hidden-import rok_kampf_upload app/rok_app.py
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ -s app/Cinzel.ttf ]; then EXTRA='--add-data app/Cinzel.ttf;.'; fi
+          pyinstaller --onefile --noconsole --name WizFanClubApp --icon app/icon.ico --add-data "app/icon.ico;." $EXTRA --paths app --hidden-import rok_kampf_upload app/rok_app.py
       - name: Release aktualisieren
         shell: bash
         env:
