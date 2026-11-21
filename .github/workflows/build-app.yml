@@ -48,10 +48,13 @@ jobs:
           # Release nur aktualisieren statt loeschen -> der Download-Link funktioniert auch waehrend des Bauens
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/WizFanClubApp.exe --clobber
-            gh release edit "$TAG" --notes "Automatisch gebaut aus Commit ${{ github.sha }}"
+            gh release edit "$TAG" --draft=false --notes "Automatisch gebaut aus Commit ${{ github.sha }}"
           else
             gh release create "$TAG" dist/WizFanClubApp.exe --target "${{ github.sha }}" \
               --title "Wiz fan Club App (${{ github.ref_name }})" \
               --notes "Automatisch gebaut aus Commit ${{ github.sha }}" \
               --prerelease=${{ github.ref_name != 'main' }}
           fi
+          # Sicherheitsnetz: Release darf nie als Entwurf (unsichtbar) haengen bleiben
+          gh release edit "$TAG" --draft=false
+          gh release view "$TAG" --json assets --jq '.assets[].name' 
