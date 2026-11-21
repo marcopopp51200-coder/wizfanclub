@@ -620,6 +620,7 @@ TXT["de"].update({
     "k_main": "Main", "k_alt": "Zweitaccount", "k_pilot": "Pilot", "pending": "wartet auf Besitzer",
     "prof_id": "Governor-ID in deinem Website-Profil: {id}", "prof_none": "In deinem Website-Profil ist noch keine Governor-ID eingetragen – trag sie dort ein, dann kannst du deinen Main binden.",
     "pending_info": "Der Besitzer muss das auf der Website unter „App verbinden“ erlauben.", "ov_pilot": "Pilot-Accounts mitzählen",
+    "err_protected": "Diese Website-Version ist bei Vercel geschützt (nur für dich im Browser sichtbar). Die App kann sie nicht erreichen – verbinde die App mit deiner normalen Website.",
     "link_bad": "Dieser Verbindungs-Link ist ungültig oder kommt nicht von der Wiz-fan-Club-Website.", "link_busy": "Verbinde mit der Website …",
     "link_ok": "✔ Verbunden als {n}", "link_ask": "Mit dieser Website verbinden?\n\n{s}", "steps1": "Am einfachsten: Auf der Website „🚀 Mit App verbinden“ klicken – fertig.",
     "err_404": "Unter {u} gibt es die App-Verbindung (noch) nicht.\n\nTrag bei „Website-Adresse“ genau die Adresse ein, auf der du den Code erzeugt hast – sie steht auf der Seite „App verbinden“ zum Kopieren.",
@@ -643,6 +644,7 @@ TXT["en"].update({
     "k_main": "Main", "k_alt": "Alt account", "k_pilot": "Pilot", "pending": "waiting for owner",
     "prof_id": "Governor ID in your website profile: {id}", "prof_none": "There is no governor ID in your website profile yet – add it there, then you can link your main.",
     "pending_info": "The owner has to allow this on the website under “Connect the app”.", "ov_pilot": "Count pilot accounts",
+    "err_protected": "This website version is protected by Vercel (only visible to you in the browser). The app cannot reach it – connect the app to your normal website.",
     "link_bad": "This connection link is invalid or does not come from the Wiz fan Club website.", "link_busy": "Connecting to the website …",
     "link_ok": "✔ Connected as {n}", "link_ask": "Connect with this website?\n\n{s}", "steps1": "Easiest: click “🚀 Connect with app” on the website – done.",
     "err_404": "There is no app connection at {u} (yet).\n\nUnder “Website address” enter exactly the address where you created the code – it is shown on the “Connect the app” page for copying.",
@@ -1200,8 +1202,12 @@ class App:
         except urllib.error.HTTPError as e:
             try:
                 msg = json.loads(e.read().decode("utf-8")).get("error")
+                if isinstance(msg, dict):                    # Vercel-Fehler {"code":..., "message":...}
+                    msg = msg.get("message") or str(msg)
             except Exception:
                 msg = None
+            if e.code == 401 and msg and "protected" in str(msg).lower():
+                msg = self.t("err_protected")
             if e.code == 404 and not msg:
                 msg = self.t("err_404", u=self.cfg["api_base"])
             raise RuntimeError(msg or "HTTP %d" % e.code)
