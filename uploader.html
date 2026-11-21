@@ -141,7 +141,7 @@ tailwind.config = { theme: { extend: {
 
   // Download: test-Branch baut "app-test", main baut "app-main" (siehe .github/workflows/build-app.yml)
   const REPO = 'https://github.com/marcopopp51200-coder/rok-scanner';
-  const APP_TAG = 'app-test';
+  const APP_TAG = /-git-/.test(location.hostname) ? 'app-test' : 'app-main';   // Vorschau (Branch) → Test-App, normale Website → main-App
   $('dlBtn').href = `${REPO}/releases/download/${APP_TAG}/WizFanClubApp.exe`;
   $('srcLink').href = `${REPO}/tree/${APP_TAG === 'app-main' ? 'main' : 'test'}/app`;
 
