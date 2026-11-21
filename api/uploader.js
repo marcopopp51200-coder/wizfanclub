@@ -6,6 +6,7 @@
 //    GET  overview           -> { links, devices }         gebundene IDs + verbundene PCs
 //    POST revoke  {id}       -> PC trennen
 //    POST unlink  {governor_id}
+//    GET  codestatus ?code=  -> {used}  (Ein-Klick: hat die App den Code benutzt?)
 //    POST pilot_answer {id, allow}   -> Pilot-Anfrage fuer die eigene Profil-ID erlauben/ablehnen
 //  App (Header "X-Device-Token: <token>"):
 //    POST pair    {code, device_name} -> { token, user }   (ohne Token)
@@ -69,6 +70,9 @@ async function userName(uid) {
 }
 
 const LCOLS = 'id,governor_id,gov_name,kind,status,verified,created_at';
+const isAdmin = async (uid) => {                               // gleiche Regel wie auf der Website: feature_access 'admin'
+  try { const r = await rest('GET', `feature_access?user_id=eq.${uid}&feature=eq.admin&select=feature&limit=1`); return !!(r && r[0]); } catch { return false; }
+};
 const links = (uid) => rest('GET', `governor_links?user_id=eq.${uid}&select=${LCOLS}&order=created_at`);
 const okIds = async (uid) => new Map(((await links(uid)) || []).filter((x) => x.status === 'ok').map((x) => [String(x.governor_id), x.gov_name || String(x.governor_id)]));
 const gidOf = (v) => { const s = String(v ?? '').replace(/\D/g, ''); return s && s.length <= 12 ? s : ''; };
@@ -83,7 +87,7 @@ module.exports = async (req, res) => {
 
   try {
     // ---------- Website ----------
-    if (action === 'newcode' || action === 'overview' || action === 'revoke' || action === 'pilot_answer' || (action === 'unlink' && !req.headers['x-device-token'])) {
+    if (action === 'newcode' || action === 'overview' || action === 'revoke' || action === 'pilot_answer' || action === 'codestatus' || (action === 'unlink' && !req.headers['x-device-token'])) {
       const u = await userFromJwt(req);
       if (!u) return res.status(401).json({ error: 'Nicht eingeloggt.' });
 
@@ -95,9 +99,23 @@ module.exports = async (req, res) => {
         await rest('POST', 'uploader_codes', { code, user_id: u.id, expires_at });
         return res.json({ code, expires_at });
       }
+      if (action === 'codestatus') {                          // wurde mein Code schon von der App benutzt?
+        const code = String(req.query.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const r = await rest('GET', `uploader_codes?code=eq.${code}&user_id=eq.${u.id}&select=used`);
+        return res.json({ used: !!(r && r[0] && r[0].used) });
+      }
       const prof = gidOf((await userName(u.id)).profile_gov);
+      const admin = await isAdmin(u.id);
       if (action === 'overview') {
-        const [l, d] = await Promise.all([links(u.id), rest('GET', `uploader_devices?user_id=eq.${u.id}&select=id,device_name,created_at,last_seen&order=created_at`)]);
+        let d = null;                                          // verbundene PCs sieht nur der Admin (alle, mit Besitzer)
+        if (admin) {
+          d = (await rest('GET', 'uploader_devices?select=id,user_id,device_name,created_at,last_seen&order=last_seen.desc.nullslast&limit=200')) || [];
+          const uids = [...new Set(d.map((x) => x.user_id))];
+          const lb = uids.length ? ((await rest('GET', `leaderboard?user_id=in.(${uids.join(',')})&select=user_id,username`)) || []) : [];
+          const nm = new Map(lb.map((x) => [x.user_id, x.username]));
+          d = d.map((x) => ({ id: x.id, device_name: x.device_name, created_at: x.created_at, last_seen: x.last_seen, owner: nm.get(x.user_id) || 'Spieler' }));
+        }
+        const l = await links(u.id);
         let pilots = [];                                       // wer pilotiert meine Profil-ID?
         if (prof) {
           pilots = (await rest('GET', `governor_links?governor_id=eq.${prof}&kind=eq.pilot&user_id=neq.${u.id}&select=id,user_id,status,created_at`)) || [];
@@ -107,7 +125,7 @@ module.exports = async (req, res) => {
             pilots = pilots.map((p) => ({ id: p.id, status: p.status, created_at: p.created_at, name: nm.get(p.user_id) || 'Spieler' }));
           }
         }
-        return res.json({ links: l || [], devices: d || [], pilots, profile_gov: prof || null });
+        return res.json({ links: l || [], devices: d, admin, pilots, profile_gov: prof || null });
       }
       if (action === 'pilot_answer') {
         if (!prof) return res.status(400).json({ error: 'In deinem Profil ist keine Governor-ID eingetragen.' });
@@ -117,7 +135,8 @@ module.exports = async (req, res) => {
         return res.json({ ok: true });
       }
       if (action === 'revoke') {
-        await rest('DELETE', `uploader_devices?id=eq.${parseInt(body.id, 10) || 0}&user_id=eq.${u.id}`);
+        if (!admin) return res.status(403).json({ error: 'Nur für Admins.' });
+        await rest('DELETE', `uploader_devices?id=eq.${parseInt(body.id, 10) || 0}`);
         return res.json({ ok: true });
       }
       const g = gidOf(body.governor_id);
@@ -175,8 +194,10 @@ module.exports = async (req, res) => {
       return res.json({ ok: true, links: await links(u.id) });
     }
     if (action === 'stats') {                                   // Overlay: gleiche Summen wie My Data
-      const all = ((await links(u.id)) || []).filter((x) => x.status === 'ok' && (x.kind !== 'pilot' || req.query.pilot === '1'));
-      const ids = all.map((x) => String(x.governor_id));
+      const okl = ((await links(u.id)) || []).filter((x) => x.status === 'ok');
+      const only = String(req.query.only || '').replace(/\D/g, '');
+      const ids = only ? (okl.some((x) => String(x.governor_id) === only) ? [only] : [])        // ein bestimmter (z. B. gerade pilotierter) Account
+                       : okl.filter((x) => x.kind !== 'pilot' || req.query.pilot === '1').map((x) => String(x.governor_id));
       if (!ids.length) return res.json({ ok: true, empty: true });
       const since = new Date((+req.query.since || 0) * 1000).toISOString();
       const r = await fetch(`${SB_URL}/rest/v1/rpc/app_stats`, { method: 'POST',
