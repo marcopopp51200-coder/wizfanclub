@@ -2,7 +2,7 @@
 """
 RoK Kampfbericht-Uploader
 -------------------------
-Liest die Kampfberichte, die Rise of Kingdoms lokal im Ordner (Version 9: + Kampfort/Stadt fuer die Heatmap; Version 8: + Ausruestung/Skills/Ruestung pro Kampf; Version 7: + Farmen aus MuMu Player, nur Sammel-Mails, Account-Wechsel, alle 10 Min.)
+Liest die Kampfberichte, die Rise of Kingdoms lokal im Ordner (Version 11: + Verdienst/Acclaim pro Kampf; Version 10: + Jahresrueckblick AnniversaryMemory -> rok_memory; Version 9: + Kampfort/Stadt fuer die Heatmap; Version 8: + Ausruestung/Skills/Ruestung pro Kampf; Version 7: + Farmen aus MuMu Player, nur Sammel-Mails, Account-Wechsel, alle 10 Min.)
   <Spielordner>\\save\\mailcache\\Persistent.Mail.*
 zwischenspeichert, und laedt neue Kaempfe in die Supabase-Tabelle "rok_battles".
 
@@ -10,7 +10,7 @@ zwischenspeichert, und laedt neue Kaempfe in die Supabase-Tabelle "rok_battles".
 * Merkt sich, welche Dateien schon verarbeitet wurden (uploader_state.json).
 * Braucht nur Python 3 (keine Zusatzpakete).
 """
-import json, os, struct, sys, zipfile, time, glob, traceback, subprocess
+import json, os, re, struct, sys, zipfile, time, glob, traceback, subprocess
 import urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -245,6 +245,7 @@ def battle_rows(mail, account_label, heroes, names=None):
             "self_alliance": me.get("Abbr"),
             "self_hero1_id": me.get("HId"), "self_hero1": hn(me.get("HId")),
             "self_hero2_id": me.get("HId2"), "self_hero2": hn(me.get("HId2")),
+            "self_formation": me.get("HFMs") if isinstance(me.get("HFMs"), int) else None,     # v20: Ruestungs-Formation (Pincer/Wedge/Delta/V -> Truppentyp)
             "self_troops_start": _num(own, "InitMax"),
             "self_remaining": _num(own, "Cnt"),
             "self_wounded": _num(own, "Hurt"),
@@ -256,8 +257,10 @@ def battle_rows(mail, account_label, heroes, names=None):
             "enemy_name": en.get("PName"),
             "enemy_alliance": en.get("Abbr"),
             "enemy_alliance_name": en.get("AName"),
+            "enemy_kingdom": en.get("COSId"),          # v19: Herkunfts-Koenigreich des Gegners
             "enemy_hero1_id": en.get("HId"), "enemy_hero1": hn(en.get("HId")),
             "enemy_hero2_id": en.get("HId2"), "enemy_hero2": hn(en.get("HId2")),
+            "enemy_formation": en.get("HFMs") if isinstance(en.get("HFMs"), int) else None,
             "enemy_troops_start": _num(opp, "InitMax"),
             "enemy_wounded": _num(opp, "Hurt"),
             "enemy_severe": _num(opp, "BadHurt"),
@@ -272,8 +275,11 @@ def battle_rows(mail, account_label, heroes, names=None):
             "group_size": len(c.get("STs") or {}) or 1,
             "pos_x": _xy(a.get("Pos"), "X"), "pos_y": _xy(a.get("Pos"), "Y"),                 # v9: Kampfort fuer die Heatmap
             "city_x": _xy(me.get("CastlePos"), "X"), "city_y": _xy(me.get("CastlePos"), "Y"),
-            "map_role": c.get("Role"), "room_id": (int(c.get("RoomId")) if str(c.get("RoomId") or "").isdigit() and int(c.get("RoomId")) > 0 else None),                 # gsmp = Weltkarte, dungeon = Instanz/Event-Karte
-            "detail": battle_detail(c, a, NM) if (isinstance(en.get("PId"), int) and en.get("PId") > 0) else None,   # v8: Ausruestung, Skills, Ruestung
+            "map_role": c.get("Role"),
+            "acclaim": _num(a.get("Damage") or {}, "Contribute") or _num(a.get("Damage") or {}, "WarExploits") or 0,   # v14: Verdienst (Acclaim) = Damage.Contribute
+            "room_id": (int(c.get("RoomId")) if str(c.get("RoomId") or "").isdigit() and int(c.get("RoomId")) > 0 else None),                 # gsmp = Weltkarte, dungeon = Instanz/Event-Karte
+            "detail": battle_detail(c, a, NM) if (isinstance(en.get("PId"), int) and en.get("PId") > 0 and len(c.get("STs") or {}) > 1) else None,   # v17: Details (Gear, Skills, Ruestung) nur bei Rally/Garnison
+            "parent_id": str(mail.get("parentId") or mail.get("id") or ""),   # v17: Battle Streak (Hauptbericht) fuer „Flex“
         })
     return rows
 
@@ -390,6 +396,8 @@ def mail_row(mail, account_label):
     t = mail.get("time")
     if isinstance(t, (int, float)) and t > 1e14:  # Mikrosekunden
         t = t / 1e6
+    if mail.get("type") == "Rss" and isinstance(t, (int, float)) and t < time.time() - 7 * 86400:
+        return None                               # v17: alte Sammel-Mails bleiben weg (werden nach 7 Tagen zusammengefasst)
     return {
         "mail_id": str(mail.get("id")),
         "account": account_label,
@@ -432,6 +440,124 @@ def upload(cfg, rows, table="rok_battles", conflict="mail_id,opponent_id", batch
             raise RuntimeError("Supabase-Fehler %s: %s" % (e.code, e.read().decode("utf-8", "replace")[:500]))
 
 
+# ---------- Jahresrueckblick (AnniversaryMemory_<Spieler-ID>_<Jahr> im save-Ordner) ----------
+CIV_KEYS = {1: "ROMAN", 2: "GERMANY", 3: "BRITONS", 4: "FRANCE", 5: "SPANISH", 6: "CHINA", 7: "JAPANESE", 8: "KOREANS",
+            9: "ARAB", 10: "OTTOMAN", 11: "BYZANTINES", 12: "VIKING", 13: "MAYA", 14: "EGYPT", 15: "GREECE"}
+RES_TYPES = {1: "food", 2: "wood", 3: "stone", 4: "gold", 5: "gems"}
+
+
+def read_memory(path):
+    with open(path, "rb") as f:
+        b = f.read()
+    s = b.find(b"\x05\x04")
+    while 0 <= s <= 64:
+        try:
+            v, _ = _rd(b, s)
+            if isinstance(v, dict) and isinstance(v.get("Data"), dict):
+                return v
+        except Exception:
+            pass
+        s = b.find(b"\x05\x04", s + 1)
+    return None
+
+
+def memory_data(raw, year, game_dir, lang):
+    """Rohdaten aus dem Spiel -> Format fuer memory.js (Namen fuer Kommandant und Kultur werden ergaenzt)."""
+    d = raw or {}
+    g = lambda k: d.get(k)
+    names = {}
+    for lg in ("de", "en"):
+        h = load_lc(game_dir, "lc_hero.dat", lg)
+        c = load_lc(game_dir, "lc_common.dat", lg)
+        names[lg] = (h, c)
+    def hero(i, lg):
+        return (names[lg][0] or {}).get("NAME_%s" % i) if i is not None else None
+    def civ(i, lg):
+        k = CIV_KEYS.get(i)
+        return (names[lg][1] or {}).get(k) if k else None
+    hid, cid = g("pvp_most_hero"), g("civ_start")
+    lang = lang if lang in ("de", "en") else "de"
+    out = {
+        "pvp": {"battles": g("pvp_battle_cnt"), "wins": g("pvp_win_cnt"), "killDiff": g("kill_diff")},
+        "cmd": {"id": str(hid) if hid is not None else None, "name": hero(hid, lang) or hero(hid, "en"), "name_en": hero(hid, "en")},
+        "barb": {"kills": g("pve_bar_win_cnt"), "maxLevel": g("pve_bar_win_maxlvl"), "forts": g("pve_gd_win_cnt")},
+        "ark": {"games": g("gvg_join_cnt"), "wins": g("gvg_win_cnt"), "best": g("gvg_personal_score_max"), "avg": g("gvg_personal_score_avg")},
+        "raid": {"joined": g("raidboss_join_cnt"), "won": g("raidboss_win_cnt")},
+        "scholar": {"joined": g("contest_join_cnt")},
+        "res": {"gathered": g("gather_resnum_sum"), "trips": g("gather_time_cnt"), "topType": RES_TYPES.get(g("gather_max_type")),
+                "topSum": g("gather_max_sum"), "gems": g("res_gem_in_sum"), "powerInvest": g("res_diy_powerup_out")},
+        "troops": {"trained": g("training_all_sum"), "topType": g("training_most_type"), "topCount": g("training_most_num")},
+        "online": {"hours": g("online_hour_cnt"), "days": g("login_dt_cnt"), "chat": g("im_msg_send"), "vip": g("vip_level"), "quests": g("questdaily_cnt_avg")},
+        "give": {"sentTo": g("ressend_out_role"), "sentAmount": g("ressend_out_max"), "fromName": g("ressend_in_role"), "fromAmount": g("ressend_in_max")},
+        "help": {"givenSec": g("speedup_byhelp_out_sum"), "gotSec": g("speedup_byhelp_in_sum")},
+        "alliance": {"name": g("alliance_dt_max"), "days": g("alliance_dt_cnt")},
+        "acc": {"created": g("reg_dt"), "bestDay": g("dt_powerup_max"), "bestGain": g("daily_powerup_max"),
+                "kingdomStart": g("svr_start"), "migrations": g("svr_change_cnt"),
+                "civId": cid, "civ": civ(cid, lang) or civ(cid, "en"), "civ_en": civ(cid, "en"), "civChanges": g("civ_change_cnt")},
+        # Anteil der Statthalter, die besser sind (kleiner = besser) -> „Top x %“
+        "top": {"killDiff": g("ratio_killdiff"), "gather": g("ratio_gathercnt"), "gems": g("ratio_resgemin"), "chat": g("ratio_imsend"), "quests": g("ratio_questdailyavg")},
+        "src": "uploader",
+        "raw": d,
+    }
+    return out
+
+
+def _sb_get(cfg, path):
+    base = cfg["supabase_url"].strip().rstrip("/")
+    if base.endswith("/rest/v1"):
+        base = base[:-len("/rest/v1")]
+    key = cfg["supabase_key"]
+    headers = {"apikey": key}
+    if not key.startswith("sb_"):
+        headers["Authorization"] = "Bearer " + key
+    req = urllib.request.Request(base + "/rest/v1/" + path, headers=headers)
+    return json.loads(urllib.request.urlopen(req, timeout=60).read().decode("utf-8"))
+
+
+def process_memory(cfg, state, gdir, label):
+    """Sucht AnniversaryMemory-Dateien und laedt sie nach rok_memory (Website-Konto ueber die Governor-ID im Profil)."""
+    seen = state.setdefault("_memory", {})
+    n = 0
+    for p in glob.glob(os.path.join(gdir, "save", "AnniversaryMemory_*_*")):
+        name = os.path.basename(p)
+        parts = name.split("_")
+        if len(parts) < 3 or not parts[1].isdigit() or not parts[2][:4].isdigit():
+            continue
+        gid, year = parts[1], int(parts[2][:4])
+        try:
+            st = os.stat(p)
+        except OSError:
+            continue
+        sig = "%d_%d" % (st.st_size, int(st.st_mtime))
+        if seen.get(name) == sig:
+            continue
+        m = read_memory(p)
+        if not m:
+            log("Jahresrueckblick %s nicht lesbar" % name); continue
+        year = int(m.get("Year") or year)
+        try:
+            users = _sb_get(cfg, "leaderboard?select=user_id&governor_id=eq.%s" % gid)
+        except Exception as e:
+            log("Jahresrueckblick: Konto zu Governor-ID %s nicht abfragbar (%s)" % (gid, e)); continue
+        if not users:
+            log("Jahresrueckblick %s: kein Website-Konto mit Governor-ID %s im Profil – wird beim naechsten Lauf erneut versucht" % (year, gid)); continue
+        data = memory_data(m.get("Data"), year, gdir, cfg.get("language", "de"))
+        rows = [{"user_id": u["user_id"], "year": year, "governor_id": int(gid), "data": data,
+                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())} for u in users if u.get("user_id")]
+        try:
+            upload(cfg, rows, "rok_memory", "user_id,year", 10)
+        except RuntimeError as e:
+            if "governor_id" in str(e):                 # SQL-Spalte noch nicht da -> ohne hochladen
+                for r in rows:
+                    r.pop("governor_id", None)
+                upload(cfg, rows, "rok_memory", "user_id,year", 10)
+            else:
+                raise
+        seen[name] = sig; n += 1
+        log("%s: Jahresrueckblick %d (Governor %s) hochgeladen" % (label, year, gid))
+    return n
+
+
 # ---------- MuMu Player (Farmen): Sammel-Mails per ADB holen ----------
 MUMU_DIR = "/sdcard/Android/data/com.lilithgame.roc.gp/files/GLGData/com_lilithgame_roc_gp/doc/mailcache"
 NOWIN = 0x08000000 if os.name == "nt" else 0          # kein schwarzes Fenster bei pythonw
@@ -458,6 +584,13 @@ def mumu_sync(cfg):
     mc = cfg.get("mumu") or {}
     if mc.get("enabled") is False:
         return []
+    if os.name == "nt":   # v15: MuMu laeuft gar nicht -> sofort weiter (spart ~30 s adb-Suche pro Lauf)
+        try:
+            tl = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, timeout=15, creationflags=NOWIN).stdout.decode("utf-8", "ignore").lower()
+            if "mumu" not in tl and "nemu" not in tl:
+                return []
+        except Exception:
+            pass
     adb = find_adb(cfg)
     if not adb:
         log("MuMu: adb.exe nicht gefunden – Farmen werden uebersprungen"); return []
@@ -543,7 +676,324 @@ def process_mumu(cfg, state, port, mdir, idx):
 
 
 # ---------- Hauptablauf ----------
+def _dur(sec):
+    sec = int(max(0, sec)) // 60
+    return ("%d h %02d min" % (sec // 60, sec % 60)) if sec >= 60 else ("%d min" % sec)
+
+
+def discord_notify(cfg, state, rows, mails=None):
+    """v19: Nachricht in einen Discord-Kanal (config "discord_webhook"): City-Rally auf dich und Kampfbeginn.
+    v21: + Gebaeude-Mails der Allianz/Koalition (z. B. "Lvl 7 Pass Occupied") mit Position.
+    v22: schoene Discord-Embeds (gruen = erobert, rot = gefallen, Haltedauer, Discord-Zeitstempel)."""
+    url = (cfg.get("discord_webhook") or "").strip()
+    if not url or not (rows or mails):
+        return
+    rows = rows or []
+    import datetime as _dt
+    ds = state.setdefault("_discord", {"sent": [], "last": {}})
+    sent, last, held, now, emb = set(ds.get("sent") or []), ds.get("last") or {}, ds.get("held") or {}, time.time(), []
+    iso = lambda t: _dt.datetime.fromtimestamp(t, _dt.timezone.utc).isoformat()
+    foot = {"text": cfg.get("discord_footer") or "Wiz fan Club · RoK Uploader"}
+    def ts(r):
+        try:
+            return _dt.datetime.fromisoformat(str(r.get("battle_start")).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return 0
+    fresh = sorted([r for r in rows if r.get("is_pvp") and now - ts(r) < 30 * 60], key=ts)   # nur Kaempfe der letzten 30 min (kein Spam beim Neu-Einlesen)
+    for r in fresh:
+        pid, t = str(r.get("player_id")), ts(r)
+        cx, cy, px, py = r.get("city_x"), r.get("city_y"), r.get("pos_x"), r.get("pos_y")
+        key = "%s|%s" % (r.get("mail_id"), pid)
+        who = r.get("self_name") or pid
+        if cfg.get("discord_city", False) and None not in (cx, cy, px, py) and ((px - cx) ** 2 + (py - cy) ** 2) ** 0.5 <= 30 and key not in sent:   # v23: City-Rally aus (nur geschaetzt)
+            sent.add(key)
+            emb.append({"title": "\U0001F3EF City-Rally auf %s!" % who, "color": 0xDC2626, "timestamp": iso(t), "footer": foot,
+                        "description": "Gegner: **[%s] %s**" % (r.get("enemy_alliance") or "?", r.get("enemy_name") or "?"),
+                        "fields": [{"name": "\U0001F4CD Stadt", "value": "X %d · Y %d" % (int(cx / 6), int(cy / 6)), "inline": True},
+                                   {"name": "\U0001F552 Zeit", "value": "<t:%d:t> (<t:%d:R>)" % (t, t), "inline": True}]})
+        if t - float(last.get(pid, 0)) > 45 * 60:
+            emb.append({"title": "⚔️ %s kämpft gerade" % who, "color": 0xF59E0B, "timestamp": iso(t), "footer": foot,
+                        "fields": [{"name": "\U0001F4CD Position", "value": "X %d · Y %d" % (int((px or 0) / 6), int((py or 0) / 6)), "inline": True},
+                                   {"name": "\U0001F552 Start", "value": "<t:%d:t> (<t:%d:R>)" % (t, t), "inline": True}]})
+        last[pid] = max(float(last.get(pid, 0)), t)
+    if cfg.get("discord_buildings", True):
+        for mr in sorted(mails or [], key=lambda x: str(x.get("sent_at") or "")):
+            b = mr.get("content") if isinstance(mr.get("content"), dict) else {}
+            kv = b.get("kvs") if isinstance(b.get("kvs"), dict) else {}
+            pos = kv.get("stronghold_pos") if isinstance(kv.get("stronghold_pos"), dict) else None
+            if mr.get("mail_type") != "Alliance" or not pos:
+                continue
+            try:
+                t = _dt.datetime.fromisoformat(str(mr.get("sent_at")).replace("Z", "+00:00")).timestamp()
+            except Exception:
+                continue
+            title, sub = str(b.get("title") or "Gebäude"), str(b.get("subTitle") or "")
+            flt = [x.strip().lower() for x in str(cfg.get("discord_buildings_filter", "7 Pass")).split(",") if x.strip()]
+            if flt and not any(x in (title + " " + sub).lower() for x in flt):
+                continue                          # v23: nur Pass 7 (config "discord_buildings_filter", z. B. "7 Pass, Altar")
+            sid = str(kv.get("stronghold_id") or "%s_%s" % (pos.get("X"), pos.get("Y")))
+            key = "b|%s|%s|%s|%d" % (b.get("type"), kv.get("stronghold_id"), title, int(t // 60))   # gleiche Mail auf mehreren Accounts nur einmal
+            if key in sent:
+                continue
+            ours = "our coalition" in sub.lower() or "our alliance" in sub.lower()
+            lost = title.lower().startswith("fall of")
+            name = title[8:] if lost else (title[:-9] if title.endswith(" Occupied") else title)
+            ally = kv.get("legion_abbr") or ""
+            h0 = held.get(sid) or {}
+            if now - t > float(cfg.get("discord_max_age_min") or 30) * 60:   # zu alt: nicht posten, aber Haltezeit merken
+                sent.add(key); held[sid] = {"t": t, "ours": ours}
+                continue
+            sent.add(key)
+            extra = []
+            if lost and h0.get("ours") and t > h0.get("t", 0):
+                extra.append({"name": "⏱️ Gehalten", "value": _dur(t - h0["t"]), "inline": True})
+            if ours and h0 and not h0.get("ours") and t > h0.get("t", 0):
+                extra.append({"name": "⏱️ Zurückerobert nach", "value": _dur(t - h0["t"]), "inline": True})
+            held[sid] = {"t": t, "ours": ours}
+            if ours:
+                head, col, desc = "\U0001F3F0 %s erobert!" % name, 0x22C55E, "Unsere Koalition hat **%s** eingenommen%s" % (name, (" · **[%s]**" % ally) if ally else "")
+            elif lost:
+                head, col, desc = "\U0001F4A5 %s gefallen" % name, 0xEF4444, "Eingenommen von **[%s]**" % (ally or "?")
+            else:
+                head, col, desc = "\U0001F3F0 %s" % title, 0x3B82F6, sub
+            emb.append({"title": head, "color": col, "description": desc, "timestamp": iso(t), "footer": foot,
+                        "fields": [{"name": "\U0001F4CD Position", "value": "X %d · Y %d" % (int(float(pos.get("X") or 0) / 6), int(float(pos.get("Y") or 0) / 6)), "inline": True},
+                                   {"name": "\U0001F552 Zeit", "value": "<t:%d:t> (<t:%d:R>)" % (t, t), "inline": True}] + extra})
+    # v26: Buff abgelaufen (System-Mail "Buff Ended"): Army Expansion, Angriff, Verteidigung (Schild nur mit "discord_buff_shield": true)
+    bemb = []
+    kinds = [("army expansion", "\U0001FA96", "Army Expansion", 0xF97316), ("attack", "\u2694\ufe0f", "Angriffs-Buff", 0xEF4444), ("defen", "\U0001F6E1\ufe0f", "Verteidigungs-Buff", 0x3B82F6)]
+    if cfg.get("discord_buff_shield"):
+        kinds.insert(0, ("peace shield", "\U0001F54A\ufe0f", "Friedensschild", 0xA3A3A3))
+    accs = {str(k): v for k, v in (cfg.get("accounts") or {}).items()}
+    for mr in sorted(mails or [], key=lambda x: str(x.get("sent_at") or "")):
+        b = mr.get("content") if isinstance(mr.get("content"), dict) else {}
+        if mr.get("mail_type") != "System" or not (b.get("title") == "Buff Ended" or str(b.get("subType")) == "340"):
+            continue
+        sub = str(b.get("subTitle") or b.get("content") or "")
+        k = next((x for x in kinds if x[0] in sub.lower()), None)
+        if not k:
+            continue
+        try:
+            t = _dt.datetime.fromisoformat(str(mr.get("sent_at")).replace("Z", "+00:00")).timestamp()
+        except Exception:
+            continue
+        key = "buff|%s|%s|%d" % (mr.get("player_id"), k[2], int(t // 60))
+        if key in sent or now - t > float(cfg.get("discord_max_age_min") or 30) * 60:
+            sent.add(key); continue
+        sent.add(key)
+        who = accs.get(str(mr.get("player_id"))) or mr.get("account") or str(mr.get("player_id"))
+        bemb.append({"title": "%s %s: %s abgelaufen!" % (k[1], who, k[2]), "color": k[3], "description": sub, "timestamp": iso(t), "footer": foot,
+                     "fields": [{"name": "\U0001F552 Zeit", "value": "<t:%d:t> (<t:%d:R>)" % (t, t), "inline": True}]})
+    burl = (cfg.get("discord_webhook_buffs") or "").strip()
+    if bemb and burl and burl != url:
+        _webhook(burl, bemb[:20])
+    else:
+        emb.extend(bemb)
+    ds["sent"], ds["last"], ds["held"] = list(sent)[-500:], last, dict(list(held.items())[-200:])
+    for i in range(0, min(len(emb), 30), 10):   # max. 10 Embeds pro Nachricht
+        try:
+            req = urllib.request.Request(url, data=json.dumps({"embeds": emb[i:i + 10]}).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "RoK-Uploader"})
+            urllib.request.urlopen(req, timeout=15).read()
+        except Exception as e:
+            log("Discord: %s" % e)
+
+
+def _low_priority():
+    """v15: Uploader laeuft mit niedriger Prioritaet, damit das Spiel immer Vorrang hat."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        k.SetPriorityClass(k.GetCurrentProcess(), 0x00000040)        # IDLE_PRIORITY_CLASS
+        k.SetPriorityClass(k.GetCurrentProcess(), 0x00100000)        # PROCESS_MODE_BACKGROUND_BEGIN (auch Festplatte niedrig)
+    except Exception:
+        pass
+
+
+# ---------- v24: Meilensteine -> eigener Discord-Kanal (config "discord_webhook_milestones") ----------
+MS_KP = [1e8, 3e8, 5e8, 7e8, 1e9, 1.5e9, 2e9, 2.5e9, 3e9, 4e9, 5e9, 7.5e9, 1e10]
+MS_FIGHTS = [1e3, 1e4, 5e4, 1e5, 2.5e5, 5e5]
+
+
+def _short(v):
+    v = float(v)
+    for d, u in ((1e9, " Mrd"), (1e6, " M"), (1e3, " K")):
+        if v >= d:
+            x = v / d
+            return (("%d" % x) if abs(x - round(x)) < 1e-9 else ("%.1f" % x).replace(".", ",")) + u
+    return "%d" % v
+
+
+def _ms_level(v, steps):
+    return sum(1 for x in steps if v >= x)
+
+
+def _webhook(url, emb):
+    for i in range(0, len(emb), 10):
+        try:
+            req = urllib.request.Request(url, data=json.dumps({"embeds": emb[i:i + 10]}).encode("utf-8"), headers={"Content-Type": "application/json", "User-Agent": "RoK-Uploader"})
+            urllib.request.urlopen(req, timeout=15).read()
+        except Exception as e:
+            log("Discord: %s" % e)
+
+
+def milestones_notify(cfg, state):
+    """Zaehlt pro Account KP, Verdienst und PvP-Kaempfe im aktuellen KvK (Start aus der Heatmap) und postet neue Meilensteine."""
+    url = (cfg.get("discord_webhook_milestones") or "").strip()
+    if not url:
+        return
+    ms = state.setdefault("_milestones", {})
+    if time.time() - float(ms.get("_t", 0)) < 9 * 60:           # alle ~10 min reicht
+        return
+    ms["_t"] = time.time()
+    base = cfg["supabase_url"].strip().rstrip("/")
+    if base.endswith("/rest/v1"):
+        base = base[:-len("/rest/v1")]
+    key = cfg["supabase_key"]
+    headers = {"apikey": key, "Content-Type": "application/json"}
+    if not key.startswith("sb_"):
+        headers["Authorization"] = "Bearer " + key
+    try:
+        req = urllib.request.Request(base + "/rest/v1/rpc/rok_milestone_totals", data=b"{}", method="POST", headers=headers)
+        data = json.loads(urllib.request.urlopen(req, timeout=60).read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        log("Meilensteine: Supabase %s %s (SQL v24 ausgefuehrt?)" % (e.code, e.read().decode("utf-8", "replace")[:200])); return
+    accs = {str(k): v for k, v in (cfg.get("accounts") or {}).items()}
+    foot = {"text": cfg.get("discord_footer") or "Wiz fan Club \u00b7 RoK Uploader"}
+    emb = []
+    for d in data or []:
+        pid = str(d.get("player_id"))
+        if accs and pid not in accs:
+            continue                                                # nur deine Accounts aus der config
+        k = "%s|%s|%s" % (pid, d.get("kvk"), d.get("kvk_start"))
+        kp, ac, nf = float(d.get("kp") or 0), float(d.get("acclaim") or 0), float(d.get("fights") or 0)
+        lv = {"kp": _ms_level(kp, MS_KP), "ac": int(ac // 5e5), "f": _ms_level(nf, MS_FIGHTS)}
+        old = ms.get(k)
+        ms[k] = lv
+        if old is None and not cfg.get("discord_milestones_initial"):
+            continue                                                # erster Lauf: nur merken, nichts nachposten
+        old = old or {"kp": 0, "ac": 0, "f": 0}
+        who = d.get("name") or accs.get(pid) or pid
+        sub = "KvK %s \u00b7 seit %s" % (d.get("kvk") or "", str(d.get("kvk_start") or "")[:10])
+        def card(icon, txt, col, val, nxt, unit):
+            f = [{"name": "\U0001F4CA Stand", "value": "%s %s" % (_short(val), unit), "inline": True}]
+            if nxt:
+                f.append({"name": "\U0001F3AF N\u00e4chstes Ziel", "value": "%s (noch %s)" % (_short(nxt), _short(nxt - val)), "inline": True})
+            emb.append({"title": "%s %s: %s!" % (icon, who, txt), "color": col, "description": sub, "fields": f, "footer": foot})
+        if lv["kp"] > old.get("kp", 0):
+            x = MS_KP[lv["kp"] - 1]; card("\U0001F3C6", "%s Kill Points" % _short(x), 0xF5C542, kp, next((y for y in MS_KP if y > kp), None), "KP")
+        if lv["ac"] > old.get("ac", 0):
+            card("\U0001F396\ufe0f", "%s Verdienst" % _short(lv["ac"] * 5e5), 0x7DD3FC, ac, (lv["ac"] + 1) * 5e5, "Verdienst")
+        if lv["f"] > old.get("f", 0):
+            x = MS_FIGHTS[lv["f"] - 1]; card("\u2694\ufe0f", "%s K\u00e4mpfe" % _short(x), 0xF87171, nf, next((y for y in MS_FIGHTS if y > nf), None), "K\u00e4mpfe")
+    if emb:
+        _webhook(url, emb[:30])
+        log("Meilensteine: %d gepostet" % len(emb))
+
+
+# ---------- v24: Online-Zeit aus dem Spiel-Log (save/log.txt, log.1-3.txt) -> rok_play ----------
+_LOG_TS = re.compile(r"^\[(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d)")
+_LOG_ROLE = re.compile(r'"2":"(\d+)","E":"role_login","t":"\d+","1":"(\d+)"')
+
+
+def play_sessions(gdir, gap_min=10):
+    files = [os.path.join(gdir, "save", n) for n in ("log.3.txt", "log.2.txt", "log.1.txt", "log.txt")]
+    files = [f for f in files if os.path.exists(f)]
+    out, cur, first = [], None, True
+    for fp in files:
+        with open(fp, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                m = _LOG_TS.match(line)
+                if not m:
+                    continue
+                try:
+                    t = time.mktime(time.strptime(m.group(1), "%Y-%m-%d %H:%M:%S"))   # Log = Ortszeit des PCs
+                except Exception:
+                    continue
+                rl = _LOG_ROLE.search(line) if "role_login" in line else None
+                if cur and (t - cur["b"] > gap_min * 60 or (rl and rl.group(1) != cur["pid"] and rl.group(1) != "0")):
+                    out.append(cur); cur = None
+                if cur is None:
+                    cur = {"a": t, "b": t, "pid": out[-1]["pid"] if out else None, "srv": out[-1]["srv"] if out else None, "n": 0, "cut": first}
+                first = False
+                cur["b"] = t
+                if rl and rl.group(1) != "0":
+                    cur["pid"], cur["srv"] = rl.group(1), int(rl.group(2))
+                if '"E":"SendTroopConfirm"' in line:
+                    cur["n"] += 1
+    if cur:
+        out.append(cur)
+    iso = lambda t: time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t))
+    return [{"player_id": int(s["pid"]), "start_at": iso(s["a"]), "end_at": iso(s["b"]), "minutes": int(round((s["b"] - s["a"]) / 60)),
+             "marches": s["n"], "server_id": s["srv"]} for s in out if s["pid"] and not s["cut"] and s["b"] - s["a"] >= 60]
+
+
+def process_play(cfg, state, gdir, label):
+    if not cfg.get("online_time", True):
+        return
+    ps = state.setdefault("_play", {})
+    if time.time() - float(ps.get(label, 0)) < 9 * 60:
+        return
+    ps[label] = time.time()
+    rows = play_sessions(gdir)
+    for r in rows:
+        r["source"] = label
+    if rows:
+        try:
+            upload(cfg, rows, "rok_play", "player_id,start_at", 200)
+        except RuntimeError as e:
+            log("Online-Zeit: %s (SQL v24 ausgefuehrt?)" % str(e)[:200]); return
+        log("%s: %d Spiel-Sitzungen (Online-Zeit) aktualisiert" % (label, len(rows)))
+
+
+# ---------- v25: Mail-Archiv auf dem PC (Sicherung, weil das Spiel alte Mails loescht) ----------
+def archive_mails(cfg, gdir, label):
+    """Kopiert jede Mail aus dem Mailcache einmal in archiv/<Ordner>/<JJJJ-MM>.zip (Monat = Dateidatum).
+    Die Dateien sind schon gepackt -> ZIP ohne erneutes Packen. Abschalten: config "archive": false."""
+    if not cfg.get("archive", True):
+        return 0
+    mdir = os.path.join(gdir, "save", "mailcache")
+    adir = cfg.get("archive_folder") or os.path.join(HERE, "archiv")
+    adir = os.path.join(adir, re.sub(r'[\\/:*?"<>|]', "_", label))
+    os.makedirs(adir, exist_ok=True)
+    have = set()
+    for zp in glob.glob(os.path.join(adir, "*.zip")):
+        try:
+            with zipfile.ZipFile(zp) as z:
+                have.update(z.namelist())
+        except zipfile.BadZipFile:
+            os.replace(zp, zp + ".kaputt")                 # beschaedigte Datei beiseitelegen, Mails kommen neu
+    todo = {}
+    for p in glob.glob(os.path.join(mdir, "Persistent.Mail.*")):
+        n = os.path.basename(p)
+        if n in have:
+            continue
+        try:
+            mt = os.path.getmtime(p)
+        except OSError:
+            continue
+        todo.setdefault(time.strftime("%Y-%m", time.localtime(mt)), []).append((p, n, mt))
+    added = 0
+    for month, lst in sorted(todo.items()):
+        zp = os.path.join(adir, month + ".zip")
+        with zipfile.ZipFile(zp, "a", compression=zipfile.ZIP_STORED) as z:
+            for p, n, mt in lst:
+                try:
+                    with open(p, "rb") as fh:
+                        data = fh.read()
+                except OSError:
+                    continue                                 # gerade vom Spiel geloescht
+                zi = zipfile.ZipInfo(n, date_time=time.localtime(mt)[:6])
+                z.writestr(zi, data)
+                added += 1
+    if added:
+        log("%s: %d Mails ins Archiv gelegt (%s)" % (label, added, adir))
+    return added
+
+
 def main():
+    _low_priority()
     if not os.path.exists(CONFIG_FILE):
         log("config.json fehlt."); return 1
     with open(CONFIG_FILE, encoding="utf-8") as f:
@@ -563,6 +1013,11 @@ def main():
         for g in cfg.get("game_folders", []):
             state.pop(g.get("name", g["path"]), None)
         state["_detail"] = 3
+    acc_sig = "all-v20"   # v20: alles neu einlesen (Formation -> Truppentyp)
+    if state.get("_accs") != acc_sig:       # v12: neuer Account in der config -> Berichte nochmal durchsehen
+        for g in cfg.get("game_folders", []):
+            state.pop(g.get("name", g["path"]), None)
+        state["_accs"] = acc_sig
     total_rows = total_new = total_mails = 0
     for g in cfg.get("game_folders", []):
         gdir, label = g["path"], g.get("name", g["path"])
@@ -587,21 +1042,19 @@ def main():
                 m = read_mail(p)
                 if skip_archive and isinstance(m, dict) and m.get("box") == "Archive":
                     done.append((name, sig)); continue          # Favoriten (alte gespeicherte Berichte) weglassen
+                # v13: JEDE ID hochladen – Namen aus config "accounts", sonst die ID selbst. Auf der Website zeigt nur, was du dort verknuepfst.
                 accs = {str(k): v for k, v in (cfg.get("accounts") or {}).items()}
-                if accs:
-                    loots.extend(loot_rows(m, accs))
-                    rallies.extend(rally_rows(m, accs, heroes))
-                acc = account_name(cfg, mail_player_id(m) if isinstance(m, dict) else None, label)
-                if acc is None:                      # Account steht nicht in der Liste -> ueberspringen
-                    r, mr = [], None
-                else:
-                    r = battle_rows(m, acc, heroes, dnames)
-                    accs = cfg.get("accounts") or {}
-                    if accs:                         # nur Berichte, in denen ein eigener Account kaempft
-                        r = [x for x in r if str(x.get("player_id")) in accs]
-                        for x in r:
-                            x["account"] = accs[str(x["player_id"])]
-                    mr = mail_row(m, acc)
+                owner = mail_player_id(m) if isinstance(m, dict) else None
+                if owner and str(owner) not in accs:
+                    accs[str(owner)] = str(owner)
+                loots.extend(loot_rows(m, accs))
+                rallies.extend(rally_rows(m, {str(owner): accs[str(owner)]} if owner else accs, heroes))   # v18: nur fuer den Account, dem die Mail gehoert (sonst doppelt)
+                acc = accs.get(str(owner)) if owner else label
+                r = battle_rows(m, acc, heroes, dnames)
+                r = [x for x in r if str(x.get("player_id")) in accs]
+                for x in r:
+                    x["account"] = accs[str(x["player_id"])]
+                mr = mail_row(m, acc)
             except Exception as e:
                 log("Konnte %s nicht lesen: %s" % (name, e)); r = []; mr = None
             rows.extend(r); done.append((name, sig))
@@ -618,9 +1071,29 @@ def main():
             upload(cfg, loots, "rok_loot", "account,mail_id,idx", 500)
         if rallies:
             upload(cfg, rallies, "rok_rallies", "account,mail_id", 300)
+        try:
+            discord_notify(cfg, state, rows, mails)
+        except Exception as e:
+            log("Discord: Fehler %s" % e)
         for name, sig in done:        # erst nach erfolgreichem Upload merken
             seen[name] = sig
         log("%s: %d neue/geaenderte Mails, %d Kampfzeilen, %d Mails, %d Beute-Eintraege, %d Gruppenkaempfe hochgeladen" % (label, len(done), len(rows), len(mails), len(loots), len(rallies)))
+        try:
+            archive_mails(cfg, gdir, label)
+        except Exception as e:
+            log("Archiv: Fehler %s" % e)
+        try:
+            process_play(cfg, state, gdir, label)
+        except Exception as e:
+            log("Online-Zeit: Fehler %s" % e)
+        try:
+            process_memory(cfg, state, gdir, label)
+        except Exception as e:
+            log("Jahresrueckblick: Fehler %s" % e)
+    try:
+        milestones_notify(cfg, state)
+    except Exception as e:
+        log("Meilensteine: Fehler %s" % e)
     # Farmen aus MuMu Player (nur Ressourcen)
     for i, (port, mdir) in enumerate(mumu_sync(cfg), 1):
         try:

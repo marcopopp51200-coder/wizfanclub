@@ -1,0 +1,48 @@
+# Baut die Wiz-fan-Club-App automatisch als WizFanClubApp.exe, sobald sich etwas in app/ ändert.
+# Ergebnis: GitHub → Releases → "app-test" (Branch test) bzw. "app-main" (Branch main)
+name: App bauen
+
+on:
+  push:
+    branches: [test, main]
+    paths: ['app/**', 'rok_kampf_upload.py', '.github/workflows/build-app.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Werkzeuge installieren
+        run: pip install pyinstaller pillow
+      - name: Icon erzeugen
+        run: python app/make_icon.py app/icon.ico
+      - name: Uploader-Modul beilegen
+        shell: cmd
+        run: copy rok_kampf_upload.py app\rok_kampf_upload.py
+      - name: Titel-Schrift (Cinzel, wie auf der Website) laden
+        shell: bash
+        run: curl -sSL -o app/Cinzel.ttf "https://github.com/google/fonts/raw/main/ofl/cinzel/Cinzel%5Bwght%5D.ttf" || true
+      - name: EXE bauen
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ -s app/Cinzel.ttf ]; then EXTRA='--add-data app/Cinzel.ttf;.'; fi
+          pyinstaller --onefile --noconsole --name WizFanClubApp --icon app/icon.ico --add-data "app/icon.ico;." $EXTRA --paths app --hidden-import rok_kampf_upload app/rok_app.py
+      - name: Release aktualisieren
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="app-${{ github.ref_name }}"
+          gh release delete "$TAG" -y --cleanup-tag || true
+          gh release create "$TAG" dist/WizFanClubApp.exe --target "${{ github.sha }}" \
+            --title "Wiz fan Club App (${{ github.ref_name }})" \
+            --notes "Automatisch gebaut aus Commit ${{ github.sha }}" \
+            --prerelease=${{ github.ref_name != 'main' }}

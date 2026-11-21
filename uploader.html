@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wiz fan Club – App verbinden</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwind.config = { theme: { extend: {
+  fontFamily: { display: ['Cinzel','serif'], sans: ['Inter','system-ui','sans-serif'] },
+  colors: { ink: { 950:'#07090f', 900:'#0c1019', 850:'#111725', 800:'#161e2f', 700:'#212b40', 600:'#2e3a55' },
+            gold: { 300:'#fde68a', 400:'#f5c542', 500:'#e0a91b', 600:'#b7830f' } } } } };
+</script>
+<style>
+  body { background: radial-gradient(1200px 600px at 10% -10%, rgba(224,169,27,.10), transparent 60%), #07090f; }
+  .panel { background: linear-gradient(180deg, rgba(22,30,47,.92), rgba(12,16,25,.92)); border: 1px solid rgba(245,197,66,.14); }
+  .gold-text { background: linear-gradient(180deg,#fde68a,#e0a91b 60%,#b7830f); -webkit-background-clip: text; background-clip: text; color: transparent; }
+</style>
+</head>
+<body class="min-h-screen text-slate-200 font-sans">
+<main class="max-w-xl mx-auto p-5 space-y-4">
+  <div class="flex items-center justify-between">
+    <a href="/" class="text-sm text-slate-400 hover:text-gold-300" data-t="back"></a>
+    <button id="langBtn" class="text-xs px-2 py-1 rounded border border-ink-600 hover:border-gold-500"></button>
+  </div>
+  <h1 class="font-display text-2xl gold-text" data-t="title"></h1>
+
+  <section class="panel rounded-xl p-5 space-y-3">
+    <h2 class="font-semibold text-gold-300" data-t="dlTitle"></h2>
+    <p class="text-sm text-slate-400" data-t="dlTxt"></p>
+    <div class="flex flex-wrap items-center gap-3">
+      <a id="dlBtn" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gold-500 text-ink-950 font-semibold hover:bg-gold-400" href="#">⬇ <span data-t="dlBtn"></span></a>
+      <a id="srcLink" class="text-xs text-slate-400 hover:text-gold-300 underline" target="_blank" rel="noopener" data-t="dlSrc"></a>
+    </div>
+    <details class="text-xs text-slate-400">
+      <summary class="cursor-pointer text-slate-300" data-t="dlWarnTitle"></summary>
+      <p class="mt-2 leading-relaxed" data-t="dlWarn"></p>
+    </details>
+  </section>
+
+  <section id="needLogin" class="panel rounded-xl p-5 hidden">
+    <p data-t="needLogin"></p>
+    <a href="/" class="inline-block mt-3 px-4 py-2 rounded-lg bg-gold-500 text-ink-950 font-semibold" data-t="toLogin"></a>
+  </section>
+
+  <section id="main" class="space-y-4 hidden">
+    <div class="panel rounded-xl p-5 space-y-3">
+      <h2 class="font-semibold text-gold-300" data-t="oneTitle"></h2>
+      <p class="text-sm text-slate-400" data-t="oneTxt"></p>
+      <button id="oneBtn" class="w-full sm:w-auto px-5 py-3 rounded-xl bg-gold-500 text-ink-950 font-bold text-base hover:bg-gold-400">🚀 <span data-t="oneBtn"></span></button>
+      <p id="oneHint" class="text-xs text-amber-300 hidden" data-t="oneHint"></p>
+      <p id="oneOk" class="text-sm text-emerald-300 font-semibold hidden"></p>
+      <details class="pt-2">
+        <summary class="cursor-pointer text-xs text-slate-400" data-t="manual"></summary>
+        <div class="space-y-3 pt-3">
+      <p class="text-sm text-slate-400" data-t="step1txt"></p>
+      <div class="flex flex-wrap items-center gap-2 text-sm rounded-lg bg-ink-950/60 border border-ink-700 px-3 py-2">
+        <span class="text-slate-400" data-t="appAddr"></span>
+        <code id="origin" class="text-gold-300 select-all" translate="no"></code>
+        <button id="copyOrigin" type="button" class="ml-auto text-xs px-2 py-1 rounded border border-ink-600 hover:border-gold-500" data-t="copy"></button>
+      </div>
+      <button id="codeBtn" class="px-4 py-2 rounded-lg bg-gold-500 text-ink-950 font-semibold hover:bg-gold-400" data-t="newCode"></button>
+      <div id="codeBox" class="hidden text-center py-3">
+        <div id="code" class="font-mono text-4xl tracking-[.35em] text-gold-300 select-all" translate="no"></div>
+        <div id="codeTimer" class="text-xs text-slate-400 mt-2"></div>
+      </div>
+        </div>
+      </details>
+      <p id="err" class="text-sm text-red-400 hidden"></p>
+    </div>
+
+    <div class="panel rounded-xl p-5 space-y-2">
+      <h2 class="font-semibold text-gold-300" data-t="ids"></h2>
+      <p class="text-xs text-slate-400" data-t="idsTxt"></p>
+      <p id="profHint" class="text-xs text-amber-300 hidden"></p>
+      <ul id="links" class="divide-y divide-ink-700 text-sm"></ul>
+    </div>
+
+    <div id="pilotBox" class="panel rounded-xl p-5 space-y-2 hidden">
+      <h2 class="font-semibold text-gold-300" data-t="pilots"></h2>
+      <p class="text-xs text-slate-400" data-t="pilotsTxt"></p>
+      <ul id="pilots" class="divide-y divide-ink-700 text-sm"></ul>
+    </div>
+
+    <div class="panel rounded-xl p-5 space-y-2">
+      <h2 class="font-semibold text-gold-300" data-t="devices"></h2>
+      <ul id="devices" class="divide-y divide-ink-700 text-sm"></ul>
+    </div>
+  </section>
+</main>
+
+<script>
+(() => {
+  const SUPABASE_URL = 'https://tqkhnicaiokyckiqwvpw.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxa2huaWNhaW9reWNraXF3dnB3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE1Nzg0NjcsImV4cCI6MjEwNzE1NDQ2N30.8bNhMl2ewyIKh_PqSvGKf34stNIbXfXiOhEPFXDOev0';
+  const T = {
+    de: { back: '← Zurück zur Website', title: 'App verbinden', needLogin: 'Bitte logge dich zuerst auf der Website ein. Danach diese Seite neu laden.', toLogin: 'Zur Website',
+          dlTitle: 'App herunterladen (Windows)', dlTxt: 'Die App liest deine Kampfberichte aus dem Spielordner und zeigt ein Live-Overlay über dem Spiel. Sie verändert nichts am Spiel.',
+          dlBtn: 'WizFanClubApp.exe herunterladen', dlSrc: 'Quellcode ansehen', dlWarnTitle: 'Windows warnt beim Start?',
+          dlWarn: 'Die App ist (noch) nicht kostenpflichtig signiert. Windows zeigt deshalb evtl. „Der Computer wurde durch Windows geschützt“. Klick auf „Weitere Informationen“ → „Trotzdem ausführen“. Die Datei wird automatisch von GitHub aus dem öffentlichen Quellcode gebaut.',
+          step1: '1. Code erzeugen', step1txt: 'Klick auf den Button und gib den Code in der Wiz-fan-Club-App unter „Verbinden“ ein. Der Code gilt 10 Minuten.',
+          oneTitle: '1. Mit der App verbinden', oneTxt: 'App herunterladen und einmal starten. Danach hier klicken – Windows fragt „Wiz fan Club App öffnen?“, die App verbindet sich von selbst.',
+          oneBtn: 'Mit App verbinden', oneHint: 'Nichts passiert? Starte die App zuerst einmal (oben herunterladen), dann noch einmal klicken.', oneOk: '✔ Verbunden mit „{n}“',
+          manual: 'Klappt nicht? Manuell mit Code verbinden',
+          newCode: 'Code erzeugen', appAddr: 'Website-Adresse für die App:', copy: 'Kopieren', copied: 'Kopiert ✓', left: 'noch {m}:{s} gültig', expired: 'Abgelaufen – neuen Code erzeugen.',
+          ids: 'Gebundene Governor-IDs', idsTxt: 'Diese IDs hast du in der App gebunden. Nur ihre Kämpfe werden hochgeladen und gezählt.',
+          noIds: 'Noch keine ID gebunden.', devices: 'Verbundene PCs', noDev: 'Noch kein PC verbunden.', remove: 'Entfernen', disconnect: 'Trennen',
+          lastSeen: 'zuletzt aktiv', never: 'nie', verified: 'bestätigt', unverified: 'unbestätigt',
+          k_main: 'Main', k_alt: 'Zweitaccount', k_pilot: 'Pilot', pending: 'wartet auf Besitzer', noProf: 'In deinem Profil ist keine Governor-ID eingetragen – „Main“ lässt sich in der App erst danach binden.', profIs: 'Deine Profil-ID: {id}',
+          pilots: 'Pilot-Anfragen für deinen Account', pilotsTxt: 'Diese Spieler möchten deinen Account in der App als Pilot binden. Erst nach deiner Erlaubnis werden ihre Uploads für deine ID gezählt.',
+          allow: 'Erlauben', deny: 'Ablehnen', allowed: 'erlaubt', reallyId: 'ID {id} wirklich entfernen?', reallyDev: 'Diesen PC wirklich trennen?' },
+    en: { back: '← Back to the website', title: 'Connect the app', needLogin: 'Please log in on the website first, then reload this page.', toLogin: 'Go to website',
+          dlTitle: 'Download the app (Windows)', dlTxt: 'The app reads your battle reports from the game folder and shows a live overlay on top of the game. It does not change anything in the game.',
+          dlBtn: 'Download WizFanClubApp.exe', dlSrc: 'View source code', dlWarnTitle: 'Windows shows a warning?',
+          dlWarn: 'The app is not (yet) code-signed. Windows may show “Windows protected your PC”. Click “More info” → “Run anyway”. The file is built automatically by GitHub from the public source code.',
+          step1: '1. Create a code', step1txt: 'Click the button and enter the code in the Wiz fan Club app under "Connect". The code is valid for 10 minutes.',
+          oneTitle: '1. Connect with the app', oneTxt: 'Download the app and start it once. Then click here – Windows asks “Open Wiz fan Club App?”, the app connects by itself.',
+          oneBtn: 'Connect with app', oneHint: 'Nothing happened? Start the app once first (download above), then click again.', oneOk: '✔ Connected with “{n}”',
+          manual: 'Not working? Connect manually with a code',
+          newCode: 'Create code', appAddr: 'Website address for the app:', copy: 'Copy', copied: 'Copied ✓', left: 'valid for {m}:{s}', expired: 'Expired – create a new code.',
+          ids: 'Linked governor IDs', idsTxt: 'You linked these IDs in the app. Only their battles are uploaded and counted.',
+          noIds: 'No ID linked yet.', devices: 'Connected PCs', noDev: 'No PC connected yet.', remove: 'Remove', disconnect: 'Disconnect',
+          lastSeen: 'last active', never: 'never', verified: 'verified', unverified: 'unverified',
+          k_main: 'Main', k_alt: 'Alt account', k_pilot: 'Pilot', pending: 'waiting for owner', noProf: 'There is no governor ID in your profile – "Main" can only be linked in the app after you add it.', profIs: 'Your profile ID: {id}',
+          pilots: 'Pilot requests for your account', pilotsTxt: 'These players want to link your account as pilot in the app. Their uploads for your ID only count after you allow it.',
+          allow: 'Allow', deny: 'Deny', allowed: 'allowed', reallyId: 'Really remove ID {id}?', reallyDev: 'Really disconnect this PC?' },
+  };
+  let lang = (() => { try { return localStorage.getItem('lang') === 'en' ? 'en' : 'de'; } catch { return 'de'; } })();
+  const t = (k, v = {}) => (T[lang][k] || k).replace(/\{(\w+)\}/g, (_, x) => v[x] ?? '');
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const fmtDate = (d) => d ? new Date(d).toLocaleString(lang === 'en' ? 'en-GB' : 'de-DE', { dateStyle: 'short', timeStyle: 'short' }) : t('never');
+  function applyLang() {
+    document.documentElement.lang = lang;
+    document.querySelectorAll('[data-t]').forEach((el) => { el.textContent = t(el.dataset.t); });
+    $('langBtn').textContent = lang === 'de' ? 'EN' : 'DE';
+  }
+  $('langBtn').onclick = () => { lang = lang === 'de' ? 'en' : 'de'; try { localStorage.setItem('lang', lang); } catch {} applyLang(); load(); };
+
+  // Download: test-Branch baut "app-test", main baut "app-main" (siehe .github/workflows/build-app.yml)
+  const REPO = 'https://github.com/marcopopp51200-coder/rok-scanner';
+  const APP_TAG = 'app-test';
+  $('dlBtn').href = `${REPO}/releases/download/${APP_TAG}/WizFanClubApp.exe`;
+  $('srcLink').href = `${REPO}/tree/${APP_TAG === 'app-main' ? 'main' : 'test'}/app`;
+
+  $('origin').textContent = location.origin;
+  $('copyOrigin').onclick = async () => { try { await navigator.clipboard.writeText(location.origin); $('copyOrigin').textContent = t('copied'); setTimeout(() => { $('copyOrigin').textContent = t('copy'); }, 1500); } catch {} };
+
+  const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
+  let jwt = '';
+  async function api(action, body) {
+    const r = await fetch('/api/uploader?action=' + action, { method: body ? 'POST' : 'GET',
+      headers: { Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    return d;
+  }
+  const showErr = (m) => { $('err').textContent = m || ''; $('err').classList.toggle('hidden', !m); };
+
+  // Ein-Klick: Code erzeugen und an die App uebergeben (wizfanclub://)
+  let watch = null;
+  $('oneBtn').onclick = async () => {
+    showErr(''); $('oneHint').classList.add('hidden'); $('oneOk').classList.add('hidden');
+    try {
+      const before = new Set(((await api('overview')).devices || []).map((d) => d.id));
+      const d = await api('newcode', {});
+      location.href = `wizfanclub://pair?c=${d.code}&s=${encodeURIComponent(location.origin)}`;
+      setTimeout(() => { if ($('oneOk').classList.contains('hidden')) $('oneHint').classList.remove('hidden'); }, 6000);
+      clearInterval(watch); let n = 0;
+      watch = setInterval(async () => {
+        if (++n > 60) return clearInterval(watch);
+        try {
+          const o = await api('overview'); const nd = (o.devices || []).find((x) => !before.has(x.id));
+          if (nd) { clearInterval(watch); $('oneHint').classList.add('hidden'); $('oneOk').textContent = t('oneOk', { n: nd.device_name || 'PC' }); $('oneOk').classList.remove('hidden'); load(); }
+        } catch {}
+      }, 3000);
+    } catch (e) { showErr(e.message); }
+  };
+
+  let timer = null;
+  $('codeBtn').onclick = async () => {
+    showErr(''); $('codeBtn').disabled = true;
+    try {
+      const d = await api('newcode', {});
+      $('code').textContent = d.code; $('codeBox').classList.remove('hidden');
+      const end = new Date(d.expires_at).getTime();
+      clearInterval(timer);
+      const tick = () => {
+        const s = Math.max(0, Math.round((end - Date.now()) / 1000));
+        $('codeTimer').textContent = s ? t('left', { m: Math.floor(s / 60), s: String(s % 60).padStart(2, '0') }) : t('expired');
+        if (!s) { clearInterval(timer); $('code').classList.add('line-through', 'opacity-40'); } else $('code').classList.remove('line-through', 'opacity-40');
+        if (s && s % 5 === 0) load();             // sobald die App gekoppelt ist, taucht der PC unten auf
+      };
+      tick(); timer = setInterval(tick, 1000);
+    } catch (e) { showErr(e.message); }
+    $('codeBtn').disabled = false;
+  };
+
+  async function load() {
+    try {
+      const d = await api('overview');
+      const kindCls = { main: 'bg-gold-500/20 text-gold-300', alt: 'bg-sky-900/40 text-sky-300', pilot: 'bg-violet-900/40 text-violet-300' };
+      $('links').innerHTML = d.links.length ? d.links.map((x) => `<li class="py-2 flex items-center gap-2 flex-wrap">
+        <span class="text-[11px] px-1.5 rounded ${kindCls[x.kind] || kindCls.alt}">${t('k_' + (x.kind || 'alt'))}</span>
+        <span class="font-mono" translate="no">${esc(x.governor_id)}</span><span class="text-slate-300">${esc(x.gov_name || '')}</span>
+        ${x.status === 'pending' ? `<span class="text-[11px] px-1.5 rounded bg-amber-900/40 text-amber-300">${t('pending')}</span>`
+          : `<span class="text-[11px] px-1.5 rounded ${x.verified ? 'bg-emerald-900/50 text-emerald-300' : 'bg-ink-700 text-slate-400'}">${t(x.verified ? 'verified' : 'unverified')}</span>`}
+        <button data-gid="${esc(x.governor_id)}" class="ml-auto text-xs text-red-300 hover:text-red-200">${t('remove')}</button></li>`).join('')
+        : `<li class="py-2 text-slate-500">${t('noIds')}</li>`;
+      $('profHint').textContent = d.profile_gov ? t('profIs', { id: d.profile_gov }) : t('noProf');
+      $('profHint').className = 'text-xs ' + (d.profile_gov ? 'text-slate-500' : 'text-amber-300');
+      $('pilotBox').classList.toggle('hidden', !(d.pilots || []).length);
+      $('pilots').innerHTML = (d.pilots || []).map((p) => `<li class="py-2 flex items-center gap-3">
+        <span>🎮 ${esc(p.name)}</span>
+        ${p.status === 'ok' ? `<span class="text-[11px] px-1.5 rounded bg-emerald-900/50 text-emerald-300">${t('allowed')}</span>
+            <button data-pilot="${p.id}" data-allow="0" class="ml-auto text-xs text-red-300 hover:text-red-200">${t('remove')}</button>`
+          : `<button data-pilot="${p.id}" data-allow="1" class="ml-auto text-xs px-2 py-1 rounded bg-gold-500 text-ink-950 font-semibold">${t('allow')}</button>
+            <button data-pilot="${p.id}" data-allow="0" class="text-xs text-red-300 hover:text-red-200">${t('deny')}</button>`}</li>`).join('');
+      $('devices').innerHTML = d.devices.length ? d.devices.map((x) => `<li class="py-2 flex items-center gap-3">
+        <span>💻 ${esc(x.device_name || 'PC')}</span><span class="text-xs text-slate-500">${t('lastSeen')}: ${fmtDate(x.last_seen)}</span>
+        <button data-dev="${x.id}" class="ml-auto text-xs text-red-300 hover:text-red-200">${t('disconnect')}</button></li>`).join('')
+        : `<li class="py-2 text-slate-500">${t('noDev')}</li>`;
+    } catch (e) { showErr(e.message); }
+  }
+  document.addEventListener('click', async (ev) => {
+    const g = ev.target.closest('[data-gid]'), dv = ev.target.closest('[data-dev]'), pl = ev.target.closest('[data-pilot]');
+    try {
+      if (pl) { await api('pilot_answer', { id: pl.dataset.pilot, allow: pl.dataset.allow === '1' }); load(); }
+      if (g && confirm(t('reallyId', { id: g.dataset.gid }))) { await api('unlink', { governor_id: g.dataset.gid }); load(); }
+      if (dv && confirm(t('reallyDev'))) { await api('revoke', { id: dv.dataset.dev }); load(); }
+    } catch (e) { showErr(e.message); }
+  });
+
+  applyLang();
+  sb.auth.getSession().then(({ data }) => {
+    jwt = data?.session?.access_token || '';
+    $(jwt ? 'main' : 'needLogin').classList.remove('hidden');
+    if (jwt) load();
+  });
+  sb.auth.onAuthStateChange((_e, s) => { if (s?.access_token) jwt = s.access_token; });
+})();
+</script>
+</body>
+</html>
