@@ -12,6 +12,7 @@
 //    GET  me                          -> { user, links }
 //    POST link    {governor_id, gov_name, kind}   kind: main (= ID im Website-Profil), alt (eigener Zweitaccount), pilot (fremder Account, den ich spiele)
 //    POST unlink  {governor_id}
+//    GET  stats   ?since=<unix>&pvp=1&pilot=0  -> Summen wie in My Data (fuers Overlay)
 //    POST upload  {rows}              -> nur Kampfzeilen eigener, gebundener IDs
 //
 // Benoetigt in Vercel → Settings → Environment Variables: SUPABASE_SERVICE_ROLE_KEY (optional SUPABASE_URL)
@@ -172,6 +173,18 @@ module.exports = async (req, res) => {
       const g = gidOf(body.governor_id);
       await rest('DELETE', `governor_links?governor_id=eq.${g || 0}&user_id=eq.${u.id}`);
       return res.json({ ok: true, links: await links(u.id) });
+    }
+    if (action === 'stats') {                                   // Overlay: gleiche Summen wie My Data
+      const all = ((await links(u.id)) || []).filter((x) => x.status === 'ok' && (x.kind !== 'pilot' || req.query.pilot === '1'));
+      const ids = all.map((x) => String(x.governor_id));
+      if (!ids.length) return res.json({ ok: true, empty: true });
+      const since = new Date((+req.query.since || 0) * 1000).toISOString();
+      const r = await fetch(`${SB_URL}/rest/v1/rpc/app_stats`, { method: 'POST',
+        headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_ids: ids, p_since: since, p_pvp: req.query.pvp !== '0' }) });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) return res.status(400).json({ error: (d && d.message) || 'SQL-Funktion app_stats fehlt – SQL aus dem Chat ausführen.' });
+      return res.json({ ok: true, stats: d });
     }
     if (action === 'upload') {
       const rows = Array.isArray(body.rows) ? body.rows.slice(0, MAX_ROWS) : [];
