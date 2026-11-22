@@ -900,6 +900,65 @@ window.RokMods.battles = (R) => {
         ${tile('💀', 'Verluste', short(a.dead + a.sev), short(b.dead + b.sev), 'text-red-200')}
       </div></div>`;
   }
+  // ===== 🚩 Gebiet & Flaggen: aus den Allianz-Mails (Territory Report, Crusader Flag Planning/Under Attack) =====
+  var kbFlags = { key: '', ev: null, loading: false, err: '' };
+  function kbFlagsLoad(pid, since) {
+    const key = pid + '|' + since; if (kbFlags.loading || (kbFlags.key === key && kbFlags.ev && Date.now() - kbFlags.t < 120e3)) return; kbFlags.loading = true;
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
+        const q = await db.from('rok_mails').select('mail_id,player_id,sent_at,mail_type,content').eq('player_id', pid).in('mail_type', ['AllianceBuilding', 'Alliance']).gte('sent_at', since).order('sent_at', { ascending: true }).limit(8000);
+        if (q.error) throw q.error;
+        const ev = [], seen = new Set();
+        (q.data || []).forEach(r => { const c = r.content || {}, k = c.kvs || {}, ti = String(c.title || ''), su = String(c.subTitle || ''), pos = k.pos; if (!pos || pos.X == null) return;
+          if (!/Territory Report|Crusader Flag Under Attack|Crusader Flag Planning/.test(ti)) return;
+          const kind = /Under Attack/.test(ti) ? 'attack' : /Completed/.test(su) ? 'built' : /Destroyed/.test(su) ? 'lost' : /Demolished/.test(su) ? 'demol' : /Started Construction/.test(su) ? 'start' : /Planned$/.test(su) ? 'plan' : /Canceled/.test(su) ? 'cancel' : /Can't Be Built/.test(su) ? 'fail' : null; if (!kind) return;
+          const bt = /Fortress/.test(su) ? 'fort' : /Mother Lode/.test(su) ? 'lode' : 'flag', t = Date.parse(r.sent_at), x = +pos.X, y = +pos.Y, id = kind + '|' + Math.round(x / 6) + '|' + Math.round(y / 6) + '|' + Math.round(t / 6e4); if (seen.has(id)) return; seen.add(id);
+          const cost = (+k.cost_Fund || 0) + (+k.cost_food || 0) + (+k.cost_wood || 0) + (+k.cost_stone || 0) + (+k.cost_coin || 0);
+          ev.push({ kind, bt, t, x, y, who: k.creator_name || k.oper_name || '', atk: k.atker_num ? Array.from({ length: +k.atker_num }, (_, i) => (k['atker_abbr_' + i] ? '[' + k['atker_abbr_' + i] + '] ' : '') + (k['atker_name_' + i] || '')).filter(Boolean) : [], cost, fund: +k.cost_Fund || 0 }); });
+        kbFlags = { key, ev, t: Date.now(), loading: false, err: '' }; }
+      catch (e) { kbFlags = { key, ev: kbFlags.ev || [], t: Date.now(), loading: false, err: e?.message || String(e) }; }
+      if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); })();
+  }
+  function hmFlagModel(h) {   // Gebäude mit Lebenszeit [a, b): gebaut → zerstört/abgerissen
+    const ev = kbFlags.ev || [], B = new Map(), L = [];
+    ev.forEach(e => { const k = e.bt + '|' + Math.round(e.x / 6) + '|' + Math.round(e.y / 6);
+      if (e.kind === 'built') { const o = { k, bt: e.bt, x: e.x, y: e.y, a: e.t, b: Infinity, who: e.who, end: '' }; B.set(k, o); L.push(o); }
+      else if (e.kind === 'lost' || e.kind === 'demol') {   // Position in der Zerstört-Mail weicht ein paar Felder ab → nächste stehende Flagge (max. 6 Felder)
+        let best = null, bd = 6 * 6; L.forEach(o => { if (o.b !== Infinity || o.bt !== e.bt || o.a > e.t) return; const d = Math.hypot(o.x - e.x, o.y - e.y); if (d <= bd) { bd = d; best = o; } });
+        if (best) { best.b = e.t; best.end = e.kind; } } });
+    const r = Math.max(1, +h.flR || 6), u = hmUnit(h, 'x');
+    const half = (o) => (o.bt === 'fort' ? r * 1.5 : r) * u;
+    const activeAt = (t) => L.filter(o => o.a <= t && t < o.b && o.bt !== 'lode');
+    const inOwn = (x, y, t) => activeAt(t).some(o => Math.abs(x - o.x) <= half(o) && Math.abs(y - o.y) <= half(o));
+    return { L, ev, activeAt, inOwn, half };
+  }
+  function hmFlagsHtml(st, h, S) {
+    if (hmSpect()) return '';
+    const acc = hmAcc(h), start = hmStart(h), since = start ? new Date(start + 'T00:00').toISOString() : new Date(Date.now() - 50 * 864e5).toISOString();
+    if (acc && (h.flags || h.flOpen)) kbFlagsLoad(acc, since);
+    const FM = hmFlagModel(h), [a0, b0] = [S.t0 || 0, S.t1 || Date.now()], inR = (t) => t >= a0 - 6e4 && t <= b0 + 6e4;
+    const ev = FM.ev.filter(e => inR(e.t)), now = S.cur ?? Math.min(Date.now(), b0), act = FM.activeAt(now);
+    const cnt = (k, bt) => ev.filter(e => e.kind === k && (!bt || e.bt === bt)).length;
+    const fund = ev.filter(e => e.kind === 'built').reduce((x, e) => x + e.fund, 0), res = ev.filter(e => e.kind === 'built').reduce((x, e) => x + e.cost, 0);
+    const mine = (S.all || []).filter(p => p.mine && p.k === 'pvp' && p.r.pos_x != null), own = [], out = [];
+    if (FM.L.length) mine.forEach(p => (FM.inOwn(+p.r.pos_x, +p.r.pos_y, p.t) ? own : out).push(p));
+    const so = hmSum(own), sx = hmSum(out), kc = (t) => t >= 1 ? 'text-emerald-300' : 'text-red-300';
+    const top = (arr) => { const c = new Map(); arr.forEach(n => n && c.set(n, (c.get(n) || 0) + 1)); return [...c.entries()].sort((x, y) => y[1] - x[1]).slice(0, 6); };
+    const builders = top(ev.filter(e => e.kind === 'built').map(e => e.who)), attackers = top(ev.filter(e => e.kind === 'attack').flatMap(e => e.atk));
+    const tile = (i, l, v, c) => `<div class="rounded-lg border border-ink-700 p-2"><div class="text-[10px] text-slate-400">${i} <span>${l}</span></div><div class="text-lg font-bold tabular-nums ${c || 'text-slate-100'}">${v}</div></div>`;
+    const cmp = (l, w, c) => `<div class="rounded-lg border ${c} p-2"><div class="text-xs font-semibold text-slate-200">${l}</div><div class="text-[11px] text-slate-400">${fmt(w.n)} <span>Kämpfe</span> · 🏆 ${short(w.kp)}</div><div class="text-sm"><span class="${kc(w.kpt)}">🔁 ${w.n ? hmKptTxt(w.kpt) : '–'}</span> · <span class="${kc(w.trade)}">⚖️ ${w.n ? hmTradeTxt(w.trade) : '–'}</span></div></div>`;
+    const KN = { built: ['🚩', 'gebaut', 'text-emerald-300'], lost: ['💥', 'zerstört', 'text-red-300'], demol: ['🪓', 'abgerissen', 'text-slate-400'], attack: ['⚠️', 'angegriffen', 'text-amber-300'], plan: ['📝', 'geplant', 'text-sky-300'], start: ['🔨', 'Bau gestartet', 'text-sky-200'], cancel: ['✕', 'Plan abgebrochen', 'text-slate-500'], fail: ['⛔', 'nicht baubar', 'text-slate-500'] };
+    const BN = { flag: 'Flagge', fort: 'Festung', lode: 'Mutterader' };
+    const body = !h.flOpen ? '' : !kbFlags.ev ? '<div class="text-xs text-slate-500 py-2">Lädt …</div>' : kbFlags.err ? `<div class="text-xs text-red-300 py-2">${esc(kbFlags.err)}</div>` : !FM.ev.length ? '<div class="text-xs text-slate-500 py-2">Keine Gebäude-Mails für diesen Account seit KvK-Start.</div>' : `
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-3">${tile('🚩', 'Stehen (geschätzt)', fmt(act.length), 'text-sky-200')}${tile('✅', 'Gebaut', fmt(cnt('built')), 'text-emerald-300')}${tile('💥', 'Zerstört', fmt(cnt('lost')), 'text-red-300')}${tile('🪓', 'Abgerissen', fmt(cnt('demol')))}${tile('⚠️', 'Angriffe', fmt(cnt('attack')), 'text-amber-300')}${tile('💰', 'Kosten', short(res), 'text-gold-200')}</div>
+      <div class="text-xs font-semibold text-slate-200 mb-1">⚔️ <span>Kämpfe im eigenen Gebiet</span> <span class="text-[10px] text-slate-500 font-normal">– geschätzt: Kampf liegt im Bereich einer Flagge, die zu dem Zeitpunkt stand</span></div>
+      <div class="grid sm:grid-cols-2 gap-2 mb-3">${cmp('🏠 <span>Eigenes Gebiet</span>', so, 'border-sky-500/50 bg-sky-500/5')}${cmp('🌍 <span>Außerhalb</span>', sx, 'border-ink-700')}</div>
+      <label class="flex items-center gap-2 text-[11px] text-slate-400 mb-3"><span>Gebiet pro Flagge</span> <input type="range" min="2" max="12" value="${+h.flR || 6}" data-hmflr class="accent-sky-400 w-28"> <b class="text-slate-200">±${+h.flR || 6} <span>Felder</span></b> <span class="text-slate-500">(Festung ×1,5 – an einer Flagge im Spiel abgleichen)</span></label>
+      <div class="grid md:grid-cols-2 gap-3 mb-3"><div><div class="text-xs font-semibold text-slate-200 mb-1">👷 <span>Meiste Flaggen gebaut</span></div>${builders.map(([n, c]) => `<div class="flex justify-between text-xs border-t border-ink-800/60 py-1"><span translate="no">${esc(n)}</span><b class="tabular-nums">${c}</b></div>`).join('') || '<div class="text-xs text-slate-500">–</div>'}</div>
+        <div><div class="text-xs font-semibold text-slate-200 mb-1">🗡️ <span>Wer greift eure Flaggen an</span></div>${attackers.map(([n, c]) => `<div class="flex justify-between text-xs border-t border-ink-800/60 py-1"><span class="text-red-200" translate="no">${esc(n)}</span><b class="tabular-nums">${c}×</b></div>`).join('') || '<div class="text-xs text-slate-500">–</div>'}</div></div>
+      <div class="text-xs font-semibold text-slate-200 mb-1">📜 <span>Ereignisse</span> <span class="text-[10px] text-slate-500 font-normal">${fmt(ev.length)}</span></div>
+      <div class="max-h-72 overflow-y-auto"><table class="w-full text-xs"><tbody>${ev.slice().reverse().slice(0, 200).map(e => { const k = KN[e.kind]; return `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2 whitespace-nowrap text-slate-400">${hmWhen(e.t)}</td><td class="pr-2 whitespace-nowrap ${k[2]}">${k[0]} <span>${k[1]}</span></td><td class="pr-2 text-slate-300"><span>${BN[e.bt]}</span></td><td class="pr-2 tabular-nums text-slate-400">X ${Math.round(e.x / 6)} · Y ${Math.round(e.y / 6)}</td><td class="text-slate-300 truncate max-w-[14rem]" translate="no">${esc(e.atk.length ? e.atk.join(', ') : e.who)}</td></tr>`; }).join('')}</tbody></table></div>`;
+    return `<details data-hmflags ${h.flOpen ? 'open' : ''} class="mt-3 rounded-xl border border-sky-500/50 bg-sky-500/5"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-sky-200">🚩 <span>Gebiet &amp; Flaggen</span> ${kbFlags.ev && FM.L.length ? `<span class="rounded-full bg-sky-500/25 border border-sky-400/60 px-2 text-xs tabular-nums">${act.length}</span>` : ''} <span class="text-[11px] text-slate-500 font-normal">– aus den Allianz-Mails: gebaut, zerstört, angegriffen</span></summary><div class="px-3 pb-3">${body}</div></details>`;
+  }
   // ===== 🔥 Gegner-Märsche auf dem Feld: aus den Kampfberichten der letzten Minuten (du + alle aus deinem KvK, die den Uploader nutzen) =====
   var kbField = { key: '', rows: null, t: 0, loading: false, err: '' };
   function kbFieldLoad(ids, force) {
@@ -1567,6 +1626,7 @@ window.RokMods.battles = (R) => {
         <div class="flex flex-wrap items-center gap-2 py-1.5 border-t border-ink-800/70 first:border-0"><span class="w-20 shrink-0 text-[11px] font-semibold text-slate-400">📍 <span>Wo</span></span>${zoneSel(false)}${marches.length > 1 ? marchSel.replace("text-sm py-1.5", "") : ""}</div>
         <div class="flex flex-wrap items-center gap-2 py-1.5 border-t border-ink-800/70 first:border-0"><span class="w-20 shrink-0 text-[11px] font-semibold text-slate-400">👁️ <span>Anzeige</span></span><label class="flex items-center gap-1 text-slate-400" title="Alle Teleports deiner Stadt als Linie"><input type="checkbox" data-hmcpath ${h.cpath ? 'checked' : ''} class="accent-emerald-400"> <span>🏙️ Stadt-Weg</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmzm ${h.zm ? 'checked' : ''} class="accent-amber-400"> <span>Zonen-Marker</span></label>
+        <label class="flex items-center gap-1 text-slate-400" title="Eigene Flaggen + geschätztes Gebiet aus den Allianz-Mails"><input type="checkbox" data-hmflagsx ${h.flags ? 'checked' : ''} class="accent-sky-400"> <span>🚩 Flaggen</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmfr ${h.fr ? 'checked' : ''} class="accent-amber-400"> <span>👥 Freunde &amp; Königreich</span></label><label class="flex items-center gap-1 text-slate-400"><span>Glühen</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label><span class="ml-auto flex flex-wrap items-center gap-1"><span class="flex gap-1 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${HM_MAPS.map(x => `<button type="button" data-hmmap="${x.k}" aria-pressed="${h.map === x.k}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold" translate="no">🗺️ ${esc(x.n)}</button>`).join('')}</span>
           <button type="button" data-hmcal class="px-2 py-1 rounded-lg border ${hmCalMode ? 'border-emerald-400 text-emerald-300' : 'border-ink-600'} hover:border-gold-500/60" title="Auf die Stelle klicken, an der deine Stadt im Spiel wirklich steht">📍 <span>${hmCalMode ? 'Jetzt auf deine Stadt klicken …' : 'Stadt kalibrieren'}</span></button>
           ${h.ux ? '<button type="button" data-hmcalx class="px-2 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60" title="Kalibrierung zurücksetzen">↺</button>' : ''}</span></div>
@@ -1605,7 +1665,7 @@ window.RokMods.battles = (R) => {
       <div class="mt-5 flex flex-wrap items-center gap-2"><h3 class="font-display text-base text-gold-300 mr-2">📍 <span>Zonen</span></h3><span class="text-[11px] text-slate-500">Klick = nur diesen Bereich zeigen</span></div>
       <div class="flex flex-wrap gap-1.5 mt-2">${[{ b: '', kp: S.zbList.reduce((a, x) => a + x.kp, 0), n: S.zbList.reduce((a, x) => a + x.n, 0) }, ...S.zbList].map(x => `<button type="button" data-hmzb="${esc(x.b)}" aria-pressed="${(h.zb || '') === x.b}" class="seg-btn rounded-xl px-3 py-2 text-left"><div class="text-sm font-bold" translate="no">${x.b ? esc(x.b) : '🗺️ <span>Alle</span>'}</div><div class="text-xs tabular-nums text-gold-300">${pvp ? '🏆 ' + short(x.kp) : (h.src === 'barb' ? '🪓 ' : '👹 ') + fmt(x.n)}</div></button>`).join('')}</div>
       <div class="grid md:grid-cols-2 gap-2 mt-2">${marchCards || '<div class="text-sm text-slate-500 p-2">Keine Kämpfe im Filter.</div>'}</div>
-      ${hmSpect() ? '' : hmFieldHtml(st, h, m)}${tcHtml}
+      ${hmSpect() ? '' : hmFieldHtml(st, h, m)}${hmFlagsHtml(st, h, S)}${tcHtml}
       ${pvp ? hmCompare(h, S) : ''}
       ${brHtml}
       ${flexHtml || `<details data-hmbl ${h.blOpen ? 'open' : ''} class="mt-3 rounded-xl border border-ink-700 bg-ink-950/60"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-slate-200">${h.src === 'rally' ? '🛡️ <span>Rally &amp; Garnison</span>' : h.src === 'barb' ? '🪓 <span>Alle Barbaren</span>' : '👹 <span>Alle Kahar</span>'} <span class="text-gold-300 tabular-nums">(${fmt(bl.length)})</span></summary>
@@ -1719,6 +1779,12 @@ window.RokMods.battles = (R) => {
     }
     const dot = (c, color, r) => { if (!c) return; const [u, v] = hmXY(+c.city_x, +c.city_y, h, m), [x, y] = map(u, v); ctx.beginPath(); ctx.arc(x, y, (r + 5) * dpr, 0, 7); ctx.fillStyle = color + '44'; ctx.fill();
       ctx.beginPath(); ctx.arc(x, y, r * dpr, 0, 7); ctx.fillStyle = color; ctx.fill(); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = '#052e16'; ctx.stroke(); };
+    if (h.flags && kbFlags.ev) { const FM = hmFlagModel(h), t = S.cur ?? Math.min(Date.now(), S.t1 || Date.now());   // 🚩 eigene Flaggen + Gebiet, zerstörte als ✕
+      ctx.save(); FM.activeAt(t).forEach(o => { const d = FM.half(o), [u1, v1] = hmXY(o.x - d, o.y + d, h, m), [u2, v2] = hmXY(o.x + d, o.y - d, h, m), [x1, y1] = map(u1, v1), [x2, y2] = map(u2, v2);
+          ctx.fillStyle = 'rgba(59,130,246,.22)'; ctx.fillRect(x1, y1, x2 - x1, y2 - y1); ctx.strokeStyle = 'rgba(147,197,253,.9)'; ctx.lineWidth = 1.5 * dpr; ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+          const [u, v] = hmXY(o.x, o.y, h, m), [x, y] = map(u, v); ctx.fillStyle = o.bt === 'fort' ? '#1d4ed8' : '#3b82f6'; ctx.fillRect(x - 4 * dpr, y - 4 * dpr, 8 * dpr, 8 * dpr); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * dpr; ctx.strokeRect(x - 4 * dpr, y - 4 * dpr, 8 * dpr, 8 * dpr); });
+        FM.L.filter(o => o.end === 'lost' && o.b <= t && o.b >= (S.t0 || 0)).forEach(o => { const [u, v] = hmXY(o.x, o.y, h, m), [x, y] = map(u, v), q = 4 * dpr; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.moveTo(x - q, y - q); ctx.lineTo(x + q, y + q); ctx.moveTo(x + q, y - q); ctx.lineTo(x - q, y + q); ctx.stroke(); });
+      ctx.restore(); }
     if (h.src === 'barb' || h.src === 'fort') { dot(hmCity(), '#22c55e', 6); if (h.fr && hmMates) hmMates.forEach((f, i) => dot(hmCity(f.gid), HM_COL[i % HM_COL.length], 4.5)); }
     (S.live || []).forEach(({ p }) => { if (p.r.city_x != null && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)) dot(p.r, p.mine ? '#22c55e' : HM_COL[p.fi % HM_COL.length], p.mine ? 6 : 4.5); });   // Stadt zuerst zeichnen – Kämpfe direkt an der Stadt liegen darüber und bleiben sichtbar
     const selZ = h.pop;
@@ -1826,6 +1892,9 @@ window.RokMods.battles = (R) => {
     el.querySelectorAll('[data-hmbuffx]').forEach(b => b.onclick = () => { h.buffs = (h.buffs || []).filter((_, i) => i !== +b.dataset.hmbuffx); re(); });
     el.querySelectorAll('[data-hmfw]').forEach(b => b.onclick = (e) => { e.preventDefault(); h.fw = +b.dataset.hmfw; re(); });
     el.querySelectorAll('[data-hmfrel]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbField.t = 0; kbFieldLoad(kbField.key ? kbField.key.split(',') : [], true); });
+    el.querySelectorAll('[data-hmflags]').forEach(d => d.ontoggle = () => { if (!!h.flOpen !== d.open) { h.flOpen = d.open; savePassive(); renderKampf(); } });
+    el.querySelector('[data-hmflagsx]')?.addEventListener('change', (ev) => { h.flags = ev.target.checked; re(); });
+    el.querySelector('[data-hmflr]')?.addEventListener('change', (ev) => { h.flR = +ev.target.value; re(); });
     el.querySelectorAll('[data-hmfield]').forEach(d => d.ontoggle = () => { if (h.fieldOpen !== d.open) { h.fieldOpen = d.open; savePassive(); if (d.open) renderKampf(); } });
     el.querySelectorAll('[data-hmbuffhide]').forEach(b => b.onclick = () => { st.buffHide = { ...(st.buffHide || {}), [b.dataset.hmbuffhide]: 1 }; re(); });
     el.querySelector('[data-hmtc]')?.addEventListener('toggle', (ev) => { h.tcOpen = ev.target.open; savePassive(); });
