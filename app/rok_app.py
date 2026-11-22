@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.25-test"
+APP_VERSION = "0.28-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -72,11 +72,15 @@ TXT = {
     "pos_title": "Position", "pos_info": "Fenster wählen und per Knopf setzen – klappt auch, wenn „Durchklick“ an ist und du nicht ziehen kannst. Die Position bleibt gespeichert.",
     "pos_ov": "Overlay", "pos_march": "Marsch-Leiste", "pos_feed": "Kampf-Feed", "pos_quick": "Schnell-Platz", "pos_fine": "Feinjustieren",
     "pos_step": "Schritt", "pos_exact": "Genau eingeben", "pos_set": "Setzen",
-    "march_reset": "Marsch-Werte", "mr_fight": "Gefecht (Mini-Kämpfe zusammen)", "mr_last": "Nur letzter Bericht", "mr_sum": "Alles im Zeitraum",
+    "march_reset": "Marsch-Werte", "mr_last": "Aktuellster Bericht", "mr_sum": "Alles im Zeitraum",
+    "last_info": "Aktuellster Bericht: Die Leiste zeigt immer den neuesten Kampfbericht des Marsches. Läuft der Kampf weiter, wächst die Zahl mit. Kommt ein komplett neuer Bericht, fängt der Marsch wieder bei 0 an. Barbaren/Späher ändern nichts, solange „nur PvP“ an ist.",
     "fight_gap": "Neues Gefecht nach", "fight_info": "Gefecht: Alle Berichte eines Marsches, die dichter als die eingestellte Pause beieinander liegen, werden zusammengerechnet. Erst nach der Pause startet der Marsch wieder bei 0. Pop-up kommt nur einmal pro Gefecht.",
     "ovt_view": "Anzeige", "ovt_mods": "Module & Märsche", "ovt_pos": "Position", "ovt_vals": "Werte",
     "slot_info": "Leg fest, welcher Marsch auf welchem Platz der Leiste steht (Platz 1 = unten, wie im Spiel). „Automatisch“ nimmt die zuletzt benutzten. Rechtsklick auf die Leiste im Spiel geht auch.",
     "march_auto_s": "Automatisch", "slot_choose": "Marsch wählen ▾", "slot_all_auto": "Alle automatisch", "slot_fix_now": "Aktuelle festhalten", "slot_fixed": "Märsche festgehalten",
+    "md_title": "Details zu diesem Marsch", "md_fight": "Aktueller Bericht", "md_today": "Heute", "md_all": "Alle Berichte", "md_reports": "Berichte",
+    "md_info": "Jede Zeile = ein Kampfbericht dieses Marsches (neueste oben). Hell hinterlegt = der aktuellste Bericht, den die Marsch-Leiste zeigt. Läuft der Kampf weiter, wird diese Zeile größer – ein neuer Bericht kommt als neue Zeile oben dazu.",
+    "md_time": "Zeit", "md_kp_all": "KP inkl. NPC", "md_n": "Kämpfe", "md_enemy": "Gegner", "md_copy": "Liste kopieren (für Claude)",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -142,11 +146,15 @@ TXT = {
     "pos_title": "Position", "pos_info": "Pick a window and place it with the buttons – works even when click-through is on and you can't drag. Position is saved.",
     "pos_ov": "Overlay", "pos_march": "March bar", "pos_feed": "Battle feed", "pos_quick": "Quick spot", "pos_fine": "Fine tune",
     "pos_step": "Step", "pos_exact": "Exact", "pos_set": "Set",
-    "march_reset": "March values", "mr_fight": "Engagement (mini fights summed)", "mr_last": "Last report only", "mr_sum": "Everything in range",
+    "march_reset": "March values", "mr_last": "Latest report", "mr_sum": "Everything in range",
+    "last_info": "Latest report: the bar always shows the newest battle report of the march. While the battle goes on, the number grows. A completely new report starts the march at 0 again.",
     "fight_gap": "New engagement after", "fight_info": "Engagement: all reports of a march closer together than the set pause are summed up. Only after the pause the march starts at 0 again. Pop-up comes once per engagement.",
     "ovt_view": "Display", "ovt_mods": "Modules & marches", "ovt_pos": "Position", "ovt_vals": "Values",
     "slot_info": "Choose which march sits on which spot of the bar (spot 1 = bottom, like in game). “Automatic” uses the last used ones. Right-click on the bar in game works too.",
     "march_auto_s": "Automatic", "slot_choose": "Choose march ▾", "slot_all_auto": "All automatic", "slot_fix_now": "Pin current", "slot_fixed": "Marches pinned",
+    "md_title": "Details for this march", "md_fight": "Current report", "md_today": "Today", "md_all": "All reports", "md_reports": "Reports",
+    "md_info": "Each line = one battle report of this march (newest on top). Highlighted = the latest report shown in the march bar.",
+    "md_time": "Time", "md_kp_all": "KP incl. NPC", "md_n": "Fights", "md_enemy": "Enemy", "md_copy": "Copy list",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -204,7 +212,7 @@ DEFAULT_CFG = {
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
                 "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web", "focus": "auto", "mk_mode": "ball",
                 "feed": True, "feed_n": 4, "feed_pve": False, "toast": True, "march": False, "march_n": 4, "march_gap": 96,
-                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "march_reset": "fight", "fight_gap": 300, "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
+                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "march_reset": "last", "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
     "upload": None, "upload_days": 14, "start_min": False,
     "alerts": {"buff_army": True, "buff_attack": True, "buff_def": True, "buff_shield": False, "buff_sound": "sirene",
                "bld": True, "bld_filter": "", "bld_sound": "glocke", "show_min": 10, "overlay": True, "volume": 80},
@@ -231,8 +239,8 @@ def load_cfg():
         rl = cfg["markers"].get("rules") or []
         if len(rl) == 3:                                             # v0.20: 4. Art Runen
             rl.append({"name": "Runen", "words": "rune, runes, runen, rn", "sound": "ding"})
-        if "fight_gap" not in ov and cfg["overlay"].get("march_reset") == "last":   # v0.25: Standard = Gefecht
-            cfg["overlay"]["march_reset"] = "fight"
+        if cfg["overlay"].get("march_reset") == "fight":              # v0.28: Gefecht-Modus entfernt -> aktuellster Bericht
+            cfg["overlay"]["march_reset"] = "last"
         if len(rl) >= 3 and rl[2].get("name") == "Sammeln":          # v0.19: 3. Art ist jetzt Garnison
             rl[2] = {"name": "Garnison", "words": "garrison, garni, gar, def, verteidig", "sound": "glocke"}
     except Exception:
@@ -613,10 +621,23 @@ def hand_over(arg):
     """Laeuft die App schon? Dann Link uebergeben und True zurueck (diese zweite Kopie beendet sich)."""
     try:
         with socket.create_connection(("127.0.0.1", IPC_PORT), timeout=1.5) as c:
-            c.sendall((arg or "show").encode("utf-8")[:2000])
-        return True
+            c.sendall(("ver:%s|%s" % (APP_VERSION, arg or "show")).encode("utf-8")[:2000])
+            try:
+                c.settimeout(2)
+                reply = c.recv(100)
+            except OSError:
+                reply = b""
     except OSError:
         return False
+    if reply == b"quit":                 # alte Version laeuft noch -> sie beendet sich, diese neue startet
+        for _ in range(40):
+            time.sleep(0.25)
+            try:
+                socket.create_connection(("127.0.0.1", IPC_PORT), timeout=0.3).close()
+            except OSError:
+                return False
+        return False
+    return True
 
 
 class Scanner:
@@ -820,6 +841,7 @@ class Scanner:
                     if s:
                         s["dir"] = g
                         s["file"] = path
+                        s["mt"] = int(mt)
                         old = self.battles.get(s["id"])
                         if old is None:
                             new += 1
@@ -1102,7 +1124,7 @@ def march_stats(battles, ids, since_ts, last_only=False, pvp_only=True, gap=0):
             if not any(f[0] for f in b["fights"]) and (pvp_only or not b["fights"]):
                 continue                                   # Barbar/Spaehen o. Ae. setzt die Marsch-Werte NICHT auf 0
             k = (b["h"][0], b["h"][1])
-            if k not in newest or b["t"] > newest[k]["t"]:
+            if k not in newest or (b["t"], b.get("mt", 0)) > (newest[k]["t"], newest[k].get("mt", 0)):
                 newest[k] = b
         battles, since_ts = list(newest.values()), 0
     for b in battles:
@@ -2488,6 +2510,9 @@ class MarchWin(Float):
         idx = max(0, int(e.y // max(gapy, px(44))))
         m = app.slot_menu(self.win, idx)
         m.add_separator()
+        rows = getattr(app, "_marches", [])
+        if idx < len(rows) and rows[idx].get("k"):
+            m.add_command(label="🔍 " + T("md_title"), command=lambda k=rows[idx]["k"]: app.march_details(k))
         m.add_command(label="✕ " + T("menu_hide"), command=lambda: app.set_module("march", False))
         m.tk_popup(e.x_root, e.y_root)
 
@@ -2655,6 +2680,14 @@ class App:
                 c, _ = srv.accept()
                 with c:
                     msg = c.recv(2000).decode("utf-8", "replace")
+                    if msg.startswith("ver:"):
+                        ver, _s, msg = msg[4:].partition("|")
+                        if ver != APP_VERSION:          # andere (neuere) Version gestartet -> Platz machen
+                            c.sendall(b"quit")
+                            self.root.after(0, self.quit)
+                            srv.close()
+                            return
+                        c.sendall(b"ok")
                 self.root.after(0, lambda m=msg: self.handle_link(m))
             except Exception:
                 time.sleep(0.5)
@@ -3066,16 +3099,20 @@ class App:
         with self.scanner.lock:
             bs = list(self.scanner.battles.values())
         ov = self.cfg["overlay"]
-        mr = ov.get("march_reset", "fight")
-        gap = int(ov.get("fight_gap", 300)) if mr == "fight" else 0
-        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"), int(ov.get("fight_gap", 300)))
+        mr = ov.get("march_reset", "last")
+        gap = 0
+        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"))
         newest = cards[0] if cards else None
         old = self._feed[0]["id"] if self._feed else None
         self._feed = cards
         if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and ov.get("toast", True):
-            self.toast.show(newest)                              # Pop-up nach jedem neuen Kampf
+            hk = tuple(newest.get("h") or ())                    # Pop-up nach jedem neuen Bericht (gleicher Marsch hoechstens 1x pro Minute)
+            last = getattr(self, "_toast_last", {})
+            if time.time() - last.get(hk, 0) > 60:
+                last[hk] = time.time(); self._toast_last = last
+                self.toast.show(newest)
         ms = march_stats(bs, ids, since, mr == "last", ov.get("pvp_only", True), gap)
-        if mr in ("last", "fight"):                       # "zuletzt benutzt" trotzdem aus allen Berichten (fuer die Auto-Reihenfolge)
+        if mr == "last":                       # "zuletzt benutzt" trotzdem aus allen Berichten (fuer die Auto-Reihenfolge)
             for k, v in march_stats(bs, ids, 0).items():
                 if k in ms:
                     ms[k]["last"] = v["last"]
@@ -3117,6 +3154,51 @@ class App:
         self.march.draw(True)
         if self.page == "ov" and getattr(self, "ov_sub", "") == "mods":
             self.render()
+
+    def march_details(self, k):
+        """Alle Berichte eines Marsches: Zeit, Gegner, KP, PvP?, und welches Gefecht. Zum Vergleichen mit dem Spiel."""
+        T, ov, lang = self.t, self.cfg["overlay"], self.cfg["lang"]
+        k = tuple(k)
+        ids = getattr(self, "_ids_cur", None)
+        with self.scanner.lock:
+            bs = [b for b in self.scanner.battles.values() if tuple(b.get("h") or ()) == k and (ids is None or b["pid"] in ids) and not b.get("arch")]
+        bs.sort(key=lambda b: (b["t"], b.get("mt", 0)))
+        day = datetime.combine(date.today(), datetime.min.time()).timestamp()
+        rows, g = [], 0
+        for b in bs:
+            g += 1
+            kp_all = sum(f[1] for f in b["fights"]); kp_pvp = sum(f[1] for f in b["fights"] if f[0])
+            en = next((f[10] for f in b["fights"] if f[10]), "") or ("NPC" if b["fights"] else "–")
+            rows.append((b, g, kp_all, kp_pvp, en))
+        pvp_only = ov.get("pvp_only", True)
+        rel = [r for r in rows if any(f[0] for f in r[0]["fights"]) or (not pvp_only and r[0]["fights"])]
+        last_g = rel[-1][1] if rel else 0
+        tot_g = sum(r[3] for r in rows if r[1] == last_g)
+        tot_day = sum(r[3] for r in rows if r[0]["t"] >= day)
+        tot_all = sum(r[3] for r in rows)
+        w = tk.Toplevel(self.root); w.title("Wiz fan Club – " + self.pair_name(k)); w.configure(bg=C["bg"])
+        w.geometry("%dx%d" % (px(900), px(580)))
+        hd = tk.Frame(w, bg=C["bg"]); hd.pack(fill="x", padx=px(18), pady=(px(14), px(8)))
+        tk.Label(hd, text="🔍 " + self.pair_name(k), bg=C["bg"], fg=C["text"], font=(FONT, 14, "bold")).pack(anchor="w")
+        kr = tk.Frame(w, bg=C["bg"]); kr.pack(fill="x", padx=px(18))
+        for lab, v, col in ((T("md_fight"), tot_g, C["gold"]), (T("md_today"), tot_day, None), (T("md_all"), tot_all, None), (T("md_reports"), len(rows), None)):
+            kpi(kr, lab, fmt_num(v, lang) if lab != T("md_reports") else str(v), value_col=col).pack(side="left", padx=(0, px(8)))
+        tk.Label(w, text=T("md_info"), bg=C["bg"], fg=C["dim"], font=(FONT, 9), wraplength=px(680), justify="left").pack(anchor="w", padx=px(18), pady=(px(8), px(4)))
+        sc = Scroll(w, C["bg"]); sc.pack(fill="both", expand=True, padx=(px(18), px(6)), pady=(0, px(6)))
+        lines = ["%s | %s" % (self.pair_name(k), APP_VERSION), "Zeit | Gefecht | KP gesamt | KP PvP | Kaempfe | Gegner | ID"]
+        hdr = tk.Frame(sc.inner, bg=C["bg"]); hdr.pack(fill="x")
+        for txt, wd in ((T("md_time"), 14), ("#", 4), ("KP PvP", 12), (T("md_kp_all"), 12), (T("md_n"), 6), (T("md_enemy"), 18)):
+            tk.Label(hdr, text=txt, bg=C["bg"], fg=C["muted"], font=(FONT, 9, "bold"), width=wd, anchor="w").pack(side="left")
+        for b, gi, ka, kpv, en in rows[::-1][:200]:
+            cur = gi == last_g
+            r = tk.Frame(sc.inner, bg=C["card"] if cur else C["bg"]); r.pack(fill="x", pady=1)
+            vals = (datetime.fromtimestamp(b["t"]).strftime("%d.%m. %H:%M:%S"), str(gi), fmt_num(kpv, lang), fmt_num(ka, lang), str(len(b["fights"])), en[:22])
+            for (txt, wd), col in zip(zip(vals, (14, 4, 12, 12, 6, 18)), (C["text"], C["gold"] if cur else C["dim"], C["gold"], C["muted"], C["muted"], C["text"])):
+                tk.Label(r, text=txt, bg=r["bg"], fg=col, font=(FONT, 9), width=wd, anchor="w").pack(side="left")
+        for b, gi, ka, kpv, en in rows[::-1][:300]:
+            lines.append("%s | %d | %d | %d | %d | %s | %s" % (datetime.fromtimestamp(b["t"]).strftime("%d.%m. %H:%M:%S"), gi, ka, kpv, len(b["fights"]), en, b["id"]))
+        bt = tk.Frame(w, bg=C["bg"]); bt.pack(fill="x", padx=px(18), pady=(0, px(12)))
+        Btn(bt, "📋 " + T("md_copy"), lambda: self.copy_text("\n".join(lines)), small=True).pack(side="left")
 
     def pair_name(self, k):
         return "%s + %s" % (self.hero_name(k[0]), self.hero_name(k[1])) if k else "⚡ " + self.t("march_auto")
@@ -3894,6 +3976,8 @@ class App:
             if shown:
                 tk.Label(r, text="⚔ %s" % fmt_num(row.get("kp", 0), self.cfg["lang"]), bg=C["card2"], fg=C["gold"], font=(FONT, 9, "bold")).pack(side="left", padx=px(8))
             b = Btn(r, T("slot_choose"), lambda: None, "ghost", small=True); b.pack(side="right")
+            if shown:
+                Btn(r, "🔍", lambda k=shown: self.march_details(k), "ghost", small=True).pack(side="right", padx=(0, px(6)))
             b._cmd = lambda i=i, b=b: self.slot_menu(self.root, i).tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
             if k:
                 Btn(r, "✕", lambda i=i: self.set_march_slot(i, None), "ghost", small=True).pack(side="right", padx=(0, px(6)))
@@ -3918,12 +4002,10 @@ class App:
         for v in MarchWin.VALS:
             ch = Chip(r, MarchWin.VALS[v][0] + " " + T("mv_" + v), v in (ov.get("march_vals") or ["kp", "trade"]), lambda v=v: mv_toggle(v))
             ch.pack(side="left", padx=(0, px(4))); mv_chips[v] = ch
-        self.chips_row(c, T("march_reset"), "march_reset", ["fight", "last", "sum"], lambda v: T("mr_" + v),
+        self.chips_row(c, T("march_reset"), "march_reset", ["last", "sum"], lambda v: T("mr_" + v),
                        lambda: (self._sig_reset(), self.march.draw(True)))
-        self.chips_row(c, T("fight_gap"), "fight_gap", [120, 300, 600, 900], lambda v: "%d Min" % (v // 60),
-                       lambda: (self._sig_reset(), self.feed.draw(True)), ("Min", 60, 1, 120))
         self.chips_row(c, T("march_gap"), "march_gap", [70, 84, 96, 110, 124], lambda v: "%d px" % v, lambda: self.march.draw(True), ("px", 1, 40, 250))
-        tk.Label(c, text=T("fight_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
+        tk.Label(c, text=T("last_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
         tk.Label(c, text=T("march_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(4), 0))
 
     def _sig_reset(self):
