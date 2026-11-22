@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.20-test"
+APP_VERSION = "0.22-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -69,6 +69,10 @@ TXT = {
     "opt_icons": "Symbole im Overlay", "opt_coords": "Koordinaten bei Markern", "opt_march_icons": "Bilder in der Marsch-Leiste", "opt_spacing": "Abstand Overlay",
     "al_tab_runes": "🔷 Runen", "rn_active": "Runen aktiv", "rn_newest": "Neueste", "rn_overlay": "Runen im Overlay (blau)", "rn_n": "Anzahl im Overlay",
     "rn_rune": "Rune", "rn_empty": "Noch keine Runen-Marker. Sobald ein Marker mit „Rune“ (oder deinen Wörtern unter Einstellungen → Runen) kommt, steht er hier als Kachel.",
+    "pos_title": "Position", "pos_info": "Fenster wählen und per Knopf setzen – klappt auch, wenn „Durchklick“ an ist und du nicht ziehen kannst. Die Position bleibt gespeichert.",
+    "pos_ov": "Overlay", "pos_march": "Marsch-Leiste", "pos_feed": "Kampf-Feed", "pos_quick": "Schnell-Platz", "pos_fine": "Feinjustieren",
+    "pos_step": "Schritt", "pos_exact": "Genau eingeben", "pos_set": "Setzen",
+    "march_reset": "Marsch-Werte", "mr_last": "Nur letzter Bericht (neuer Bericht = Reset)", "mr_sum": "Zusammengezählt",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -131,6 +135,10 @@ TXT = {
     "opt_icons": "Symbols in overlay", "opt_coords": "Coordinates for markers", "opt_march_icons": "Pictures in march bar", "opt_spacing": "Overlay spacing",
     "al_tab_runes": "🔷 Runes", "rn_active": "Active runes", "rn_newest": "Newest", "rn_overlay": "Runes in overlay (blue)", "rn_n": "Count in overlay",
     "rn_rune": "Rune", "rn_empty": "No rune markers yet. As soon as a marker with “rune” (or your words under Settings → Runes) arrives, it shows up here as a tile.",
+    "pos_title": "Position", "pos_info": "Pick a window and place it with the buttons – works even when click-through is on and you can't drag. Position is saved.",
+    "pos_ov": "Overlay", "pos_march": "March bar", "pos_feed": "Battle feed", "pos_quick": "Quick spot", "pos_fine": "Fine tune",
+    "pos_step": "Step", "pos_exact": "Exact", "pos_set": "Set",
+    "march_reset": "March values", "mr_last": "Last report only (new report = reset)", "mr_sum": "Summed up",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -188,7 +196,7 @@ DEFAULT_CFG = {
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
                 "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web", "focus": "auto", "mk_mode": "ball",
                 "feed": True, "feed_n": 4, "feed_pve": False, "toast": True, "march": False, "march_n": 4, "march_gap": 96,
-                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
+                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "march_reset": "last", "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
     "upload": None, "upload_days": 14, "start_min": False,
     "alerts": {"buff_army": True, "buff_attack": True, "buff_def": True, "buff_shield": False, "buff_sound": "sirene",
                "bld": True, "bld_filter": "", "bld_sound": "glocke", "show_min": 10, "overlay": True, "volume": 80},
@@ -1022,9 +1030,19 @@ def recent_cards(battles, ids, n, pvp_only):
     return out
 
 
-def march_stats(battles, ids, since_ts):
-    """Pro eigenem Marsch (Kommandanten-Paar): KP, Kills, Acclaim, Tote, Verluste, Trade, Anzahl Berichte, zuletzt benutzt."""
+def march_stats(battles, ids, since_ts, last_only=False):
+    """Pro eigenem Marsch (Kommandanten-Paar): KP, Kills, Acclaim, Tote, Verluste, Trade, Anzahl Berichte, zuletzt benutzt.
+    last_only: nur der NEUESTE Bericht je Marsch zaehlt – jeder neue Bericht setzt die Werte zurueck."""
     res = {}
+    if last_only:
+        newest = {}
+        for b in battles:
+            if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
+                continue
+            k = (b["h"][0], b["h"][1])
+            if k not in newest or b["t"] > newest[k]["t"]:
+                newest[k] = b
+        battles, since_ts = list(newest.values()), 0
     for b in battles:
         if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
             continue
@@ -2917,7 +2935,7 @@ class App:
         self._feed = cards
         if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and ov.get("toast", True):
             self.toast.show(newest)                              # Pop-up nach jedem neuen Kampf
-        ms = march_stats(bs, ids, since)
+        ms = march_stats(bs, ids, since, ov.get("march_reset", "last") == "last")
         self._march_all = ms
         auto = [k for k, _v in sorted(ms.items(), key=lambda kv: -kv[1]["last"])]
         slots = (ov.get("march_slots") or [None] * 5)
@@ -3460,6 +3478,105 @@ class App:
         else:
             self.event_alarm({"ev": "bld", "t": now, "name": "Lvl 7 Pass", "ours": False, "lost": True, "ally": "TEST", "x": 616, "y": 879, "text": "Fall of Lvl 7 Pass"})
 
+    # ---------- Position der Overlay-Fenster ----------
+    def _pos_get(self, which):
+        ov = self.cfg["overlay"]
+        if which == "ov":                     # gespeicherte Position (wird beim Ziehen und per Knopf aktualisiert)
+            return int(ov.get("x", 60)), int(ov.get("y", 60))
+        return (self.feed if which == "feed" else self.march).pos()
+
+    def _pos_size(self, which):
+        w = self.overlay.win if which == "ov" else (self.feed if which == "feed" else self.march).win
+        if w:
+            w.update_idletasks()
+            return w.winfo_width(), w.winfo_height()
+        return px(260), px(300)
+
+    def move_win(self, which, x=None, y=None, dx=0, dy=0, preset=None):
+        """Fenster per Knopf verschieben (geht auch mit Durchklick an)."""
+        cx, cy = self._pos_get(which)
+        if preset:
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            ww, wh = self._pos_size(which)
+            m = px(12)
+            col, row = preset
+            x = {"l": m, "c": (sw - ww) // 2, "r": sw - ww - m}[col]
+            y = {"t": m, "m": (sh - wh) // 2, "b": sh - wh - px(60)}[row]
+        x = cx + dx if x is None else x
+        y = cy + dy if y is None else y
+        x, y = self.overlay._on_screen(int(x), int(y))
+        ov = self.cfg["overlay"]
+        if which == "ov":
+            ov["x"], ov["y"] = x, y
+            if self.overlay.win:
+                self.overlay.win.geometry("+%d+%d" % (x, y))
+        else:
+            ov["pos_" + which] = [x, y]
+            f = self.feed if which == "feed" else self.march
+            if f.win:
+                f.win.geometry("+%d+%d" % (x, y))
+        save_cfg(self.cfg)
+        pv = getattr(self, "_pos_vars", {}).get(which)
+        if pv:
+            pv[0].set(str(x)); pv[1].set(str(y))
+        lab = getattr(self, "_pos_lab", {}).get(which)
+        if lab:
+            try:
+                lab.configure(text="X %d · Y %d" % (x, y))
+            except tk.TclError:
+                pass
+
+    def pos_card(self, body):
+        T = self.t
+        o, c = card(body, "📐 " + T("pos_title")); o.pack(fill="x", pady=(px(14), 0))
+        tk.Label(c, text=T("pos_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
+        sub = getattr(self, "pos_which", "march")
+        Seg(c, [("ov", T("pos_ov")), ("march", T("pos_march")), ("feed", T("pos_feed"))], sub,
+            lambda v: (setattr(self, "pos_which", v), self.render())).pack(anchor="w", pady=(0, px(10)))
+        row = tk.Frame(c, bg=C["card"]); row.pack(fill="x")
+        # 3x3 Raster: Ecke / Mitte waehlen
+        g = tk.Frame(row, bg=C["card"]); g.pack(side="left", padx=(0, px(24)))
+        tk.Label(g, text=T("pos_quick"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, px(4)))
+        sym = {("l", "t"): "↖", ("c", "t"): "↑", ("r", "t"): "↗", ("l", "m"): "←", ("c", "m"): "•", ("r", "m"): "→",
+               ("l", "b"): "↙", ("c", "b"): "↓", ("r", "b"): "↘"}
+        for ri, rw in enumerate("tmb"):
+            for ci, cl in enumerate("lcr"):
+                Btn(g, sym[(cl, rw)], lambda p=(cl, rw): self.move_win(sub, preset=p), "ghost", small=True).grid(row=ri + 1, column=ci, padx=px(2), pady=px(2), sticky="we")
+        # Feinjustieren
+        f = tk.Frame(row, bg=C["card"]); f.pack(side="left", anchor="n")
+        tk.Label(f, text=T("pos_fine"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, px(4)))
+        st = int(self.cfg["overlay"].get("pos_step", 10))
+        Btn(f, "▲", lambda: self.move_win(sub, dy=-int(self.cfg["overlay"].get("pos_step", 10))), "ghost", small=True).grid(row=1, column=1, padx=px(2), pady=px(2))
+        Btn(f, "◀", lambda: self.move_win(sub, dx=-int(self.cfg["overlay"].get("pos_step", 10))), "ghost", small=True).grid(row=2, column=0, padx=px(2), pady=px(2))
+        Btn(f, "▶", lambda: self.move_win(sub, dx=int(self.cfg["overlay"].get("pos_step", 10))), "ghost", small=True).grid(row=2, column=2, padx=px(2), pady=px(2))
+        Btn(f, "▼", lambda: self.move_win(sub, dy=int(self.cfg["overlay"].get("pos_step", 10))), "ghost", small=True).grid(row=3, column=1, padx=px(2), pady=px(2))
+        x, y = self._pos_get(sub)
+        self._pos_lab = {sub: tk.Label(f, text="X %d · Y %d" % (x, y), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold"))}
+        self._pos_lab[sub].grid(row=2, column=1, padx=px(10))
+        # Schrittweite + exakte Eingabe
+        e = tk.Frame(row, bg=C["card"]); e.pack(side="left", anchor="n", padx=(px(24), 0))
+        tk.Label(e, text=T("pos_step"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(anchor="w", pady=(0, px(4)))
+        sr = tk.Frame(e, bg=C["card"]); sr.pack(anchor="w")
+        for n in (1, 10, 50):
+            Chip(sr, "%d px" % n, st == n, lambda n=n: (self.set_opt("pos_step", n), self.render())).pack(side="left", padx=(0, px(4)))
+        tk.Label(e, text=T("pos_exact"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(anchor="w", pady=(px(10), px(4)))
+        xr = tk.Frame(e, bg=C["card"]); xr.pack(anchor="w")
+        vx, vy = tk.StringVar(value=str(x)), tk.StringVar(value=str(y))
+        self._pos_vars = {sub: (vx, vy)}
+        tk.Label(xr, text="X", bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
+        ex = entry(xr, vx, 6); ex.pack(side="left", padx=(px(4), px(8)))
+        tk.Label(xr, text="Y", bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
+        ey = entry(xr, vy, 6); ey.pack(side="left", padx=(px(4), px(8)))
+
+        def go_exact(_e=None):
+            try:
+                self.move_win(sub, x=int(vx.get()), y=int(vy.get()))
+            except ValueError:
+                pass
+        for w_ in (ex, ey):
+            w_.bind("<Return>", go_exact)
+        Btn(xr, T("pos_set"), go_exact, small=True).pack(side="left")
+
     def page_ov(self, body):
         T, ov = self.t, self.cfg["overlay"]
         self.focus_bar(body, C["bg"]).pack(fill="x", pady=(0, px(10)))
@@ -3565,12 +3682,14 @@ class App:
         for v in MarchWin.VALS:
             ch = Chip(r, MarchWin.VALS[v][0] + " " + T("mv_" + v), v in (ov.get("march_vals") or ["kp", "trade"]), lambda v=v: mv_toggle(v))
             ch.pack(side="left", padx=(0, px(4))); mv_chips[v] = ch
+        chips_row(T("march_reset"), "march_reset", ["last", "sum"], lambda v: T("mr_" + v), lambda: self.march.draw(True))
         chips_row(T("march_gap"), "march_gap", [70, 84, 96, 110, 124], lambda v: "%d px" % v, lambda: self.march.draw(True))
         chips_row("🏁 " + T("goal_today"), "goal_kp", [0, 1000000, 5000000, 10000000, 25000000, 50000000],
                   lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw()))
         tk.Label(c, text=T("march_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
         tk.Label(c, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(4), 0))
 
+        self.pos_card(body)
         o, c = card(body, T("card_values")); o.pack(fill="both", expand=True, pady=(14, 0))
         grid = tk.Frame(c, bg=C["card"]); grid.pack(anchor="w")
         self.metric_chips = {}
