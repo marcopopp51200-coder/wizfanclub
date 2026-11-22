@@ -27,6 +27,8 @@ jobs:
         run: pip install pyinstaller pillow
       - name: Icon erzeugen
         run: python app/make_icon.py app/icon.ico
+      - name: Kommandanten-Bilder (aus icons/comander der Website)
+        run: python app/make_heroicons.py . app/heroicons
       - name: Uploader-Modul beilegen
         shell: cmd
         run: copy rok_kampf_upload.py app\rok_kampf_upload.py
@@ -38,7 +40,7 @@ jobs:
         run: |
           EXTRA=""
           if [ -s app/Cinzel.ttf ]; then EXTRA='--add-data app/Cinzel.ttf;.'; fi
-          pyinstaller --onefile --noconsole --name WizFanClubApp --icon app/icon.ico --add-data "app/icon.ico;." $EXTRA --paths app --hidden-import rok_kampf_upload app/rok_app.py
+          pyinstaller --onefile --noconsole --name WizFanClubApp --icon app/icon.ico --add-data "app/icon.ico;." --add-data "app/heroicons;heroicons" $EXTRA --paths app --hidden-import rok_kampf_upload app/rok_app.py
       - name: Release aktualisieren
         shell: bash
         env:
