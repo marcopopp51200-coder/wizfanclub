@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.22-test"
+APP_VERSION = "0.25-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -72,7 +72,11 @@ TXT = {
     "pos_title": "Position", "pos_info": "Fenster wählen und per Knopf setzen – klappt auch, wenn „Durchklick“ an ist und du nicht ziehen kannst. Die Position bleibt gespeichert.",
     "pos_ov": "Overlay", "pos_march": "Marsch-Leiste", "pos_feed": "Kampf-Feed", "pos_quick": "Schnell-Platz", "pos_fine": "Feinjustieren",
     "pos_step": "Schritt", "pos_exact": "Genau eingeben", "pos_set": "Setzen",
-    "march_reset": "Marsch-Werte", "mr_last": "Nur letzter Bericht (neuer Bericht = Reset)", "mr_sum": "Zusammengezählt",
+    "march_reset": "Marsch-Werte", "mr_fight": "Gefecht (Mini-Kämpfe zusammen)", "mr_last": "Nur letzter Bericht", "mr_sum": "Alles im Zeitraum",
+    "fight_gap": "Neues Gefecht nach", "fight_info": "Gefecht: Alle Berichte eines Marsches, die dichter als die eingestellte Pause beieinander liegen, werden zusammengerechnet. Erst nach der Pause startet der Marsch wieder bei 0. Pop-up kommt nur einmal pro Gefecht.",
+    "ovt_view": "Anzeige", "ovt_mods": "Module & Märsche", "ovt_pos": "Position", "ovt_vals": "Werte",
+    "slot_info": "Leg fest, welcher Marsch auf welchem Platz der Leiste steht (Platz 1 = unten, wie im Spiel). „Automatisch“ nimmt die zuletzt benutzten. Rechtsklick auf die Leiste im Spiel geht auch.",
+    "march_auto_s": "Automatisch", "slot_choose": "Marsch wählen ▾", "slot_all_auto": "Alle automatisch", "slot_fix_now": "Aktuelle festhalten", "slot_fixed": "Märsche festgehalten",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -138,7 +142,11 @@ TXT = {
     "pos_title": "Position", "pos_info": "Pick a window and place it with the buttons – works even when click-through is on and you can't drag. Position is saved.",
     "pos_ov": "Overlay", "pos_march": "March bar", "pos_feed": "Battle feed", "pos_quick": "Quick spot", "pos_fine": "Fine tune",
     "pos_step": "Step", "pos_exact": "Exact", "pos_set": "Set",
-    "march_reset": "March values", "mr_last": "Last report only (new report = reset)", "mr_sum": "Summed up",
+    "march_reset": "March values", "mr_fight": "Engagement (mini fights summed)", "mr_last": "Last report only", "mr_sum": "Everything in range",
+    "fight_gap": "New engagement after", "fight_info": "Engagement: all reports of a march closer together than the set pause are summed up. Only after the pause the march starts at 0 again. Pop-up comes once per engagement.",
+    "ovt_view": "Display", "ovt_mods": "Modules & marches", "ovt_pos": "Position", "ovt_vals": "Values",
+    "slot_info": "Choose which march sits on which spot of the bar (spot 1 = bottom, like in game). “Automatic” uses the last used ones. Right-click on the bar in game works too.",
+    "march_auto_s": "Automatic", "slot_choose": "Choose march ▾", "slot_all_auto": "All automatic", "slot_fix_now": "Pin current", "slot_fixed": "Marches pinned",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -196,7 +204,7 @@ DEFAULT_CFG = {
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
                 "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web", "focus": "auto", "mk_mode": "ball",
                 "feed": True, "feed_n": 4, "feed_pve": False, "toast": True, "march": False, "march_n": 4, "march_gap": 96,
-                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "march_reset": "last", "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
+                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "march_reset": "fight", "fight_gap": 300, "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
     "upload": None, "upload_days": 14, "start_min": False,
     "alerts": {"buff_army": True, "buff_attack": True, "buff_def": True, "buff_shield": False, "buff_sound": "sirene",
                "bld": True, "bld_filter": "", "bld_sound": "glocke", "show_min": 10, "overlay": True, "volume": 80},
@@ -223,6 +231,8 @@ def load_cfg():
         rl = cfg["markers"].get("rules") or []
         if len(rl) == 3:                                             # v0.20: 4. Art Runen
             rl.append({"name": "Runen", "words": "rune, runes, runen, rn", "sound": "ding"})
+        if "fight_gap" not in ov and cfg["overlay"].get("march_reset") == "last":   # v0.25: Standard = Gefecht
+            cfg["overlay"]["march_reset"] = "fight"
         if len(rl) >= 3 and rl[2].get("name") == "Sammeln":          # v0.19: 3. Art ist jetzt Garnison
             rl[2] = {"name": "Garnison", "words": "garrison, garni, gar, def, verteidig", "sound": "glocke"}
     except Exception:
@@ -763,6 +773,8 @@ class Scanner:
                 try:
                     with open(path, "rb") as f:
                         raw = f.read()
+                    if os.path.getsize(path) != len(raw):      # Spiel schreibt gerade noch -> beim naechsten Durchgang
+                        continue
                 except OSError:
                     raw = b""
                 is_battle = b"Battle" in raw
@@ -793,7 +805,9 @@ class Scanner:
                     if ev:
                         self.add_event(ev)
                 if own and mt >= self.active[1]:            # neueste Mail -> dieser Account ist gerade eingeloggt
-                    self.active = (own, mt)
+                    alli = is_mark or b"Alliance" in raw
+                    if own == self.active[0] or not self.active[0] or (s is not None) or (not alli and mt > self.active[1] + 60):
+                        self.active = (own, mt)                # Wechsel nur bei Kampfbericht oder deutlich neuerer eigener Mail
                 with self.lock:
                     self.seen[key] = sig
                     if own:
@@ -806,9 +820,15 @@ class Scanner:
                     if s:
                         s["dir"] = g
                         s["file"] = path
-                        if s["id"] not in self.battles:
+                        old = self.battles.get(s["id"])
+                        if old is None:
                             new += 1
-                        self.battles[s["id"]] = s
+                            self.battles[s["id"]] = s
+                        elif len(s["fights"]) >= len(old["fights"]):   # gleicher Bericht, nur weitergeschrieben -> aktualisieren
+                            if s["fights"] != old["fights"]:
+                                self.changed_at = time.time()
+                            self.battles[s["id"]] = s
+                        # weniger Kaempfe als vorher = halb gelesen -> alten Stand behalten (kein Sprung auf 0)
                 if i and i % 3000 == 0:          # beim ersten grossen Einlesen zwischendurch sichern
                     self.save()
         if new:
@@ -826,9 +846,13 @@ class Scanner:
             except Exception:
                 pass
         while True:
+            gap = time.time() - getattr(self, "_last_scan", 0)
+            if gap < 1.5:                            # hoechstens alle 1,5 s den Ordner durchgehen (Spiel schreibt oft mehrmals hintereinander)
+                time.sleep(1.5 - gap)
+            self._last_scan = time.time()
             try:
                 n = self.scan_once()
-                if (n or self.dirty) and time.time() - self.saved_at > 30:     # hoechstens alle 30 s auf die Platte
+                if (n or self.dirty) and time.time() - self.saved_at > 120:    # hoechstens alle 2 Min auf die Platte (Rest beim Beenden)
                     self.save()
                 if self.app.cfg.get("upload") and self.app.cfg.get("token"):
                     self.upload_new()
@@ -1018,8 +1042,35 @@ def battle_card(b):
             "h": (b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": len(fs)}
 
 
-def recent_cards(battles, ids, n, pvp_only):
-    bs = sorted((b for b in battles if (ids is None or b["pid"] in ids) and not b.get("arch")), key=lambda b: -b["t"])
+def engagements(battles, ids, gap, pvp_only):
+    """Viele Mini-Kaempfe eines Marsches = EIN Gefecht: Berichte desselben Marsches, die weniger als `gap` Sekunden
+    auseinander liegen, werden zusammengerechnet. Erst nach einer Pause beginnt ein neues Gefecht."""
+    per = {}
+    for b in battles:
+        if (ids is not None and b["pid"] not in ids) or b.get("arch"):
+            continue
+        if pvp_only and not any(f[0] for f in b["fights"]):
+            continue
+        k = (b["pid"], tuple(b.get("h") or (0, 0)))
+        per.setdefault(k, []).append(b)
+    out = []
+    for (pid, h), lst in per.items():
+        lst.sort(key=lambda b: b["t"])
+        g = None
+        for b in lst:
+            if g is None or b["t"] - g["t"] > gap:
+                g = {"id": b["id"], "pid": pid, "h": list(h), "t0": b["t"], "t": b["t"], "fights": [], "nrep": 0}
+                out.append(g)
+            g["fights"] = g["fights"] + b["fights"]
+            g["t"] = max(g["t"], b["t"]); g["nrep"] += 1
+    return out
+
+
+def recent_cards(battles, ids, n, pvp_only, gap=0):
+    if gap:
+        bs = sorted(engagements(battles, ids, gap, pvp_only), key=lambda b: -b["t"])
+    else:
+        bs = sorted((b for b in battles if (ids is None or b["pid"] in ids) and not b.get("arch")), key=lambda b: -b["t"])
     out = []
     for b in bs:
         c = battle_card(b)
@@ -1030,15 +1081,26 @@ def recent_cards(battles, ids, n, pvp_only):
     return out
 
 
-def march_stats(battles, ids, since_ts, last_only=False):
+def march_stats(battles, ids, since_ts, last_only=False, pvp_only=True, gap=0):
     """Pro eigenem Marsch (Kommandanten-Paar): KP, Kills, Acclaim, Tote, Verluste, Trade, Anzahl Berichte, zuletzt benutzt.
     last_only: nur der NEUESTE Bericht je Marsch zaehlt – jeder neue Bericht setzt die Werte zurueck."""
     res = {}
-    if last_only:
+    if gap:                                              # nur das letzte Gefecht je Marsch (Mini-Kaempfe zusammengerechnet)
+        newest = {}
+        for g in engagements(battles, ids, gap, pvp_only):
+            k = tuple(g["h"])
+            if not k[0]:
+                continue
+            if k not in newest or g["t"] > newest[k]["t"]:
+                newest[k] = g
+        battles, since_ts = list(newest.values()), 0
+    elif last_only:
         newest = {}
         for b in battles:
             if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
                 continue
+            if not any(f[0] for f in b["fights"]) and (pvp_only or not b["fights"]):
+                continue                                   # Barbar/Spaehen o. Ae. setzt die Marsch-Werte NICHT auf 0
             k = (b["h"][0], b["h"][1])
             if k not in newest or b["t"] > newest[k]["t"]:
                 newest[k] = b
@@ -1234,7 +1296,7 @@ class Btn(tk.Canvas):
 
     def __init__(self, parent, text, cmd, kind="gold", small=False, width=None, **kw):
         self.fill, self.fg, self.hov, self.out = self.STY[kind]
-        self.font = tkfont.Font(family=FONT, size=9 if small else 10, weight="bold")
+        self.font = fnt(FONT, 9 if small else 10, "bold")
         tw = self.font.measure(text)
         h = px(28 if small else 36)
         w = width or (tw + px(24 if small else 34))
@@ -1260,12 +1322,34 @@ class Btn(tk.Canvas):
         self._on = on; self.configure(cursor="hand2" if on else "arrow"); self.draw()
 
 
+_FONTS, _MEAS = {}, {}
+
+
+def fnt(family=None, size=10, weight="normal", font=None):
+    """Schrift nur EINMAL anlegen und wiederverwenden (jedes tkfont.Font kostet Zeit und Speicher)."""
+    key = font if font is not None else (family, size, weight)
+    f = _FONTS.get(key)
+    if f is None:
+        f = _FONTS[key] = tkfont.Font(font=font) if font is not None else tkfont.Font(family=family, size=size, weight=weight)
+    return f
+
+
+def measure(f, text):
+    k = (str(f), text)
+    v = _MEAS.get(k)
+    if v is None:
+        if len(_MEAS) > 5000:
+            _MEAS.clear()
+        v = _MEAS[k] = f.measure(text)
+    return v
+
+
 class Chip(tk.Canvas):
     """Runde Auswahl-Pille (an/aus)."""
 
     def __init__(self, parent, text, active, cmd):
-        self.font = tkfont.Font(family=FONT, size=9, weight="bold")
-        super().__init__(parent, width=self.font.measure(text) + px(26), height=px(28), bg=bg_of(parent), highlightthickness=0, bd=0, cursor="hand2")
+        self.font = fnt(FONT, 9, "bold")
+        super().__init__(parent, width=measure(self.font, text) + px(26), height=px(28), bg=bg_of(parent), highlightthickness=0, bd=0, cursor="hand2")
         self.text, self.cmd, self._hover = text, cmd, False
         self.bind("<ButtonRelease-1>", lambda e: self.cmd())
         self.bind("<Enter>", lambda e: (setattr(self, "_hover", True), self.draw()))
@@ -1277,9 +1361,13 @@ class Chip(tk.Canvas):
         self.active = active; self.draw()
 
     def draw(self):
-        self.delete("all")
         w, h = max(int(self["width"]), self.winfo_width()), int(self["height"])
         a = self.active
+        st = (w, h, a, self._hover)
+        if st == getattr(self, "_st", None):
+            return
+        self._st = st
+        self.delete("all")
         rrect(self, 1, 1, w - 1, h - 1, h / 2, fill=C["gold_dim"] if a else (C["card2"] if self._hover else C["input"]),
               outline=C["gold2"] if a else C["line2"])
         self.create_text(w / 2, h / 2, text=self.text, fill=C["gold"] if a else C["muted"], font=self.font)
@@ -1319,7 +1407,7 @@ class EntryBox(tk.Canvas):
     """Rundes Eingabefeld; .bind() geht an das Feld selbst."""
 
     def __init__(self, parent, var, width=30, big=False, center=False):
-        self.f = tkfont.Font(family=MONO if big else FONT, size=20 if big else 10, weight="bold" if big else "normal")
+        self.f = fnt(MONO if big else FONT, 20 if big else 10, "bold" if big else "normal")
         h = px(54 if big else 34)
         w = self.f.measure("0") * width + px(24)
         super().__init__(parent, width=w, height=h, bg=bg_of(parent), highlightthickness=0, bd=0)
@@ -1422,11 +1510,32 @@ class Scroll(tk.Frame):
         self.cv.configure(yscrollcommand=self._bar)
         self.inner.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
         self.cv.bind("<Configure>", lambda e: self.cv.itemconfigure(self.win, width=e.width))
-        self.cv.bind_all("<MouseWheel>", self._wheel, add="+")
+        Scroll._live.append(self)
+        if not Scroll._bound:
+            self.cv.bind_all("<MouseWheel>", Scroll._wheel_all, add="+")
+            Scroll._bound = True
+
+    _live, _bound = [], False
+
+    @staticmethod
+    def _wheel_all(e):
+        alive = []
+        for sc in Scroll._live:
+            try:
+                if sc.winfo_exists():
+                    alive.append(sc)
+            except tk.TclError:
+                pass
+        Scroll._live = alive
+        for sc in alive[::-1]:
+            sc._wheel(e)
 
     def _bar(self, a, b):
         """Schmaler goldener Scrollbalken (nur sichtbar, wenn es etwas zu scrollen gibt)."""
         a, b = float(a), float(b)
+        if (a, b) == getattr(self, "_ab", None):
+            return
+        self._ab = (a, b)
         self.bar.delete("all")
         h = self.bar.winfo_height()
         if b - a < 0.999 and h > 10:
@@ -1480,7 +1589,7 @@ class Seg(tk.Canvas):
 
     def __init__(self, parent, options, value, cb, small=False):
         self.opts, self.value, self.cb = options, value, cb
-        self.font = tkfont.Font(family=FONT, size=9 if small else 10, weight="bold")
+        self.font = fnt(FONT, 9 if small else 10, "bold")
         self.pad = px(14 if small else 18)
         self.ws = [self.font.measure(lab) + 2 * self.pad for _k, lab in options]
         h = px(30 if small else 34)
@@ -1634,7 +1743,7 @@ class MarkerList(tk.Canvas):
 
     def _btn(self, x2, y, label, tag, col, cmd):
         f = (FONT, 9, "bold")
-        w = tkfont.Font(font=f).measure(label) + px(22)
+        w = measure(fnt(font=f), label) + px(22)
         x1 = x2 - w
         rrect(self, x1, y - px(14), x2, y + px(14), px(12), fill=C["card2"], outline=C["line2"], tags=(tag, tag + "b"))
         self.create_text((x1 + x2) / 2, y, text=label, fill=col, font=f, tags=(tag,))
@@ -1667,7 +1776,7 @@ class MarkerList(tk.Canvas):
             bx = self.bbox(t1)[2] + px(10)
             rn = (m.get("_rname") or "").upper()[:12]
             if rn:
-                tw = tkfont.Font(family=FONT, size=8, weight="bold").measure(rn) + px(16)
+                tw = measure(fnt(FONT, 8, "bold"), rn) + px(16)
                 rrect(self, bx, y0 + px(13), bx + tw, y0 + px(31), px(9), fill=C["bad"] if ball else C["gold2"], outline="")
                 self.create_text(bx + tw / 2, y0 + px(22), text=rn, fill="#0b0e16", font=(FONT, 8, "bold"))
                 bx += tw + px(10)
@@ -1794,6 +1903,7 @@ class Overlay:
     def add_alert(self, a):
         a.setdefault("until", time.time() + 60 * int(self.app.cfg["alerts"].get("show_min", 10)))
         a.setdefault("id", "%s%.3f" % (a.get("icon", ""), time.time()))
+        a.setdefault("born", time.time())
         self.alerts = [x for x in self.alerts if x["until"] > time.time()][-4:] + [a]
         self._drawn = None
         if not self.win and self.app.cfg["overlay"].get("show", True):
@@ -1803,6 +1913,9 @@ class Overlay:
     def active(self):
         now = time.time()
         self.alerts = [x for x in self.alerts if x["until"] > now]
+        for x in self.alerts:                    # nur 1 Minute blinken, danach ruhig stehen (spart viel Neuzeichnen)
+            if x.get("blink") and now - x.get("born", now) > 60:
+                x["blink"] = False
         return self.alerts[-2:][::-1]            # neuester oben, max. 2
 
     def copy_alert(self):
@@ -1843,7 +1956,7 @@ class Overlay:
         fs = int(ov.get("size", 11))
         F = {"lab": (FONT, fs), "val": (FONT, fs, "bold"), "big": (FONT, fs + 4, "bold"), "head": (FONT, max(7, fs - 3), "bold"),
              "small": (FONT, max(7, fs - 2)), "tiny": (FONT, max(7, fs - 3), "bold")}
-        M = {k: tkfont.Font(font=v) for k, v in F.items()}
+        M = {k: fnt(font=v) for k, v in F.items()}
         rng = T(ov.get("range", "r_session"))
         if ov.get("range") == "r_since" and ov.get("since"):
             rng = "%s %s" % ("seit" if self.app.cfg["lang"] == "de" else "since", ov["since"])
@@ -1926,7 +2039,7 @@ class Overlay:
 
         def mk_right(m):
             sec = int(time.time() - m["t"])
-            age = "%d:%02d" % (sec // 60, sec % 60) if sec < 3600 else self.app.ago(m["t"])
+            age = ("<1 Min" if sec < 60 else "%d Min" % (sec // 60)) if sec < 3600 else self.app.ago(m["t"])
             return ("X %d · Y %d   " % (m["x"], m["y"]) if coords else "") + age
         bl = [(mk_label(m), mk_right(m), m) for m in balls]
         inner = max(inner, max([M["val"].measure(a) + M["small"].measure(b) + px(46) for a, b, _ in bl] + [0]),
@@ -2042,7 +2155,7 @@ class Overlay:
             self.flash_until = now + 4                        # neuer Kampf: kurz golden
         al = self.active()
         blink = any(a.get("blink") for a in al)
-        bsig = (len(self.app.scanner.markers), int(now) if self.app.cfg["overlay"].get("mk_mode", "ball") != "off" and self.app.scanner.markers else 0)
+        bsig = (len(self.app.scanner.markers), int(now // 5) if self.app.cfg["overlay"].get("mk_mode", "ball") != "off" and self.app.scanner.markers else 0)
         # nur neu zeichnen, wenn sich etwas aendert (kein Dauer-Pulsieren mehr -> weniger Last)
         key = (id(vals), now < self.flash_until, tuple(a["id"] for a in al), int(now * 2) % 2 if blink else 0,
                int(now // 60) if al else 0, bsig, self.app.focus_id(), self.app.cfg["overlay"].get("mk_mode"),
@@ -2318,18 +2431,20 @@ class MarchWin(Float):
         rows = getattr(app, "_marches", [])
         vals = [v for v in (ov.get("march_vals") or ["kp", "trade"]) if v in self.VALS][:4]
         gapy = px(int(ov.get("march_gap", 96)))
-        key = (tuple((r["k"], r["kp"], r["own"], r["en"], r.get("acc"), r.get("kills")) for r in rows), gapy, tuple(vals), app.cfg["lang"],
+        key = (tuple((r["k"], r["kp"], r["own"], r["en"], r.get("acc"), r.get("kills"), r.get("dead"), r.get("n")) for r in rows), gapy, tuple(vals), app.cfg["lang"],
                ov.get("march_icons", True), ov.get("icons", True))
         if key == self._drawn and not force:
             return
         self._drawn = key
         lh = px(17)
         rh = max(px(44), px(10) + lh * len(vals))
-        W = px(150) if ov.get("march_icons", True) else px(118)
+        W = px(176) if ov.get("march_icons", True) else px(118)
         H = (len(rows) - 1) * max(gapy, rh + px(4)) + rh if rows else rh
         cv = self.cv
         cv.delete("all"); cv._imgs = []
         cv.configure(width=W + 1, height=H + 1)
+        if not any(r["k"] for r in rows):
+            rows = []
         if not rows:
             rrect(cv, 0, 0, W, rh, px(12), fill="#090c13", outline="#4a3a10")
             cv.create_text(W / 2, rh / 2, text=T("march_empty"), fill=C["dim"], font=(FONT, 8))
@@ -2337,10 +2452,18 @@ class MarchWin(Float):
         lang = app.cfg["lang"]
         for i, r in enumerate(rows):
             y = i * max(gapy, rh + px(4))
+            if not r["k"]:                                 # leerer Platz: nur dezenter Rahmen
+                rrect(cv, 0, y, W, y + rh, px(12), fill="#090c13", outline="#1c2436")
+                cv.create_text(W / 2, y + rh / 2, text="–", fill=C["dim"], font=(FONT, 10, "bold"))
+                cv.create_text(W - px(8), y + px(7), text=str(r["slot"]), anchor="ne", fill=C["dim"], font=(FONT, 8, "bold"))
+                continue
             rrect(cv, 0, y, W, y + rh, px(12), fill="#090c13", outline="#4a3a10")
-            tx0 = px(44)
-            if ov.get("march_icons", True):
-                hero_badge(cv, app, px(5), y + (rh - px(32)) / 2, r["k"][0], True)
+            tx0 = px(70)
+            if ov.get("march_icons", True):                # beide Kommandanten: Haupt vorne, Zweit leicht dahinter
+                yb = y + (rh - px(32)) / 2
+                if r["k"][1]:
+                    hero_badge(cv, app, px(29), yb, r["k"][1], True)
+                hero_badge(cv, app, px(5), yb, r["k"][0], True)
             else:
                 tx0 = px(12)
             tr = (r["en"] / r["own"]) if r["own"] else (float("inf") if r["en"] else None)
@@ -2362,11 +2485,8 @@ class MarchWin(Float):
         """Rechtsklick auf eine Zeile: festlegen, welcher Marsch dort steht."""
         app, T = self.app, self.app.t
         gapy = px(int(app.cfg["overlay"].get("march_gap", 96)))
-        idx = max(0, int(e.y // gapy))
-        m = tk.Menu(self.win, tearoff=0, bg=C["card"], fg=C["text"], activebackground=C["gold_dim"], activeforeground=C["gold"])
-        m.add_command(label=T("march_auto"), command=lambda: app.set_march_slot(idx, None))
-        for k, st in sorted(getattr(app, "_march_all", {}).items(), key=lambda kv: -kv[1]["last"])[:12]:
-            m.add_command(label="%s + %s" % (app.hero_name(k[0]), app.hero_name(k[1])), command=lambda k=k: app.set_march_slot(idx, k))
+        idx = max(0, int(e.y // max(gapy, px(44))))
+        m = app.slot_menu(self.win, idx)
         m.add_separator()
         m.add_command(label="✕ " + T("menu_hide"), command=lambda: app.set_module("march", False))
         m.tk_popup(e.x_root, e.y_root)
@@ -2398,7 +2518,7 @@ class Toast:
         line1 = ("⚔ " + (T("victory") if c["win"] else T("defeat"))) if c["pvp"] else ("🪓 " + (c["enemy"] or "NPC") + ((" Lv %d" % c["lvl"]) if c["lvl"] else ""))
         line2 = ("+%s KP  ·  %s %s" % (fmt_num(c["kp"], app.cfg["lang"]), T("trade"), fmt_trade(c["trade"]))) if c["pvp"] else \
                 (T("victory") if c["win"] else T("defeat"))
-        f1, f2 = tkfont.Font(family=FONT, size=13, weight="bold"), tkfont.Font(family=FONT, size=10, weight="bold")
+        f1, f2 = fnt(FONT, 13, "bold"), fnt(FONT, 10, "bold")
         W = max(f1.measure(line1), f2.measure(line2)) + px(90)
         H = px(62)
         cv.configure(width=W + 1, height=H + 1)
@@ -2703,6 +2823,16 @@ class App:
             self.side_user.configure(text="● " + (self.cfg.get("user_name") or "?"), fg=C["good"])
         else:
             self.side_user.configure(text="○ " + self.t("not_conn").split(".")[0], fg=C["muted"])
+        state = (self.page, getattr(self, "mk_sub", ""), getattr(self, "ov_sub", ""))
+        keep = []
+        if state == getattr(self, "_rstate", None):          # gleiche Seite neu gezeichnet -> nicht nach oben springen
+            for sc in Scroll._live:
+                try:
+                    if sc.winfo_exists() and str(sc).startswith(str(self.main)):
+                        keep.append(sc.cv.yview()[0])
+                except tk.TclError:
+                    pass
+        self._rstate = state
         for c in self.main.winfo_children():
             c.destroy()
         key, ico, lab, sub = next(p for p in PAGES if p[0] == self.page)
@@ -2717,6 +2847,13 @@ class App:
             body = tk.Frame(sc.inner, bg=C["bg"]); body.pack(fill="both", expand=True, padx=(0, px(22)), pady=(0, px(10)))
         getattr(self, "page_" + key)(body)
         self._owners_keys = tuple(sorted(self.scanner.owners))
+        if keep and any(keep):
+            def restore(keep=keep):
+                scs = [sc for sc in Scroll._live if sc.winfo_exists() and str(sc).startswith(str(self.main))]
+                self.main.update_idletasks()
+                for sc, f in zip(scs, keep):
+                    sc.cv.configure(scrollregion=sc.cv.bbox("all")); sc.cv.yview_moveto(f)
+            restore()
 
     # ---------- Seiten ----------
     def page_home(self, body):
@@ -2929,13 +3066,19 @@ class App:
         with self.scanner.lock:
             bs = list(self.scanner.battles.values())
         ov = self.cfg["overlay"]
-        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"))
+        mr = ov.get("march_reset", "fight")
+        gap = int(ov.get("fight_gap", 300)) if mr == "fight" else 0
+        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"), int(ov.get("fight_gap", 300)))
         newest = cards[0] if cards else None
         old = self._feed[0]["id"] if self._feed else None
         self._feed = cards
         if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and ov.get("toast", True):
             self.toast.show(newest)                              # Pop-up nach jedem neuen Kampf
-        ms = march_stats(bs, ids, since, ov.get("march_reset", "last") == "last")
+        ms = march_stats(bs, ids, since, mr == "last", ov.get("pvp_only", True), gap)
+        if mr in ("last", "fight"):                       # "zuletzt benutzt" trotzdem aus allen Berichten (fuer die Auto-Reihenfolge)
+            for k, v in march_stats(bs, ids, 0).items():
+                if k in ms:
+                    ms[k]["last"] = v["last"]
         self._march_all = ms
         auto = [k for k, _v in sorted(ms.items(), key=lambda kv: -kv[1]["last"])]
         slots = (ov.get("march_slots") or [None] * 5)
@@ -2946,7 +3089,8 @@ class App:
             if not k:
                 k = next((a for a in auto if a not in used and tuple(a) not in [tuple(x) for x in slots if x]), None)
             if not k:
-                continue
+                rows.append({"k": None, "kp": 0, "own": 0, "en": 0, "kills": 0, "acc": 0, "dead": 0, "n": 0, "slot": n - i})
+                continue                                   # leerer Platz bleibt stehen -> nichts rutscht hoch
             used.add(k)
             st = ms.get(tuple(k), {})
             rows.append({"k": tuple(k), "kp": st.get("kp", 0), "own": st.get("own", 0), "en": st.get("en", 0), "kills": st.get("kills", 0),
@@ -2958,15 +3102,32 @@ class App:
     def set_module(self, key, on):
         self.cfg["overlay"][key] = on; save_cfg(self.cfg)
         {"feed": self.feed, "march": self.march}.get(key, self.overlay).show(on)
-        if self.page == "ov":
-            self.render()
 
     def set_march_slot(self, idx, k):
         sl = self.cfg["overlay"].setdefault("march_slots", [None] * 5)
         while len(sl) < 5:
             sl.append(None)
+        if k:                                           # gleicher Marsch nicht auf zwei Plaetzen
+            for j in range(len(sl)):
+                if sl[j] and tuple(sl[j]) == tuple(k):
+                    sl[j] = None
         sl[idx] = list(k) if k else None
         save_cfg(self.cfg); self._sig = None
+        self.update_modules(getattr(self, "_ids_cur", None), getattr(self, "_since_cur", 0), True)
+        self.march.draw(True)
+        if self.page == "ov" and getattr(self, "ov_sub", "") == "mods":
+            self.render()
+
+    def pair_name(self, k):
+        return "%s + %s" % (self.hero_name(k[0]), self.hero_name(k[1])) if k else "⚡ " + self.t("march_auto")
+
+    def slot_menu(self, parent, idx):
+        m = tk.Menu(parent, tearoff=0, bg=C["card"], fg=C["text"], activebackground=C["gold_dim"], activeforeground=C["gold"])
+        m.add_command(label="⚡ " + self.t("march_auto"), command=lambda: self.set_march_slot(idx, None))
+        m.add_separator()
+        for k, st in sorted(getattr(self, "_march_all", {}).items(), key=lambda kv: -kv[1]["last"])[:15]:
+            m.add_command(label="%s   (%s)" % (self.pair_name(k), self.ago(st["last"])), command=lambda k=k: self.set_march_slot(idx, k))
+        return m
 
     def set_clickthrough(self, on):
         self.cfg["overlay"]["clickthrough"] = on; save_cfg(self.cfg)
@@ -3578,9 +3739,16 @@ class App:
         Btn(xr, T("pos_set"), go_exact, small=True).pack(side="left")
 
     def page_ov(self, body):
-        T, ov = self.t, self.cfg["overlay"]
+        T = self.t
         self.focus_bar(body, C["bg"]).pack(fill="x", pady=(0, px(10)))
-        top = tk.Frame(body, bg=C["bg"]); top.pack(fill="x")
+        sub = getattr(self, "ov_sub", "view")
+        Seg(body, [("view", "👁 " + T("ovt_view")), ("mods", "✨ " + T("ovt_mods")), ("pos", "📐 " + T("ovt_pos")), ("vals", "📊 " + T("ovt_vals"))],
+            sub, lambda v: (setattr(self, "ov_sub", v), self.render())).pack(anchor="w", pady=(0, px(4)))
+        {"view": self._ov_view, "mods": self._ov_mods, "pos": self.pos_card, "vals": self._ov_vals}.get(sub, self._ov_view)(body)
+
+    def _ov_view(self, body):
+        T, ov = self.t, self.cfg["overlay"]
+        top = tk.Frame(body, bg=C["bg"]); top.pack(fill="x", pady=(px(10), 0))
         o, c = card(top, T("card_view")); ov_cards = [o]
         for key, lab in (("show", "ov_show"), ("locked", "ov_lock"), ("pvp_only", "ov_pvp_only"), ("count_pilot", "ov_pilot")):
             v = tk.BooleanVar(value=ov.get(key, key in ("show", "pvp_only")))
@@ -3637,59 +3805,146 @@ class App:
         es.bind("<Return>", lambda _e: self.set_since()); es.bind("<FocusOut>", lambda _e: self.set_since())
         Btn(c, "↺  " + T("ov_reset"), self.reset_session, "ghost", small=True).pack(anchor="w", pady=(10, 0))
 
-        # --- Module: Kampf-Feed, Pop-up, Marsch-Leiste, Tagesziel, Durchklick
+    def chips_row(self, c, label, key, opts, fmt, after=None, custom=None):
+        """Zeile mit Auswahl-Pillen. custom=(einheit, faktor, min, max): eigenes Feld fuer freie Zahl."""
+        ov = self.cfg["overlay"]
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text=label, bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+        chs = {}
+        vv = tk.StringVar()
+
+        def pick(v, from_entry=False):
+            self.cfg["overlay"][key] = v; save_cfg(self.cfg); self._sig = None
+            for k2, ch in chs.items():
+                ch.set(k2 == v)
+            if custom and not from_entry:
+                vv.set(self._fmt_custom(v, custom))
+            if after:
+                after()
+        for v in opts:
+            ch = Chip(r, fmt(v), ov.get(key) == v, lambda v=v: pick(v)); ch.pack(side="left", padx=(0, px(4))); chs[v] = ch
+        if custom:
+            unit, fac, lo, hi = custom
+            vv.set(self._fmt_custom(ov.get(key, 0), custom))
+            e = entry(r, vv, 6, center=True); e.pack(side="left", padx=(px(8), px(4)))
+            tk.Label(r, text=unit, bg=C["card"], fg=C["dim"], font=(FONT, 9)).pack(side="left")
+
+            def done(_e=None):
+                try:
+                    x = float(vv.get().replace(",", "."))
+                except ValueError:
+                    return
+                v = int(round(min(hi, max(lo, x)) * fac))
+                pick(v, True)
+            e.bind("<Return>", done); e.bind("<FocusOut>", done)
+        return r
+
+    @staticmethod
+    def _fmt_custom(v, custom):
+        x = (v or 0) / custom[1]
+        return ("%g" % round(x, 2)).replace(".", ",")
+
+    def _ov_mods(self, body):
+        self._ov_march(body)
+        self._ov_modules(body)
+
+    def _ov_modules(self, body):
+        T, ov = self.t, self.cfg["overlay"]
+        # --- Module
         o, c = card(body, "✨ " + T("card_modules")); o.pack(fill="x", pady=(px(14), 0))
         g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
-        for i, (key, lab) in enumerate((("feed", "mod_feed"), ("toast", "mod_toast"), ("march", "mod_march"), ("clickthrough", "mod_click"), ("feed_pve", "mod_feed_pve"))):
-            v = tk.BooleanVar(value=ov.get(key, key in ("feed", "toast")))
-            cmd = (lambda v=v: self.set_clickthrough(v.get())) if key == "clickthrough" else \
-                  (lambda key=key, v=v: self.set_module(key, v.get())) if key in ("feed", "march") else (lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self, "_sig", None)))
+        items = (("feed", "mod_feed"), ("toast", "mod_toast"), ("march", "mod_march"), ("clickthrough", "mod_click"), ("feed_pve", "mod_feed_pve"),
+                 ("icons", "opt_icons"), ("mk_coords", "opt_coords"), ("march_icons", "opt_march_icons"))
+        for i, (key, lab) in enumerate(items):
+            v = tk.BooleanVar(value=ov.get(key, key in ("feed", "toast", "icons", "mk_coords", "march_icons")))
+            if key == "clickthrough":
+                cmd = lambda v=v: self.set_clickthrough(v.get())
+            elif key in ("feed", "march"):
+                cmd = lambda key=key, v=v: self.set_module(key, v.get())
+            elif key in ("icons", "mk_coords", "march_icons"):
+                cmd = lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw(), self.march.draw(True))
+            else:
+                cmd = lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self, "_sig", None))
             Toggle(g, T(lab), v, cmd).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(24)), pady=px(3))
+        redraw = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
+        self.chips_row(c, T("opt_spacing"), "spacing", [3, 5, 7, 10, 14], lambda v: "%d px" % v, redraw, ("px", 1, 0, 40))
+        self.chips_row(c, T("feed_n"), "feed_n", [3, 4, 5, 6], str, lambda: self.feed.draw(True))
+        self.chips_row(c, "🏁 " + T("goal_today"), "goal_kp", [0, 5000000, 10000000, 25000000, 50000000],
+                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Mio.", 1000000, 0, 5000))
+        tk.Label(c, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
 
-        def chips_row(label, key, opts, fmt, after=None):
-            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-            tk.Label(r, text=label, bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-            chs = {}
-            def pick(v):
-                self.cfg["overlay"][key] = v; save_cfg(self.cfg); self._sig = None
-                for k2, ch in chs.items():
-                    ch.set(k2 == v)
-                if after:
-                    after()
-            for v in opts:
-                ch = Chip(r, fmt(v), ov.get(key) == v, lambda v=v: pick(v)); ch.pack(side="left", padx=(0, px(4))); chs[v] = ch
-        g2 = tk.Frame(c, bg=C["card"]); g2.pack(fill="x", pady=(px(8), 0))
-        for i, (key, lab) in enumerate((("icons", "opt_icons"), ("mk_coords", "opt_coords"), ("march_icons", "opt_march_icons"))):
-            v = tk.BooleanVar(value=ov.get(key, True))
-            Toggle(g2, T(lab), v, lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw(),
-                                                       self.march.draw(True))).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(24)), pady=px(3))
-        chips_row(T("opt_spacing"), "spacing", [3, 5, 7, 10, 14], lambda v: "%d px" % v, lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw()))
-        chips_row(T("feed_n"), "feed_n", [3, 4, 5, 6], str, lambda: self.feed.draw(True))
-        chips_row(T("march_n"), "march_n", [1, 2, 3, 4, 5], str, lambda: self.march.draw(True))
+    def _ov_march(self, body):
+        T, ov = self.t, self.cfg["overlay"]
+        o, c = card(body, "⚔ " + T("mod_march")); o.pack(fill="x", pady=(px(14), 0))
+        tk.Label(c, text=T("slot_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
+        n = int(ov.get("march_n", 4))
+        sl = list(ov.get("march_slots") or []) + [None] * 5
+        cur = {r["slot"]: r for r in getattr(self, "_marches", [])}
+        grid = tk.Frame(c, bg=C["card"]); grid.pack(fill="x")
+        for i in range(n):
+            slot = n - i
+            r = tk.Frame(grid, bg=C["card2"], padx=px(10), pady=px(6)); r.pack(fill="x", pady=px(2))
+            tk.Label(r, text=str(slot), bg=C["card2"], fg=C["gold"], font=(FONT, 13, "bold"), width=2).pack(side="left")
+            k = tuple(sl[i]) if sl[i] else None
+            row = cur.get(slot) or {}
+            shown = row.get("k")
+            txt = self.pair_name(k) if k else "⚡ %s%s" % (T("march_auto_s"), (" → " + self.pair_name(shown)) if shown else "")
+            tk.Label(r, text=txt, bg=C["card2"], fg=C["text"] if k else C["muted"], font=(FONT, 10, "bold" if k else "normal"),
+                     anchor="w").pack(side="left", fill="x", expand=True, padx=(px(8), 0))
+            if shown:
+                tk.Label(r, text="⚔ %s" % fmt_num(row.get("kp", 0), self.cfg["lang"]), bg=C["card2"], fg=C["gold"], font=(FONT, 9, "bold")).pack(side="left", padx=px(8))
+            b = Btn(r, T("slot_choose"), lambda: None, "ghost", small=True); b.pack(side="right")
+            b._cmd = lambda i=i, b=b: self.slot_menu(self.root, i).tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
+            if k:
+                Btn(r, "✕", lambda i=i: self.set_march_slot(i, None), "ghost", small=True).pack(side="right", padx=(0, px(6)))
+        rb = tk.Frame(c, bg=C["card"]); rb.pack(fill="x", pady=(px(6), 0))
+        Btn(rb, "⚡ " + T("slot_all_auto"), self.slots_auto, "ghost", small=True).pack(side="left")
+        Btn(rb, "📌 " + T("slot_fix_now"), self.slots_fix, "ghost", small=True).pack(side="left", padx=(px(6), 0))
+        self.chips_row(c, T("march_n"), "march_n", [1, 2, 3, 4, 5], str, lambda: (self.march.draw(True), self._sig_reset(), self.render()))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text=T("march_vals"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+        tk.Label(r, text=T("march_vals"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
         mv_chips = {}
+
         def mv_toggle(v):
-            cur = list(self.cfg["overlay"].get("march_vals") or ["kp", "trade"])
-            if v in cur and len(cur) > 1:
-                cur.remove(v)
-            elif v not in cur and len(cur) < 4:
-                cur.append(v)
-            self.cfg["overlay"]["march_vals"] = [x for x in MarchWin.VALS if x in cur]; save_cfg(self.cfg)
+            cur_ = list(self.cfg["overlay"].get("march_vals") or ["kp", "trade"])
+            if v in cur_ and len(cur_) > 1:
+                cur_.remove(v)
+            elif v not in cur_ and len(cur_) < 4:
+                cur_.append(v)
+            self.cfg["overlay"]["march_vals"] = [x for x in MarchWin.VALS if x in cur_]; save_cfg(self.cfg)
             for k2, ch in mv_chips.items():
-                ch.set(k2 in cur)
+                ch.set(k2 in cur_)
             self.march.draw(True)
         for v in MarchWin.VALS:
             ch = Chip(r, MarchWin.VALS[v][0] + " " + T("mv_" + v), v in (ov.get("march_vals") or ["kp", "trade"]), lambda v=v: mv_toggle(v))
             ch.pack(side="left", padx=(0, px(4))); mv_chips[v] = ch
-        chips_row(T("march_reset"), "march_reset", ["last", "sum"], lambda v: T("mr_" + v), lambda: self.march.draw(True))
-        chips_row(T("march_gap"), "march_gap", [70, 84, 96, 110, 124], lambda v: "%d px" % v, lambda: self.march.draw(True))
-        chips_row("🏁 " + T("goal_today"), "goal_kp", [0, 1000000, 5000000, 10000000, 25000000, 50000000],
-                  lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw()))
-        tk.Label(c, text=T("march_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
-        tk.Label(c, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(4), 0))
+        self.chips_row(c, T("march_reset"), "march_reset", ["fight", "last", "sum"], lambda v: T("mr_" + v),
+                       lambda: (self._sig_reset(), self.march.draw(True)))
+        self.chips_row(c, T("fight_gap"), "fight_gap", [120, 300, 600, 900], lambda v: "%d Min" % (v // 60),
+                       lambda: (self._sig_reset(), self.feed.draw(True)), ("Min", 60, 1, 120))
+        self.chips_row(c, T("march_gap"), "march_gap", [70, 84, 96, 110, 124], lambda v: "%d px" % v, lambda: self.march.draw(True), ("px", 1, 40, 250))
+        tk.Label(c, text=T("fight_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
+        tk.Label(c, text=T("march_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(4), 0))
 
-        self.pos_card(body)
+    def _sig_reset(self):
+        self._sig = None
+        self.update_modules(getattr(self, "_ids_cur", None), getattr(self, "_since_cur", 0), True)
+        self.march.draw(True)
+
+    def slots_auto(self):
+        self.cfg["overlay"]["march_slots"] = [None] * 5; save_cfg(self.cfg)
+        self._sig_reset(); self.render()
+
+    def slots_fix(self):
+        """Die gerade automatisch gezeigten Maersche fest auf ihre Plaetze legen."""
+        sl = [None] * 5
+        for i, r in enumerate(getattr(self, "_marches", [])[:5]):
+            sl[i] = list(r["k"]) if r.get("k") else None
+        self.cfg["overlay"]["march_slots"] = sl; save_cfg(self.cfg)
+        self._sig_reset(); self.render(); self.flash("📌 " + self.t("slot_fixed"))
+
+    def _ov_vals(self, body):
+        T, ov = self.t, self.cfg["overlay"]
         o, c = card(body, T("card_values")); o.pack(fill="both", expand=True, pady=(14, 0))
         grid = tk.Frame(c, bg=C["card"]); grid.pack(anchor="w")
         self.metric_chips = {}
@@ -3978,9 +4233,9 @@ class App:
             elif rng == "r_today":
                 since = datetime.combine(date.today(), datetime.min.time()).timestamp()
             elif rng == "r_24h":
-                since = now - 86400
+                since = (now - 86400) // 600 * 600          # auf 10 Min gerundet -> Zahlen springen nicht
             elif rng == "r_7d":
-                since = now - 7 * 86400
+                since = (now - 7 * 86400) // 600 * 600
             elif rng == "r_since" and ov.get("since"):
                 since = datetime.strptime(ov["since"], "%Y-%m-%d").timestamp()
             else:
@@ -3997,6 +4252,7 @@ class App:
                          and (x.get("kind") != "pilot" or ov.get("count_pilot"))]
                 ids = {int(x["governor_id"]) for x in links} if self.cfg.get("links") else None    # None = alle Accounts
             self._ids_cur = ids
+            self._since_cur = since
             with self.scanner.lock:
                 nm, self.scanner.new_markers = self.scanner.new_markers, []
                 nb = len(self.scanner.battles)
@@ -4008,7 +4264,10 @@ class App:
                 with self.scanner.lock:
                     bs = list(self.scanner.battles.values())
                 self._local = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
-                self._vals = self._local
+                if ov.get("source", "web") == "web" and getattr(self, "_web_stats", None) and self.cfg.get("token"):
+                    self._vals = web_vals(self._web_stats, self._local, self.cfg.get("lang", "de"))   # bis neue Website-Zahlen da sind
+                else:
+                    self._vals = self._local
             web = ov.get("source", "web") == "web" and self.cfg.get("token")
             q = "stats&since=%d&pvp=%d&pilot=%d&only=%s" % (int(since) // 60 * 60, 1 if ov.get("pvp_only", True) else 0,
                                                              1 if ov.get("count_pilot") else 0, fgid or "")
@@ -4030,7 +4289,7 @@ class App:
                     if err or not d or not d.get("stats"):
                         self._web_err = str(err) if err else ""
                         if getattr(self, "_web_q", None) != q:
-                            self._web_q, self._web_stats = q, None       # nicht jede Sekunde neu versuchen
+                            self._web_q = q                              # nicht jede Sekunde neu versuchen, letzte Zahlen bleiben stehen
                         return
                     self._web_err, self._web_q, self._web_stats = "", q, d["stats"]
                     self._vals = web_vals(d["stats"], getattr(self, "_local", {}), lang)
