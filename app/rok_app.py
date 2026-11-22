@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.28-test"
+APP_VERSION = "0.29-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -73,13 +73,13 @@ TXT = {
     "pos_ov": "Overlay", "pos_march": "Marsch-Leiste", "pos_feed": "Kampf-Feed", "pos_quick": "Schnell-Platz", "pos_fine": "Feinjustieren",
     "pos_step": "Schritt", "pos_exact": "Genau eingeben", "pos_set": "Setzen",
     "march_reset": "Marsch-Werte", "mr_last": "Aktuellster Bericht", "mr_sum": "Alles im Zeitraum",
-    "last_info": "Aktuellster Bericht: Die Leiste zeigt immer den neuesten Kampfbericht des Marsches. Läuft der Kampf weiter, wächst die Zahl mit. Kommt ein komplett neuer Bericht, fängt der Marsch wieder bei 0 an. Barbaren/Späher ändern nichts, solange „nur PvP“ an ist.",
+    "last_info": "Aktuellster Bericht: Die Leiste zeigt den neuesten Bericht des Marsches so wie im Spiel unter „Data Summary“ – alle Teil-Kämpfe (Battle Streak) zusammengerechnet. Läuft der Kampf weiter, wächst die Zahl mit. Kommt ein komplett neuer Bericht, fängt der Marsch wieder bei 0 an. Barbaren/Späher ändern nichts, solange „nur PvP“ an ist.",
     "fight_gap": "Neues Gefecht nach", "fight_info": "Gefecht: Alle Berichte eines Marsches, die dichter als die eingestellte Pause beieinander liegen, werden zusammengerechnet. Erst nach der Pause startet der Marsch wieder bei 0. Pop-up kommt nur einmal pro Gefecht.",
     "ovt_view": "Anzeige", "ovt_mods": "Module & Märsche", "ovt_pos": "Position", "ovt_vals": "Werte",
     "slot_info": "Leg fest, welcher Marsch auf welchem Platz der Leiste steht (Platz 1 = unten, wie im Spiel). „Automatisch“ nimmt die zuletzt benutzten. Rechtsklick auf die Leiste im Spiel geht auch.",
     "march_auto_s": "Automatisch", "slot_choose": "Marsch wählen ▾", "slot_all_auto": "Alle automatisch", "slot_fix_now": "Aktuelle festhalten", "slot_fixed": "Märsche festgehalten",
     "md_title": "Details zu diesem Marsch", "md_fight": "Aktueller Bericht", "md_today": "Heute", "md_all": "Alle Berichte", "md_reports": "Berichte",
-    "md_info": "Jede Zeile = ein Kampfbericht dieses Marsches (neueste oben). Hell hinterlegt = der aktuellste Bericht, den die Marsch-Leiste zeigt. Läuft der Kampf weiter, wird diese Zeile größer – ein neuer Bericht kommt als neue Zeile oben dazu.",
+    "md_info": "Jede Zeile = ein Kampfbericht dieses Marsches (neueste oben). Gleiche Nummer = ein Bericht im Spiel (Battle Streak: Hauptbericht + Teil-Berichte werden zusammengerechnet). Hell hinterlegt = der aktuellste Bericht, den die Marsch-Leiste zeigt.",
     "md_time": "Zeit", "md_kp_all": "KP inkl. NPC", "md_n": "Kämpfe", "md_enemy": "Gegner", "md_copy": "Liste kopieren (für Claude)",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
@@ -354,6 +354,7 @@ def summarize(mail):
     if isinstance(t, (int, float)) and t > 1e14:
         t = t / 1e6
     out = {"id": str(mail.get("id")), "pid": pid, "name": me.get("PName"), "t": int(t or 0), "arch": mail.get("box") == "Archive", "fights": [],
+           "par": str(mail.get("parentId") or mail.get("id")),       # Battle Streak: alle Teil-Berichte haengen am Hauptbericht
            "h": [me.get("HId") or 0, me.get("HId2") or 0]}                      # eigene Kommandanten (= welcher Marsch)
     for a in (c.get("Attacks") or {}).values():
         if not isinstance(a, dict):
@@ -677,6 +678,9 @@ class Scanner:
                     m["key"] = k
                 self.owners = {int(k): v for k, v in d.get("owners", {}).items()}
                 self.uploaded = set(d.get("uploaded", []))
+                for b in self.battles.values():          # v0.29: Hauptbericht (parentId) fehlt -> diese Datei neu lesen
+                    if "par" not in b and b.get("file") and b.get("dir"):
+                        self.seen.pop(b["dir"] + "|" + os.path.basename(b["file"]), None)
         except Exception:
             pass
 
@@ -1064,35 +1068,31 @@ def battle_card(b):
             "h": (b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": len(fs)}
 
 
-def engagements(battles, ids, gap, pvp_only):
-    """Viele Mini-Kaempfe eines Marsches = EIN Gefecht: Berichte desselben Marsches, die weniger als `gap` Sekunden
-    auseinander liegen, werden zusammengerechnet. Erst nach einer Pause beginnt ein neues Gefecht."""
+def reports(battles, ids, pvp_only):
+    """Ein Bericht wie im Spiel: Hauptbericht + alle Teil-Berichte (Battle Streak, gleiche parentId) zusammengerechnet.
+    Waechst, solange der Kampf weiterlaeuft; ein neuer Hauptbericht = neuer Bericht (faengt bei 0 an)."""
     per = {}
     for b in battles:
         if (ids is not None and b["pid"] not in ids) or b.get("arch"):
             continue
-        if pvp_only and not any(f[0] for f in b["fights"]):
-            continue
-        k = (b["pid"], tuple(b.get("h") or (0, 0)))
-        per.setdefault(k, []).append(b)
-    out = []
-    for (pid, h), lst in per.items():
-        lst.sort(key=lambda b: b["t"])
-        g = None
-        for b in lst:
-            if g is None or b["t"] - g["t"] > gap:
-                g = {"id": b["id"], "pid": pid, "h": list(h), "t0": b["t"], "t": b["t"], "fights": [], "nrep": 0}
-                out.append(g)
-            g["fights"] = g["fights"] + b["fights"]
-            g["t"] = max(g["t"], b["t"]); g["nrep"] += 1
+        k = (b["pid"], b.get("par") or b["id"])
+        g = per.get(k)
+        if g is None:
+            g = per[k] = {"id": k[1], "pid": b["pid"], "h": list(b.get("h") or (0, 0)), "t0": b["t"], "t": b["t"], "mt": b.get("mt", 0),
+                          "fights": [], "nrep": 0}
+        g["fights"] = g["fights"] + b["fights"]
+        g["nrep"] += 1
+        g["t0"] = min(g["t0"], b["t"]); g["t"] = max(g["t"], b["t"]); g["mt"] = max(g["mt"], b.get("mt", 0))
+        if b["id"] == k[1] and b.get("h") and b["h"][0]:
+            g["h"] = list(b["h"])                       # Kommandanten vom Hauptbericht
+    out = list(per.values())
+    if pvp_only:
+        out = [g for g in out if any(f[0] for f in g["fights"])]
     return out
 
 
-def recent_cards(battles, ids, n, pvp_only, gap=0):
-    if gap:
-        bs = sorted(engagements(battles, ids, gap, pvp_only), key=lambda b: -b["t"])
-    else:
-        bs = sorted((b for b in battles if (ids is None or b["pid"] in ids) and not b.get("arch")), key=lambda b: -b["t"])
+def recent_cards(battles, ids, n, pvp_only):
+    bs = sorted(reports(battles, ids, False), key=lambda b: (-b["t0"], -b["mt"]))      # ein Eintrag je Bericht wie im Spiel
     out = []
     for b in bs:
         c = battle_card(b)
@@ -1103,29 +1103,18 @@ def recent_cards(battles, ids, n, pvp_only, gap=0):
     return out
 
 
-def march_stats(battles, ids, since_ts, last_only=False, pvp_only=True, gap=0):
+def march_stats(battles, ids, since_ts, last_only=False, pvp_only=True):
     """Pro eigenem Marsch (Kommandanten-Paar): KP, Kills, Acclaim, Tote, Verluste, Trade, Anzahl Berichte, zuletzt benutzt.
     last_only: nur der NEUESTE Bericht je Marsch zaehlt – jeder neue Bericht setzt die Werte zurueck."""
     res = {}
-    if gap:                                              # nur das letzte Gefecht je Marsch (Mini-Kaempfe zusammengerechnet)
+    if last_only:                                        # aktuellster Bericht je Marsch (Hauptbericht + Teil-Berichte)
         newest = {}
-        for g in engagements(battles, ids, gap, pvp_only):
+        for g in reports(battles, ids, pvp_only):
             k = tuple(g["h"])
             if not k[0]:
                 continue
-            if k not in newest or g["t"] > newest[k]["t"]:
+            if k not in newest or (g["t0"], g["mt"]) > (newest[k]["t0"], newest[k]["mt"]):
                 newest[k] = g
-        battles, since_ts = list(newest.values()), 0
-    elif last_only:
-        newest = {}
-        for b in battles:
-            if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
-                continue
-            if not any(f[0] for f in b["fights"]) and (pvp_only or not b["fights"]):
-                continue                                   # Barbar/Spaehen o. Ae. setzt die Marsch-Werte NICHT auf 0
-            k = (b["h"][0], b["h"][1])
-            if k not in newest or (b["t"], b.get("mt", 0)) > (newest[k]["t"], newest[k].get("mt", 0)):
-                newest[k] = b
         battles, since_ts = list(newest.values()), 0
     for b in battles:
         if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
@@ -3111,7 +3100,7 @@ class App:
             if time.time() - last.get(hk, 0) > 60:
                 last[hk] = time.time(); self._toast_last = last
                 self.toast.show(newest)
-        ms = march_stats(bs, ids, since, mr == "last", ov.get("pvp_only", True), gap)
+        ms = march_stats(bs, ids, since, mr == "last", ov.get("pvp_only", True))
         if mr == "last":                       # "zuletzt benutzt" trotzdem aus allen Berichten (fuer die Auto-Reihenfolge)
             for k, v in march_stats(bs, ids, 0).items():
                 if k in ms:
@@ -3164,15 +3153,18 @@ class App:
             bs = [b for b in self.scanner.battles.values() if tuple(b.get("h") or ()) == k and (ids is None or b["pid"] in ids) and not b.get("arch")]
         bs.sort(key=lambda b: (b["t"], b.get("mt", 0)))
         day = datetime.combine(date.today(), datetime.min.time()).timestamp()
-        rows, g = [], 0
+        order = {}                                       # Hauptbericht -> Bericht-Nr. (wie im Spiel: Teil-Berichte gehoeren dazu)
         for b in bs:
-            g += 1
+            order.setdefault(b.get("par") or b["id"], len(order) + 1)
+        rows = []
+        for b in bs:
+            g = order[b.get("par") or b["id"]]
             kp_all = sum(f[1] for f in b["fights"]); kp_pvp = sum(f[1] for f in b["fights"] if f[0])
             en = next((f[10] for f in b["fights"] if f[10]), "") or ("NPC" if b["fights"] else "–")
             rows.append((b, g, kp_all, kp_pvp, en))
         pvp_only = ov.get("pvp_only", True)
         rel = [r for r in rows if any(f[0] for f in r[0]["fights"]) or (not pvp_only and r[0]["fights"])]
-        last_g = rel[-1][1] if rel else 0
+        last_g = max((r[1] for r in rel), default=0)
         tot_g = sum(r[3] for r in rows if r[1] == last_g)
         tot_day = sum(r[3] for r in rows if r[0]["t"] >= day)
         tot_all = sum(r[3] for r in rows)
