@@ -213,7 +213,8 @@ module.exports = async (req, res) => {
       const mine = await okIds(u.id);                          // nur bestaetigte Bindungen (keine offenen Pilot-Anfragen)
       const ok = rows.filter((r) => r && r.mail_id && r.opponent_id != null && mine.has(String(r.player_id)))
         .map((r) => ({ ...r, account: mine.get(String(r.player_id)) }));
-      if (ok.length) await rest('POST', 'rok_battles?on_conflict=mail_id,opponent_id', ok, 'resolution=merge-duplicates,return=minimal');
+      // ignore-duplicates: hat dein PC-Uploader den Kampf schon gespeichert, bleibt seine Zeile unveraendert (kein Doppelt, kein Ueberschreiben)
+      if (ok.length) await rest('POST', 'rok_battles?on_conflict=mail_id,opponent_id', ok, 'resolution=ignore-duplicates,return=minimal');
       return res.json({ ok: true, saved: ok.length, skipped: rows.length - ok.length });
     }
     return res.status(400).json({ error: 'Unbekannte Aktion.' });
