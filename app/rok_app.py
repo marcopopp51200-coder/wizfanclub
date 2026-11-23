@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.29-test"
+APP_VERSION = "0.30-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -206,7 +206,7 @@ METRICS = ["m_kp", "m_kp_all", "m_kp_last", "m_kp_trade", "m_loss_trade", "m_pow
 RANGES = ["r_session", "r_today", "r_24h", "r_7d", "r_since", "r_all"]
 
 DEFAULT_CFG = {
-    "api_base": "https://rok-scanner.vercel.app", "token": "", "user_name": "", "lang": "de",
+    "api_base": "https://wiz-fanclub.vercel.app", "token": "", "user_name": "", "lang": "de",
     "game_folders": [], "links": [],
     "overlay": {"show": True, "x": 60, "y": 60, "alpha": 0.85, "locked": False, "size": 11,
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
@@ -239,6 +239,8 @@ def load_cfg():
         rl = cfg["markers"].get("rules") or []
         if len(rl) == 3:                                             # v0.20: 4. Art Runen
             rl.append({"name": "Runen", "words": "rune, runes, runen, rn", "sound": "ding"})
+        if cfg.get("api_base", "").rstrip("/") == "https://rok-scanner.vercel.app":   # v0.30: alte Standard-Adresse gibt es nicht
+            cfg["api_base"] = "https://wiz-fanclub.vercel.app"
         if cfg["overlay"].get("march_reset") == "fight":              # v0.28: Gefecht-Modus entfernt -> aktuellster Bericht
             cfg["overlay"]["march_reset"] = "last"
         if len(rl) >= 3 and rl[2].get("name") == "Sammeln":          # v0.19: 3. Art ist jetzt Garnison
@@ -577,7 +579,7 @@ from urllib.parse import urlparse, parse_qs
 PROTO = "wizfanclub"
 IPC_PORT = 47851                     # nur lokal (127.0.0.1): uebergibt Links an die schon laufende App
 # Nur diese Websites duerfen die App verbinden (Schutz vor gefaelschten Links)
-SITE_OK = re.compile(r"^https://(rok-scanner[a-z0-9-]*\.vercel\.app|([a-z0-9-]+\.)*wizfanclub\.[a-z]+)$", re.I)
+SITE_OK = re.compile(r"^https://((rok-scanner|wiz-fanclub)[a-z0-9-]*\.vercel\.app|([a-z0-9-]+\.)*wiz-?fanclub\.[a-z]+)$", re.I)
 
 
 def register_protocol():
