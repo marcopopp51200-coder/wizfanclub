@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.33-test"
+APP_VERSION = "0.34-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -72,7 +72,7 @@ TXT = {
     "pos_title": "Position", "pos_info": "Fenster wählen und per Knopf setzen – klappt auch, wenn „Durchklick“ an ist und du nicht ziehen kannst. Die Position bleibt gespeichert.",
     "pos_ov": "Overlay", "pos_march": "Marsch-Leiste", "pos_feed": "Kampf-Feed", "pos_quick": "Schnell-Platz", "pos_fine": "Feinjustieren",
     "pos_step": "Schritt", "pos_exact": "Genau eingeben", "pos_set": "Setzen",
-    "march_reset": "Marsch-Werte", "mr_last": "Aktuellster Bericht", "mr_sum": "Alles im Zeitraum",
+    "march_reset": "Marsch-Werte", "mr_last": "Last Report", "mr_sum": "Total",
     "last_info": "Aktuellster Bericht: Die Leiste zeigt den neuesten Bericht des Marsches so wie im Spiel unter „Data Summary“ – alle Teil-Kämpfe (Battle Streak) zusammengerechnet. Läuft der Kampf weiter, wächst die Zahl mit. Kommt ein komplett neuer Bericht, fängt der Marsch wieder bei 0 an. Barbaren/Späher ändern nichts, solange „nur PvP“ an ist.",
     "fight_gap": "Neues Gefecht nach", "fight_info": "Gefecht: Alle Berichte eines Marsches, die dichter als die eingestellte Pause beieinander liegen, werden zusammengerechnet. Erst nach der Pause startet der Marsch wieder bei 0. Pop-up kommt nur einmal pro Gefecht.",
     "ovt_view": "Anzeige", "ovt_mods": "Module & Märsche", "ovt_pos": "Position", "ovt_vals": "Werte",
@@ -102,6 +102,10 @@ TXT = {
     "exp_gone": "50 % Expansion weg!", "exp_troops": "Marsch nur noch {n} Truppen", "exp_now_on": "Gerade: aktiv (%s)", "exp_now_off": "Gerade: nicht aktiv (%s)", "exp_none": "Noch kein Bericht in den letzten 3 Std.",
     "rok_only": "Nur mit Rise of Kingdoms öffnen", "rok_only_info": "Zusammen mit „Mit Windows starten“: Die App wartet unsichtbar und öffnet sich erst, wenn RoK läuft. Schließt du RoK, verschwinden App und Overlay wieder.",
     "rok_now_on": "RoK läuft gerade ✓", "rok_now_off": "RoK läuft gerade nicht",
+    "order_title": "Reihenfolge im Overlay", "order_info": "Mit ▲ ▼ verschieben – z. B. Acclaim über KP-Trade. Neue Werte kommen unten dazu.",
+    "hk_title": "Tastenkürzel", "hk_set_info": "Ins Feld klicken und die neue Kombination drücken (z. B. Strg+Umschalt+F2). Funktioniert auch im Spiel. ✖ = von einem anderen Programm belegt.",
+    "hk_overlay_l": "Overlay an/aus", "hk_reset_l": "Session neu", "hk_click_l": "Durchklick an/aus", "hk_busy": "belegt", "hk_reset_all": "Standard (Strg+Alt+O/R/D)",
+    "hk_need_mod": "Bitte mit Strg, Alt oder Shift kombinieren",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -133,7 +137,7 @@ TXT = {
         "ov_show": "Overlay anzeigen", "ov_lock": "Position sperren", "ov_alpha": "Deckkraft", "ov_range": "Zeitraum",
         "ov_since": "Seit (JJJJ-MM-TT)", "ov_values": "Angezeigte Werte", "ov_reset": "Session neu starten", "ov_size": "Größe",
         "ov_pvp_only": "KP und Trades nur aus PvP", "ov_hint": "Overlay mit der Maus verschieben. Rechtsklick = Menü. Das Spiel im Fenster- oder randlosen Modus laufen lassen, sonst liegt es über dem Overlay.",
-        "r_session": "Session", "r_today": "Heute", "r_24h": "Letzte 24 Std.", "r_7d": "Letzte 7 Tage", "r_since": "Seit Datum (z. B. KvK-Start)", "r_all": "Alles",
+        "r_session": "Session", "r_today": "Heute", "r_24h": "24 Std.", "r_2d": "2 Tage", "r_3d": "3 Tage", "r_4d": "4 Tage", "r_5d": "5 Tage", "r_6d": "6 Tage", "r_7d": "7 Tage", "r_since": "Seit Datum (z. B. KvK-Start)", "r_all": "Alles",
         "m_kp": "KP", "m_kp_all": "KP gesamt (alles)", "m_kp_last": "KP letzter Kampf", "m_kp_trade": "KP-Trade", "m_loss_trade": "Verlust-Trade",
         "m_power_trade": "Power-Trade", "m_dead": "Eigene Tote", "m_severe": "Eigene Schwerverw.", "m_wounded": "Eigene Leichtverw.",
         "m_enemy_out": "Gegner ausgeschaltet", "m_enemy_dead": "Gegner tot", "m_pvp": "PvP-Kämpfe", "m_pve": "PvE-Kämpfe", "m_kph": "KP pro Stunde",
@@ -167,7 +171,7 @@ TXT = {
     "pos_title": "Position", "pos_info": "Pick a window and place it with the buttons – works even when click-through is on and you can't drag. Position is saved.",
     "pos_ov": "Overlay", "pos_march": "March bar", "pos_feed": "Battle feed", "pos_quick": "Quick spot", "pos_fine": "Fine tune",
     "pos_step": "Step", "pos_exact": "Exact", "pos_set": "Set",
-    "march_reset": "March values", "mr_last": "Latest report", "mr_sum": "Everything in range",
+    "march_reset": "March values", "mr_last": "Last Report", "mr_sum": "Total",
     "last_info": "Latest report: the bar always shows the newest battle report of the march. While the battle goes on, the number grows. A completely new report starts the march at 0 again.",
     "fight_gap": "New engagement after", "fight_info": "Engagement: all reports of a march closer together than the set pause are summed up. Only after the pause the march starts at 0 again. Pop-up comes once per engagement.",
     "ovt_view": "Display", "ovt_mods": "Modules & marches", "ovt_pos": "Position", "ovt_vals": "Values",
@@ -197,6 +201,10 @@ TXT = {
     "exp_gone": "50 % expansion gone!", "exp_troops": "March only {n} troops", "exp_now_on": "Now: active (%s)", "exp_now_off": "Now: not active (%s)", "exp_none": "No report in the last 3 h yet.",
     "rok_only": "Only open with Rise of Kingdoms", "rok_only_info": "Together with “Start with Windows”: the app waits invisibly and only opens when RoK runs. Close RoK and app + overlay disappear again.",
     "rok_now_on": "RoK is running ✓", "rok_now_off": "RoK is not running",
+    "order_title": "Order in overlay", "order_info": "Move with ▲ ▼ – e.g. acclaim above KP trade. New values are added at the bottom.",
+    "hk_title": "Hotkeys", "hk_set_info": "Click into the field and press the new combination (e.g. Ctrl+Shift+F2). Works in game too. ✖ = used by another program.",
+    "hk_overlay_l": "Overlay on/off", "hk_reset_l": "New session", "hk_click_l": "Click-through on/off", "hk_busy": "in use", "hk_reset_all": "Default (Ctrl+Alt+O/R/D)",
+    "hk_need_mod": "Please combine with Ctrl, Alt or Shift",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -228,7 +236,7 @@ TXT = {
         "ov_show": "Show overlay", "ov_lock": "Lock position", "ov_alpha": "Opacity", "ov_range": "Time range",
         "ov_since": "Since (YYYY-MM-DD)", "ov_values": "Shown values", "ov_reset": "Restart session", "ov_size": "Size",
         "ov_pvp_only": "KP and trades from PvP only", "ov_hint": "Drag the overlay with the mouse. Right-click = menu. Run the game in windowed or borderless mode, otherwise it covers the overlay.",
-        "r_session": "Session", "r_today": "Today", "r_24h": "Last 24 h", "r_7d": "Last 7 days", "r_since": "Since date (e.g. KvK start)", "r_all": "All",
+        "r_session": "Session", "r_today": "Today", "r_24h": "24 h", "r_2d": "2 days", "r_3d": "3 days", "r_4d": "4 days", "r_5d": "5 days", "r_6d": "6 days", "r_7d": "7 days", "r_since": "Since date (e.g. KvK start)", "r_all": "All",
         "m_kp": "KP", "m_kp_all": "Total KP (all)", "m_kp_last": "KP last battle", "m_kp_trade": "KP trade", "m_loss_trade": "Loss trade",
         "m_power_trade": "Power trade", "m_dead": "Own dead", "m_severe": "Own severely wounded", "m_wounded": "Own slightly wounded",
         "m_enemy_out": "Enemies taken out", "m_enemy_dead": "Enemies dead", "m_pvp": "PvP battles", "m_pve": "PvE battles", "m_kph": "KP per hour",
@@ -245,7 +253,15 @@ TXT = {
 }
 METRICS = ["m_kp", "m_kp_all", "m_kp_last", "m_kp_trade", "m_loss_trade", "m_power_trade", "m_dead", "m_severe", "m_wounded",
            "m_enemy_out", "m_enemy_dead", "m_pvp", "m_pve", "m_kph", "m_last_enemy", "m_enemy_marches", "m_last_marches", "m_barb", "m_barb_hits", "m_barb_lvl", "m_forts", "m_acclaim"]
-RANGES = ["r_session", "r_today", "r_24h", "r_7d", "r_since", "r_all"]
+RANGES = ["r_session", "r_today", "r_24h", "r_2d", "r_3d", "r_4d", "r_5d", "r_6d", "r_7d", "r_since", "r_all"]
+
+
+def range_days(rng):
+    """r_24h -> 1, r_2d -> 2 ... r_7d -> 7, sonst None"""
+    if rng == "r_24h":
+        return 1
+    m = re.match(r"r_(\d+)d$", str(rng))
+    return int(m.group(1)) if m and int(m.group(1)) <= 7 else None
 
 DEFAULT_CFG = {
     "api_base": "https://wiz-fanclub.vercel.app", "token": "", "user_name": "", "lang": "de",
@@ -1213,33 +1229,27 @@ def acc_since(battles, ids, since_ts):
                for f in b["fights"] if len(f) > 19 and f[0])
 
 
-def pve_stats(battles, ids, gap=180, day_ts=0):
-    """Barbaren je Marsch: Level des Haupt-Barbaren und Kette (Barbaren hintereinander ohne Pause > gap s).
+def pve_stats(battles, ids, gap=0, day_ts=0):
+    """Barbaren je Marsch wie auf der Website: Kette = Anzahl Barbaren in EINEM Bericht (2 Barbaren = 2er-Kette).
     Liefert ({marsch: {lvl, chain, hits, today, last}}, Durchschnitt Kette heute)."""
     per = {}
-    for b in battles:
-        if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
+    for g in reports(battles, ids, False):
+        k = tuple(g["h"])
+        if not k[0]:
             continue
-        for f in b["fights"]:
-            if len(f) > 16 and not f[0] and f[14] == 1:
-                per.setdefault((b["h"][0], b["h"][1]), []).append((b["t"], f[15] or 0, bool(f[16])))
+        barbs = [f for f in g["fights"] if len(f) > 16 and not f[0] and f[14] == 1]
+        if barbs:
+            per.setdefault(k, []).append((g["t"], barbs))
     res, chains_today = {}, []
     for k, lst in per.items():
-        lst.sort()
-        chains, cur = [], []
-        for x in lst:
-            if cur and x[0] - cur[-1][0] > gap:
-                chains.append(cur); cur = []
-            cur.append(x)
-        if cur:
-            chains.append(cur)
-        for ch in chains:
-            if ch[-1][0] >= day_ts:
-                chains_today.append(sum(1 for x in ch if x[2]) or len(ch))
-        last = chains[-1]
-        lv = [x[1] for x in last if x[1]]
-        res[k] = {"lvl": max(set(lv), key=lv.count) if lv else 0, "chain": sum(1 for x in last if x[2]) or len(last), "hits": len(last),
-                  "today": sum(1 for x in lst if x[0] >= day_ts and x[2]), "last": last[-1][0]}
+        lst.sort(key=lambda x: x[0])
+        for t, bb in lst:
+            if t >= day_ts:
+                chains_today.append(len(bb))
+        t, last = lst[-1]
+        lv = [f[15] for f in last if f[15]]
+        res[k] = {"lvl": max(set(lv), key=lv.count) if lv else 0, "chain": len(last), "hits": len(last),
+                  "today": sum(sum(1 for f in bb if f[16]) for tt, bb in lst if tt >= day_ts), "last": t}
     avg = (sum(chains_today) / len(chains_today)) if chains_today else 0
     return res, avg
 
@@ -2058,7 +2068,7 @@ class Overlay:
         w = self.win = tk.Toplevel(self.app.root)
         w.overrideredirect(True)
         w.attributes("-topmost", True)
-        w.attributes("-alpha", float(ov.get("alpha", 0.85)))
+        w.attributes("-alpha", 0.0)                             # erst fertig zeichnen, dann einblenden (kein Aufblitzen)
         bg = C["key"] if IS_WIN else C["side"]
         w.configure(bg=bg)
         if IS_WIN:
@@ -2078,7 +2088,8 @@ class Overlay:
         self._drawn = None
         self.draw()
         if IS_WIN:
-            w.after(200, self._win_style)
+            w.update_idletasks(); self._win_style()
+        w.after(40, lambda: self.win is w and w.attributes("-alpha", float(ov.get("alpha", 0.85))))
 
     # ---------- immer sichtbar bleiben ----------
     def _on_screen(self, x, y):
@@ -2291,7 +2302,7 @@ class Overlay:
         b_h = (M["tiny"].metrics("linespace") + px(8) + len(bl) * lh + px(6)) if bl else 0
         goal = int(self.app.cfg["overlay"].get("goal_kp", 0) or 0)
         goal_a = int(self.app.cfg["overlay"].get("goal_acc", 0) or 0)
-        g_h = (M["tiny"].metrics("linespace") + px(16)) * ((1 if goal else 0) + (1 if goal_a else 0))
+        g_h = (M["tiny"].metrics("linespace") * 2 + px(18)) * ((1 if goal else 0) + (1 if goal_a else 0))
         exp_on = self.app.cfg["alerts"].get("exp_show", True) and getattr(self.app, "_exp", None)
         exp_h = M["tiny"].metrics("linespace") + px(8)
         g_h += exp_h if exp_on else 0
@@ -2303,7 +2314,7 @@ class Overlay:
         cv.create_line(P, P + hh - px(2), W - P, P + hh - px(2), fill=C["gold2"])
         self._head(cv, F, M, P, y, inner, rng, now)
         y = P + hh + px(6)
-        one_h = M["tiny"].metrics("linespace") + px(16)
+        one_h = M["tiny"].metrics("linespace") * 2 + px(18)
         if exp_on:                                           # 50 % Army Expansion: gruen aktiv / rot nicht aktiv
             act, n_, _t = self.app._exp
             col = C["good"] if act else C["bad"]
@@ -2317,9 +2328,9 @@ class Overlay:
             frac = max(0.0, min(1.0, have / gval))
             lang = self.app.cfg["lang"]
             cv.create_text(P, y, text=lab.upper(), anchor="nw", fill=C["muted"], font=F["tiny"])
-            cv.create_text(W - P, y, text="%s / %s" % (fmt_num(have, lang), fmt_num(gval, lang)), anchor="ne",
-                           fill=C["good"] if frac >= 1 else bar, font=F["tiny"])
-            by = y + M["tiny"].metrics("linespace") + px(4)
+            cv.create_text(P, y + M["tiny"].metrics("linespace") + px(2), text="%s / %s  ·  %d %%" % (fmt_num(have, lang), fmt_num(gval, lang), round(frac * 100)),
+                           anchor="nw", fill=C["good"] if frac >= 1 else bar, font=F["tiny"])
+            by = y + M["tiny"].metrics("linespace") * 2 + px(6)
             rrect(cv, P, by, W - P, by + px(7), px(3), fill="#1a2234", outline="")
             if frac > 0.01:
                 rrect(cv, P, by, P + max(px(8), (W - 2 * P) * frac), by + px(7), px(3), fill=C["good"] if frac >= 1 else bar, outline="")
@@ -2386,8 +2397,8 @@ class Overlay:
         r = px(4)
         cv.create_oval(P + px(4), h / 2 - r, P + px(4) + 2 * r, h / 2 + r, fill=C["good"] if ok else C["dim"], outline="")
         x = px(30)
-        for i, ((ico, val, col), w) in enumerate(zip(parts, widths)):
-            t1 = cv.create_text(x, h / 2, text=ico + " ", anchor="w", fill=C["muted"], font=F["lab"])
+        for i, ((icon_, val, col), w) in enumerate(zip(parts, widths)):
+            t1 = cv.create_text(x, h / 2, text=icon_ + " ", anchor="w", fill=C["muted"], font=F["lab"])
             cv.create_text(cv.bbox(t1)[2], h / 2, text=val, anchor="w", fill=col, font=F["val"])
             x += w + px(11)
             if i < len(parts) - 1:
@@ -2623,7 +2634,8 @@ class Float:
         w.overrideredirect(True)
         w.attributes("-topmost", True)
         ov = self.app.cfg["overlay"]
-        w.attributes("-alpha", float(ov.get("alpha_" + self.key, ov.get("alpha", 0.9))))
+        w.attributes("-alpha", 0.0)
+        w.after(60, lambda: self.win is w and w.attributes("-alpha", float(ov.get("alpha_" + self.key, ov.get("alpha", 0.9)))))
         bg = C["key"] if IS_WIN else C["side"]
         w.configure(bg=bg)
         if IS_WIN:
@@ -3037,25 +3049,73 @@ class ScreenBorder:
 HOTKEYS = [("O", "hk_overlay"), ("R", "hk_reset"), ("D", "hk_click")]
 
 
+_VK = {"F%d" % i: 0x6F + i for i in range(1, 13)}
+_VK.update({"SPACE": 0x20, "TAB": 0x09, "INSERT": 0x2D, "DELETE": 0x2E, "HOME": 0x24, "END": 0x23, "PAGEUP": 0x21, "PAGEDOWN": 0x22,
+            "NUM0": 0x60, "NUM1": 0x61, "NUM2": 0x62, "NUM3": 0x63, "NUM4": 0x64, "NUM5": 0x65, "NUM6": 0x66, "NUM7": 0x67, "NUM8": 0x68, "NUM9": 0x69})
+
+
+def parse_hotkey(txt):
+    """'Strg+Alt+O' / 'Ctrl+Shift+F5' -> (Modifier, Tastencode) oder None"""
+    mods, vk = 0, None
+    for p in [x.strip().upper() for x in str(txt).replace("-", "+").split("+") if x.strip()]:
+        if p in ("STRG", "CTRL", "CONTROL"):
+            mods |= 0x0002
+        elif p == "ALT":
+            mods |= 0x0001
+        elif p in ("SHIFT", "UMSCHALT"):
+            mods |= 0x0004
+        elif p in ("WIN", "SUPER"):
+            mods |= 0x0008
+        elif len(p) == 1 and (p.isalnum()):
+            vk = ord(p)
+        elif p in _VK:
+            vk = _VK[p]
+        else:
+            return None
+    return (mods, vk) if vk else None
+
+
+def hotkey_list(app):
+    hk = app.cfg.get("hotkeys") or {}
+    return [(hk.get(act) or "Strg+Alt+" + key, act) for key, act in HOTKEYS]
+
+
 def hotkey_thread(app):
     if not IS_WIN:
         return
     try:
         import ctypes
         from ctypes import wintypes
-        u = ctypes.windll.user32
+        u, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+        app._hk_tid = k32.GetCurrentThreadId()
+        lst = hotkey_list(app)
         ok = []
-        for i, (key, _a) in enumerate(HOTKEYS, start=1):
-            if u.RegisterHotKey(None, i, 0x0001 | 0x0002 | 0x4000, ord(key)):    # Alt + Strg, ohne Wiederholung
-                ok.append(key)
+        for i, (combo, act) in enumerate(lst, start=1):
+            p = parse_hotkey(combo)
+            if p and u.RegisterHotKey(None, i, p[0] | 0x4000, p[1]):       # ohne Wiederholung
+                ok.append(act)
         app._hotkeys_ok = ok
         msg = wintypes.MSG()
-        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-            if msg.message == 0x0312 and 1 <= msg.wParam <= len(HOTKEYS):        # WM_HOTKEY
-                act = HOTKEYS[msg.wParam - 1][1]
+        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            if msg.message == 0x0312 and 1 <= msg.wParam <= len(lst):        # WM_HOTKEY
+                act = lst[msg.wParam - 1][1]
                 app.root.after(0, lambda a=act: app.hotkey(a))
+        for i in range(1, len(lst) + 1):
+            u.UnregisterHotKey(None, i)
     except Exception as e:
         log("hotkeys: %s" % e)
+
+
+def restart_hotkeys(app):
+    """Neue Tasten aktiv machen: alten Thread beenden (WM_QUIT), neuen starten."""
+    if IS_WIN and getattr(app, "_hk_tid", None):
+        try:
+            import ctypes
+            ctypes.windll.user32.PostThreadMessageW(app._hk_tid, 0x0012, 0, 0)
+        except Exception:
+            pass
+        time.sleep(0.1)
+    threading.Thread(target=hotkey_thread, args=(app,), daemon=True).start()
 
 
 
@@ -3379,7 +3439,8 @@ class App:
         tk.Label(c.body, text=T("all_on_info") if on else T("all_off_info"), bg=C["card"], fg=C["good"] if on else C["bad"],
                  font=(FONT, 9, "bold"), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
         Btn(c.body, "🪟 " + T("ov_settings"), lambda: self.go("ov"), "ghost", small=True).pack(anchor="w", pady=(px(6), 0))
-        tk.Label(c.body, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
+        tk.Label(c.body, text="⌨ " + "  ·  ".join("%s %s" % (cmb, T(a + "_l")) for cmb, a in hotkey_list(self)), bg=C["card"], fg=C["dim"],
+                 font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
         self.update_home()
 
     def update_home(self):
@@ -3580,7 +3641,7 @@ class App:
                     ms[k]["last"] = max(ms[k]["last"], v)
         self._march_all = ms
         day = datetime.combine(date.today(), datetime.min.time()).timestamp()
-        pve, self._chain_avg = pve_stats(bs, ids, int(ov.get("chain_gap", 180)), day)
+        pve, self._chain_avg = pve_stats(bs, ids, 0, day)
         pl = pvp_last(bs, ids)
         self._pve = pve
         kind = ov.get("march_kind", "auto")
@@ -4468,7 +4529,7 @@ class App:
         self.range_chips = {}
         for i, rk in enumerate(RANGES):
             ch = Chip(chips, T(rk).split(" (")[0], ov.get("range") == rk, lambda rk=rk: self.set_range(rk))
-            ch.grid(row=i // 2, column=i % 2, padx=(0, 6), pady=3, sticky="we"); self.range_chips[rk] = ch
+            ch.grid(row=i // 3, column=i % 3, padx=(0, 6), pady=3, sticky="we"); self.range_chips[rk] = ch
         r = tk.Frame(c, bg=C["card"]); r.pack(anchor="w", pady=(8, 0))
         tk.Label(r, text=T("ov_since"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
         self.v_since = tk.StringVar(value=ov.get("since", ""))
@@ -4590,8 +4651,6 @@ class App:
         self.chips_row(c, "⚖ " + T("trade_fmt"), "trade_fmt", ["pct", "ratio"], lambda v: T("tf_" + v), redraw_all)
         self.chips_row(c, T("march_kind"), "march_kind", ["auto", "pvp", "pve"], lambda v: T("mk_" + v),
                        lambda: (self._sig_reset(), self.march.draw(True)))
-        self.chips_row(c, "🔗 " + T("chain_gap"), "chain_gap", [60, 120, 180, 300], lambda v: "%d s" % v,
-                       lambda: (self._sig_reset(), self.march.draw(True)), ("s", 1, 20, 1800))
         self.chips_row(c, T("march_n"), "march_n", [1, 2, 3, 4, 5, 6, 7], str, lambda: (self.march.draw(True), self._sig_reset(), self.render()))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
         tk.Label(r, text=T("march_vals"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
@@ -4642,6 +4701,24 @@ class App:
             ch = Chip(grid, T(k), k in ov["metrics"], lambda k=k: self.toggle_metric(k))
             ch.grid(row=i // 3, column=i % 3, padx=(0, 6), pady=3, sticky="we"); self.metric_chips[k] = ch
         tk.Label(c, text=T("ov_hint"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=600, justify="left").pack(anchor="w", pady=(10, 0))
+        # Reihenfolge
+        o, c = card(body, "↕ " + T("order_title")); o.pack(fill="x", pady=(14, 0))
+        tk.Label(c, text=T("order_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        ms = list(ov["metrics"])
+        for i, k in enumerate(ms):
+            r = tk.Frame(c, bg=C["card2"], padx=px(10), pady=px(4)); r.pack(fill="x", pady=px(2))
+            tk.Label(r, text="%d" % (i + 1), bg=C["card2"], fg=C["gold"], font=(FONT, 11, "bold"), width=2).pack(side="left")
+            tk.Label(r, text="%s  %s" % (ICONS.get(k, ""), T(k)), bg=C["card2"], fg=C["text"], font=(FONT, 10), anchor="w").pack(side="left", fill="x", expand=True)
+            Btn(r, "✕", lambda k=k: self.toggle_metric(k), "ghost", small=True).pack(side="right")
+            Btn(r, "▼", lambda i=i: self.move_metric(i, 1), "ghost", small=True).pack(side="right", padx=(0, px(4)))
+            Btn(r, "▲", lambda i=i: self.move_metric(i, -1), "ghost", small=True).pack(side="right", padx=(0, px(4)))
+
+    def move_metric(self, i, d):
+        ms = self.cfg["overlay"]["metrics"]
+        j = i + d
+        if 0 <= j < len(ms):
+            ms[i], ms[j] = ms[j], ms[i]
+            save_cfg(self.cfg); self.overlay._drawn = None; self.overlay.draw(); self.render()
 
     def page_set(self, body):
         T = self.t
@@ -4672,6 +4749,19 @@ class App:
             n = max(1, min(365, int(self.cfg.get("upload_days", 14)) + d)); dl.configure(text=str(n)); self.set_cfg("upload_days", n)
         Btn(r, "−", lambda: dstep(-7), "ghost", small=True).pack(side="left", padx=(6, 0)); dl.pack(side="left"); Btn(r, "+", lambda: dstep(7), "ghost", small=True).pack(side="left")
 
+        o, c = card(body, "⌨ " + T("hk_title")); o.pack(fill="x", pady=(0, px(14)))
+        tk.Label(c, text=T("hk_set_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        for combo, act in hotkey_list(self):
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=px(3))
+            tk.Label(r, text=T(act + "_l"), bg=C["card"], fg=C["text"], font=(FONT, 10), width=22, anchor="w").pack(side="left")
+            vv = tk.StringVar(value=combo)
+            e = entry(r, vv, 18, center=True); e.pack(side="left")
+            e.bind("<KeyPress>", lambda ev, vv=vv, act=act: self.capture_key(ev, vv, act))
+            ok = act in (getattr(self, "_hotkeys_ok", None) or [])
+            tk.Label(r, text=("✔" if ok else "✖ " + T("hk_busy")) if IS_WIN else "", bg=C["card"], fg=C["good"] if ok else C["bad"],
+                     font=(FONT, 9, "bold")).pack(side="left", padx=px(8))
+        Btn(c, "↺ " + T("hk_reset_all"), self.reset_hotkeys, "ghost", small=True).pack(anchor="w", pady=(px(6), 0))
+
         o, c = card(row, T("card_start")); set_cards.append(o); responsive(row, set_cards, 2, 720)
         Btn(c, "🪟  " + T("autostart"), self.autostart, "ghost", small=True).pack(anchor="w")
         v2 = tk.BooleanVar(value=self.cfg.get("start_min", False))
@@ -4683,6 +4773,35 @@ class App:
         r = tk.Frame(c, bg=C["card"]); r.pack(anchor="w")
         for code, lab in (("de", "Deutsch"), ("en", "English")):
             Chip(r, lab, self.cfg.get("lang", "de") == code, lambda code=code: self.set_lang(code)).pack(side="left", padx=(0, 6))
+
+    def capture_key(self, ev, vv, act):
+        """Ins Feld klicken und die gewuenschte Kombination druecken (z. B. Strg+Umschalt+F2)."""
+        k = ev.keysym
+        if k in ("Control_L", "Control_R", "Alt_L", "Alt_R", "Shift_L", "Shift_R", "Super_L", "Super_R", "Meta_L", "Meta_R"):
+            return "break"
+        if k in ("BackSpace", "Escape"):
+            vv.set(""); return "break"
+        parts = []
+        if ev.state & 0x4:
+            parts.append("Strg")
+        if ev.state & 0x20000 or ev.state & 0x8:
+            parts.append("Alt")
+        if ev.state & 0x1:
+            parts.append("Shift")
+        key = k.upper() if len(k) == 1 else {"space": "SPACE", "Prior": "PAGEUP", "Next": "PAGEDOWN"}.get(k, k.upper())
+        if key.startswith("KP_") and key[3:].isdigit():
+            key = "NUM" + key[3:]
+        combo = "+".join(parts + [key])
+        if not parts or not parse_hotkey(combo):
+            self.flash("⌨ " + self.t("hk_need_mod")); return "break"
+        vv.set(combo)
+        hk = self.cfg.setdefault("hotkeys", {}); hk[act] = combo; save_cfg(self.cfg)
+        restart_hotkeys(self)
+        self.root.after(400, self.render)
+        return "break"
+
+    def reset_hotkeys(self):
+        self.cfg["hotkeys"] = {}; save_cfg(self.cfg); restart_hotkeys(self); self.root.after(400, self.render)
 
     # ---------- Aktionen ----------
     def pair(self):
@@ -4890,8 +5009,10 @@ class App:
             ms.remove(k)
         else:
             ms.append(k)
-        self.cfg["overlay"]["metrics"] = [m for m in METRICS if m in ms]
+        self.cfg["overlay"]["metrics"] = [m for m in ms if m in METRICS]     # eigene Reihenfolge bleibt, neue kommen ans Ende
         save_cfg(self.cfg)
+        if self.page == "ov" and getattr(self, "ov_sub", "") == "vals":
+            self.render()
         if getattr(self, "metric_chips", None) and self.page == "ov":
             try:
                 self.metric_chips[k].set(k in ms)
@@ -4978,10 +5099,8 @@ class App:
                 since = self.session_start
             elif rng == "r_today":
                 since = datetime.combine(date.today(), datetime.min.time()).timestamp()
-            elif rng == "r_24h":
-                since = (now - 86400) // 600 * 600          # auf 10 Min gerundet -> Zahlen springen nicht
-            elif rng == "r_7d":
-                since = (now - 7 * 86400) // 600 * 600
+            elif range_days(rng):
+                since = (now - range_days(rng) * 86400) // 600 * 600   # auf 10 Min gerundet -> Zahlen springen nicht
             elif rng == "r_since" and ov.get("since"):
                 since = datetime.strptime(ov["since"], "%Y-%m-%d").timestamp()
             else:
@@ -5007,7 +5126,7 @@ class App:
             self.scanner.calc_every = every
             if ver != getattr(self, "_ver_used", None) and now - getattr(self, "_calc_at", 0) >= every:
                 self._ver_used = ver                                   # im grossen Kampf hoechstens alle X s neu rechnen
-            sig = (getattr(self, "_ver_used", 0), rng, since if rng != "r_24h" and rng != "r_7d" else int(since // 60), ov.get("pvp_only", True),
+            sig = (getattr(self, "_ver_used", 0), rng, since if not range_days(rng) else int(since // 60), ov.get("pvp_only", True),
                    tuple(sorted(ids)) if ids is not None else None, self.cfg.get("lang"), int(now // 30))
             sig_changed = sig != getattr(self, "_sig", None)
             if sig_changed:
