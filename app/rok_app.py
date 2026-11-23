@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.34-test"
+APP_VERSION = "0.37-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -88,7 +88,7 @@ TXT = {
     "al_msgs": "Nachrichten", "al_msgs_info": "Gespäht = rot blinkend wie ein Buff · Lost Kingdom A+/S/S+ = Pop-up wie nach einem Kampf · Lazarett 70 % = rot blinkend · 85 % = zusätzlich Warnung oben am Bildschirm · Truppen gestorben = alles + lila Rahmen um den Bildschirm.",
     "msg_scout": "Gespäht worden", "msg_rank": "Lost Kingdom Rang", "msg_hosp70": "Lazarett 70 %", "msg_hosp85": "Lazarett 85 %", "msg_hospdead": "Truppen gestorben",
     "ms_hosp_s": "Lazarett", "chain_avg": "Ø Kette", "chain": "Kette", "today_s": "heute", "goal_acc": "Acclaim-Ziel heute",
-    "feed_settle": "Feed erst nach", "feed_merge": "Gleicher Gegner = eine Schlacht (z. B. 4 Märsche zusammen)",
+    "feed_settle": "Feed erst nach", "live": "Live (alle 5 s)", "feed_merge": "Gleicher Gegner = eine Schlacht (z. B. 4 Märsche zusammen)",
     "calc_every": "Neu rechnen alle", "calc_info": "Im großen Kampf ändern sich ständig Berichte. Die App liest laufende Berichte und rechnet nur alle X Sekunden neu – Marker kommen trotzdem sofort. Höher = weniger Last.",
     "march_kind": "Leiste zeigt", "mk_auto": "Automatisch", "mk_pvp": "Nur PvP", "mk_pve": "Nur Barbaren", "chain_gap": "Kette endet nach",
     "all_on": "Overlay (alles)", "all_on_info": "An: Overlay, Marsch-Leiste, Feed und Pop-ups laufen (je nach Einstellung im Reiter Overlay).",
@@ -106,6 +106,14 @@ TXT = {
     "hk_title": "Tastenkürzel", "hk_set_info": "Ins Feld klicken und die neue Kombination drücken (z. B. Strg+Umschalt+F2). Funktioniert auch im Spiel. ✖ = von einem anderen Programm belegt.",
     "hk_overlay_l": "Overlay an/aus", "hk_reset_l": "Session neu", "hk_click_l": "Durchklick an/aus", "hk_busy": "belegt", "hk_reset_all": "Standard (Strg+Alt+O/R/D)",
     "hk_need_mod": "Bitte mit Strg, Alt oder Shift kombinieren",
+    "pp_title": "Pop-ups", "pp_info": "Wähle, was zusätzlich als Pop-up (wie nach einem Kampf) erscheinen soll. Mehrere kommen nacheinander. Die Position stellst du mit dem Knopf unten ein.",
+    "pp_battle": "Kampf", "pp_ball": "Neuer Ball-Marker", "pp_marker": "Andere Marker", "pp_mention": "Dein Name im Marker", "pp_army": "Army Expansion abgelaufen",
+    "pp_buff": "Andere Buffs abgelaufen", "pp_exp": "50 % Expansion weg", "pp_scout": "Gespäht", "pp_hosp": "Lazarett", "pp_rank": "Lost Kingdom Rang", "pp_bld": "Gebäude / Flaggen",
+    "pp_test": "Alle eingeschalteten testen",
+    "ovt_march": "Marsch-Leiste", "ovt_feed": "Feed & Leistung", "look_title": "Aussehen", "goals_title": "Tagesziele", "march_show": "Marsch-Leiste anzeigen",
+    "perf_title": "Leistung", "perf_tips": "Flüssig bleiben: Deckkraft 100 % (Durchsichtigkeit kostet Windows am meisten) · nur die Fenster an, die du brauchst · RoK im Fenster-/randlosen Modus · „Neu rechnen alle“ im großen Kampf auf 10 s.",
+    "as_marker": "Marker", "as_buffs": "Buffs & 50 %", "as_msgs": "Nachrichten", "as_bld": "Gebäude", "as_popups": "Pop-ups", "as_test": "Ton & Test",
+    "pp_color": "Farbe (A = Standard)",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -187,7 +195,7 @@ TXT = {
     "al_msgs": "Messages", "al_msgs_info": "Scouted = red blinking like a buff · Lost Kingdom A+/S/S+ = pop-up like after a battle · Hospital 70 % = red blinking · 85 % = plus warning at the top of the screen · Troops died = all + purple border around the screen.",
     "msg_scout": "Scouted", "msg_rank": "Lost Kingdom rank", "msg_hosp70": "Hospital 70 %", "msg_hosp85": "Hospital 85 %", "msg_hospdead": "Troops died",
     "ms_hosp_s": "Hospital", "chain_avg": "Ø chain", "chain": "Chain", "today_s": "today", "goal_acc": "Acclaim goal today",
-    "feed_settle": "Feed only after", "feed_merge": "Same enemy = one battle (e.g. 4 marches together)",
+    "feed_settle": "Feed only after", "live": "Live (every 5 s)", "feed_merge": "Same enemy = one battle (e.g. 4 marches together)",
     "calc_every": "Recalculate every", "calc_info": "In big fights reports change all the time. The app re-reads running reports and recalculates only every X seconds – markers still come instantly. Higher = less load.",
     "march_kind": "Bar shows", "mk_auto": "Automatic", "mk_pvp": "PvP only", "mk_pve": "Barbarians only", "chain_gap": "Chain ends after",
     "all_on": "Overlay (everything)", "all_on_info": "On: overlay, march bar, feed and pop-ups run (as set in the Overlay tab).",
@@ -205,6 +213,14 @@ TXT = {
     "hk_title": "Hotkeys", "hk_set_info": "Click into the field and press the new combination (e.g. Ctrl+Shift+F2). Works in game too. ✖ = used by another program.",
     "hk_overlay_l": "Overlay on/off", "hk_reset_l": "New session", "hk_click_l": "Click-through on/off", "hk_busy": "in use", "hk_reset_all": "Default (Ctrl+Alt+O/R/D)",
     "hk_need_mod": "Please combine with Ctrl, Alt or Shift",
+    "pp_title": "Pop-ups", "pp_info": "Choose what should also appear as a pop-up (like after a battle). Several come one after another. Set the position with the button below.",
+    "pp_battle": "Battle", "pp_ball": "New ball marker", "pp_marker": "Other markers", "pp_mention": "Your name in a marker", "pp_army": "Army expansion ended",
+    "pp_buff": "Other buffs ended", "pp_exp": "50 % expansion gone", "pp_scout": "Scouted", "pp_hosp": "Hospital", "pp_rank": "Lost Kingdom rank", "pp_bld": "Buildings / flags",
+    "pp_test": "Test all enabled",
+    "ovt_march": "March bar", "ovt_feed": "Feed & performance", "look_title": "Look", "goals_title": "Daily goals", "march_show": "Show march bar",
+    "perf_title": "Performance", "perf_tips": "Stay smooth: opacity 100 % (transparency costs Windows the most) · only the windows you need · RoK in windowed/borderless mode · set “Recalculate every” to 10 s in big fights.",
+    "as_marker": "Markers", "as_buffs": "Buffs & 50 %", "as_msgs": "Messages", "as_bld": "Buildings", "as_popups": "Pop-ups", "as_test": "Sound & test",
+    "pp_color": "Colour (A = default)",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -435,8 +451,50 @@ def summarize(mail):
                               _n(own, "Contribute") or _n(own, "WarExploits")])                          # Acclaim (Verdienst), wie im Uploader
         out["init"] = max(out.get("init", 0), _n(own, "InitMax"))
     sov = c.get("SOv") if isinstance(c.get("SOv"), dict) else {}
+    oov = c.get("OOv") if isinstance(c.get("OOv"), dict) else {}
     out["init"] = max(out.get("init", 0), _n(sov, "InitMax"), _n(sov, "Max"))       # Truppen beim Start (50 % Expansion -> 400K+)
+    if sov and ("Cnt" in sov or "Remain" in sov):
+        out["rem"] = _n(sov, "Cnt") or _n(sov, "Remain")                              # "Remaining" aus Data Summary
+    if sov and out["fights"]:
+        # Die Runden (19-1, 18-1 …) sind im Spiel oft nur die letzten paar. Die HAUPTZAHL steht in "Data Summary".
+        # -> Unterschied als eine Ausgleichs-Zeile anhaengen, damit alle Summen genau die Hauptzahl ergeben.
+        fs = out["fights"]
+        tot = lambda i: sum(f[i] for f in fs)
+        want = {1: _n(sov, "KillScore"), 2: _n(oov, "KillScore"), 3: _n(sov, "Death") or _n(sov, "Dead"), 4: _n(sov, "BadHurt"),
+                5: _n(sov, "Hurt"), 6: _n(oov, "Death") or _n(oov, "Dead"), 7: _n(oov, "BadHurt"),
+                19: _n(sov, "Contribute") or _n(sov, "WarExploits")}
+        fix = [1 if any(f[0] for f in fs) else 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        changed = False
+        for i, v in want.items():
+            if v and v > tot(i):
+                fix[i] = v - tot(i); changed = True
+        if changed:
+            fix.append("sum")                            # Markierung: keine eigene Runde, nur Ausgleich zur Hauptzahl
+            fs.append(fix)
+        out["sum_kp"] = want[1] or tot(1)
     return out
+
+
+def dedupe_streaks(battles):
+    """Battle Streak: Hat der Hauptbericht schon die Summe aller Teil-Berichte, die Teil-Berichte nicht nochmal zaehlen."""
+    by_par = {}
+    for b in battles:
+        p = b.get("par")
+        if p and p != b["id"]:
+            by_par.setdefault(p, []).append(b)
+    if not by_par:
+        return list(battles)
+    skip = set()
+    ids = {b["id"]: b for b in battles}
+    for p, kids in by_par.items():
+        par = ids.get(p)
+        if not par:
+            continue
+        pk = sum(f[1] for f in par["fights"])
+        ck = sum(f[1] for k in kids for f in k["fights"])
+        if pk and pk >= ck * 0.95:                       # Hauptbericht enthaelt die Teil-Berichte schon
+            skip.update(k["id"] for k in kids)
+    return [b for b in battles if b["id"] not in skip]
 
 
 def owner_of(mail):
@@ -764,6 +822,7 @@ class Scanner:
         self.events = {}                  # Buff abgelaufen / Gebaeude (letzte 24 h)
         self.new_events = []
         self.ver = 0                 # steigt bei jedem neuen/aktualisierten Kampfbericht -> App rechnet neu
+        self._bl = (None, [])
         self.parsed_at = {}          # Datei -> wann zuletzt entschluesselt
         self.calc_every = 5          # laufende Berichte hoechstens alle X s neu lesen (grosser Kampf = viele Aenderungen)
         self.owners = {}      # pid -> {"name", "mails", "last"}
@@ -813,6 +872,17 @@ class Scanner:
                     del self.events[k]
             if self.app.started and ev["t"] >= self.app.started - 300:
                 self.new_events.append(ev)
+
+    def battle_list(self):
+        """Alle Berichte, Battle-Streak-Teile bereinigt (zwischengespeichert, bis sich etwas aendert)."""
+        with self.lock:
+            if self._bl[0] == self.ver and self._bl[1]:
+                return self._bl[1]
+            bs = list(self.battles.values())
+            v = self.ver
+        res = dedupe_streaks(bs)
+        self._bl = (v, res)
+        return res
 
     def ttl(self, mk):
         """Ball-Marker 1 Stunde, alle anderen 30 Minuten."""
@@ -1122,7 +1192,9 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
                 tot["kp_all"] += kp
             if not in_r:
                 continue
-            if pvp:
+            if len(f) > 20 and f[20] == "sum":
+                pass                                     # Ausgleich zur Hauptzahl: zaehlt in den Summen, ist aber kein eigener Kampf
+            elif pvp:
                 tot["pvp"] += 1
             else:
                 tot["pve"] += 1
@@ -1177,7 +1249,8 @@ def battle_card(b):
     pvp = any(f[0] for f in fs)
     kp = sum(f[1] for f in fs)
     own_l = sum(f[3] + f[4] for f in fs); en_l = sum(f[6] + f[7] for f in fs)
-    own_rem = sum(f[17] for f in fs); en_rem = sum(f[18] for f in fs)
+    own_rem = b["rem"] if "rem" in b else sum(f[17] for f in fs)
+    en_rem = sum(f[18] for f in fs)
     if own_rem <= 0:
         win = False
     elif en_rem <= 0:
@@ -1187,8 +1260,8 @@ def battle_card(b):
     enemy = next((f[10] for f in fs if f[10]), "") or ("NPC" if not pvp else "")
     lvl = next((f[15] for f in fs if f[15]), 0)
     return {"t": b["t"], "win": win, "kp": kp, "trade": (en_l / own_l) if own_l else (None if not en_l else float("inf")),
-            "h": list(b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": len(fs),
-            "ol": own_l, "el": en_l, "acc": sum(f[19] for f in fs if len(f) > 19), "kills": sum(f[6] + f[7] for f in fs)}
+            "h": list(b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": sum(1 for f in fs if not (len(f) > 20 and f[20] == "sum")),
+            "dead_march": own_rem <= 0, "ol": own_l, "el": en_l, "acc": sum(f[19] for f in fs if len(f) > 19), "kills": sum(f[6] + f[7] for f in fs)}
 
 
 def reports(battles, ids, pvp_only):
@@ -1205,6 +1278,8 @@ def reports(battles, ids, pvp_only):
                           "fights": [], "nrep": 0}
         g["fights"].extend(b["fights"])          # (vorher jedes Mal neue Liste -> im grossen Kampf sehr langsam)
         g["nrep"] += 1
+        if "rem" in b and (b["t"], b.get("mt", 0)) >= (g.get("_rt", 0), 0):
+            g["rem"], g["_rt"] = b["rem"], b["t"]          # Resttruppen aus dem neuesten Teil
         g["t0"] = min(g["t0"], b["t"]); g["t"] = max(g["t"], b["t"]); g["mt"] = max(g["mt"], b.get("mt", 0))
         if b["id"] == k[1] and b.get("h") and b["h"][0]:
             g["h"] = list(b["h"])                       # Kommandanten vom Hauptbericht
@@ -1346,7 +1421,7 @@ def enemy_marches(battles, ids, last_b, lang):
     res = {"m_enemy_marches": "–", "m_last_marches": "–", "_marches": [], "_enemy": ""}
     if not last_b:
         return res
-    pf = [f for f in last_b["fights"] if f[0] and len(f) > 13]
+    pf = [f for f in last_b["fights"] if f[0] and len(f) > 13 and f[11]]
     if not pf:
         return res
     res["m_last_marches"] = str(len({(f[11], f[12], f[13]) for f in pf}))       # Gegner-Maersche im letzten Kampf
@@ -1575,6 +1650,38 @@ class Chip(tk.Canvas):
         rrect(self, 1, 1, w - 1, h - 1, h / 2, fill=C["gold_dim"] if a else (C["card2"] if self._hover else C["input"]),
               outline=C["gold2"] if a else C["line2"])
         self.create_text(w / 2, h / 2, text=self.text, fill=C["gold"] if a else C["muted"], font=self.font)
+
+
+POP_COLORS = [("", None), ("rot", "#f87171"), ("orange", "#fb923c"), ("gold", "#f5c542"), ("gruen", "#4ade80"), ("blau", "#38bdf8"),
+              ("lila", "#c084fc"), ("weiss", "#e5e7eb")]
+
+
+class ColorDots(tk.Canvas):
+    """Kleine Farbpunkte zum Anklicken (erster = Standard)."""
+    def __init__(self, parent, cur, on_pick):
+        n = len(POP_COLORS)
+        super().__init__(parent, width=px(20) * n + px(4), height=px(22), bg=parent["bg"], highlightthickness=0, bd=0, cursor="hand2")
+        self.cur, self.on_pick = cur or "", on_pick
+        self.bind("<Button-1>", self._click)
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        for i, (name, col) in enumerate(POP_COLORS):
+            x, y, r = px(11) + i * px(20), px(11), px(7)
+            if col:
+                self.create_oval(x - r, y - r, x + r, y + r, fill=col, outline="")
+            else:                                          # Standard
+                self.create_oval(x - r, y - r, x + r, y + r, fill="", outline=C["dim"], width=1)
+                self.create_text(x, y, text="A", fill=C["dim"], font=(FONT, 7, "bold"))
+            if (col or "") == self.cur:
+                self.create_oval(x - r - px(3), y - r - px(3), x + r + px(3), y + r + px(3), outline=C["text"], width=2)
+
+    def _click(self, e):
+        i = int((e.x - px(1)) // px(20))
+        if 0 <= i < len(POP_COLORS):
+            self.cur = POP_COLORS[i][1] or ""
+            self.draw(); self.on_pick(self.cur)
 
 
 class Slider(tk.Canvas):
@@ -2735,12 +2842,12 @@ class FeedWin(Float):
             return
         y = P
         for c in cards:
-            col = C["good"] if c["win"] else C["bad"]
+            col = C["bad"] if c.get("dead_march") else C["good"]          # gruen – rot nur, wenn der Marsch keine Truppen mehr hat
             rrect(cv, P, y, W - P, y + ch, px(10), fill="#111725", outline="#1c2436")
             rrect(cv, P, y, P + px(4), y + ch, px(2), fill=col, outline="")
             hero_pair(cv, app, P + px(10), y + (ch - px(isz)) / 2, c["h"], isz, one)
             x = P + px(pic_w + 18)
-            res = T("victory") if c["win"] else T("defeat")
+            res = T("defeat") if c.get("dead_march") else T("victory")
             if c.get("marches", 1) > 1:
                 res += "  ×%d" % c["marches"]                # mehrere Maersche gegen denselben Gegner = eine Schlacht
             cv.create_text(x, y + px(5), text=res, anchor="nw", fill=col, font=(FONT, 10, "bold"))
@@ -2852,13 +2959,18 @@ class Toast:
 
     def show(self, c):
         T = self.app.t
-        col = C["good"] if c["win"] else C["bad"]
-        line1 = ("⚔ " + (T("victory") if c["win"] else T("defeat"))) if c["pvp"] else ("🪓 " + (c["enemy"] or "NPC") + ((" Lv %d" % c["lvl"]) if c["lvl"] else ""))
+        col = C["bad"] if c.get("dead_march") else self.app.popup_col("battle", C["good"])
+        line1 = ("⚔ " + (T("defeat") if c.get("dead_march") else T("victory"))) if c["pvp"] else ("🪓 " + (c["enemy"] or "NPC") + ((" Lv %d" % c["lvl"]) if c["lvl"] else ""))
         line2 = ("+%s KP  ·  %s %s" % (fmt_num(c["kp"], self.app.cfg["lang"]), T("trade"), fmt_trade(c["trade"]))) if c["pvp"] else \
                 (T("victory") if c["win"] else T("defeat"))
         if c.get("marches", 1) > 1:
             line2 += "  ·  %d %s" % (c["marches"], T("feed_marches"))
         self.pop(line1, line2, col, hero=c["h"][0])
+
+    def _next(self):
+        q = getattr(self, "queue", [])
+        if q and not (self.win and time.time() - getattr(self, "_shown", 0) < 3.6):
+            self.pop(*q.pop(0))
 
     def place_mode(self):
         """Pop-up-Position einstellen: Beispiel-Pop-up erscheint, mit der Maus ziehen, mit „Fertig“ speichern."""
@@ -2901,6 +3013,13 @@ class Toast:
         app, T = self.app, self.app.t
         if not app.ov_on():
             return
+        if self.win and time.time() - getattr(self, "_shown", 0) < 3.6:      # laeuft noch eins -> danach zeigen
+            q = self.__dict__.setdefault("queue", [])
+            if len(q) < 4:
+                q.append((line1, line2, col, hero, icon))
+            app.root.after(int((3.7 - (time.time() - self._shown)) * 1000), self._next)
+            return
+        self._shown = time.time()
         if self.win:
             try:
                 self.win.destroy()
@@ -3619,16 +3738,15 @@ class App:
 
     # ---------- Overlay-Module ----------
     def update_modules(self, ids, since, changed):
-        with self.scanner.lock:
-            bs = list(self.scanner.battles.values())
+        bs = self.scanner.battle_list()
         ov = self.cfg["overlay"]
         mr = ov.get("march_reset", "last")
         gap = 0
-        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"), int(ov.get("feed_settle", 15)), ov.get("feed_merge", False))
+        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"), int(ov.get("feed_settle", 0)), ov.get("feed_merge", False))
         newest = cards[0] if cards else None
         old = self._feed[0]["id"] if self._feed else None
         self._feed = cards
-        if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and ov.get("toast", True):
+        if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and self.popup_on("battle"):
             hk = tuple(newest.get("h") or ())                    # Pop-up nach jedem neuen Bericht (gleicher Marsch hoechstens 1x pro Minute)
             last = getattr(self, "_toast_last", {})
             if time.time() - last.get(hk, 0) > 60:
@@ -3688,6 +3806,7 @@ class App:
             self.overlay.add_alert({"icon": "🪖", "title": self.t("exp_gone").upper(), "sub": self.t("exp_troops", n=fmt_num(self._exp[1], self.cfg["lang"])),
                                     "tone": "bad", "blink": True, "until": time.time() + 60 * float(ac.get("dur_army", ac.get("show_min", 10)))})
             play_sound(ac.get("buff_sound", "sirene"), ac.get("volume", 80))
+            self.popup("exp", "🪖", self.t("exp_gone"), self.t("exp_troops", n=fmt_num(self._exp[1], self.cfg["lang"])))
 
     def set_module(self, key, on):
         self.cfg["overlay"][key] = on; save_cfg(self.cfg)
@@ -3705,7 +3824,7 @@ class App:
         save_cfg(self.cfg); self._sig = None
         self.update_modules(getattr(self, "_ids_cur", None), getattr(self, "_since_cur", 0), True)
         self.march.draw(True)
-        if self.page == "ov" and getattr(self, "ov_sub", "") == "mods":
+        if self.page == "ov" and getattr(self, "ov_sub", "") == "march":
             self.render()
 
     def march_details(self, k):
@@ -3907,154 +4026,177 @@ class App:
     def page_alarm_settings(self, body):
         T, mc, ac = self.t, self.cfg["markers"], self.cfg["alerts"]
         rules = mc.setdefault("rules", [])
-        # --- Marker-Regeln
-        o, c = card(body, "📍 " + T("al_rules")); o.pack(fill="x")
-        tk.Label(c, text=T("al_rules_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
-        self.rule_vars = []
-        ri = rune_idx(rules)
-        for i, r in enumerate(rules[:4]):
-            box = tk.Frame(c, bg=C["card2"], padx=px(10), pady=px(8)); box.pack(fill="x", pady=px(4))
-            top = tk.Frame(box, bg=C["card2"]); top.pack(fill="x")
-            tk.Label(top, text="🎯" if i == 0 else ("🔷" if i == ri else "📍"), bg=C["card2"], fg=C["text"], font=(FONT, 12)).pack(side="left")
-            vn, vw = tk.StringVar(value=r.get("name", "")), tk.StringVar(value=r.get("words", ""))
-            en = entry(top, vn, 10); en.pack(side="left", padx=px(6))
-            tk.Label(top, text=T("al_words"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(px(6), px(4)))
-            ew = entry(top, vw, 30); ew.pack(side="left", fill="x", expand=True)
-            for e_ in (en, ew):
-                e_.bind("<FocusOut>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
-                e_.bind("<Return>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
-            sr = tk.Frame(box, bg=C["card2"]); sr.pack(fill="x", pady=(px(6), 0))
-            tk.Label(sr, text="🔊", bg=C["card2"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-            sc_ = self.sound_chips(sr, r.get("sound", "ding"), lambda n, i=i: self.set_rule(i, sound=n)); sc_.configure(bg=C["card2"]); sc_.pack(side="left")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text="📍 " + T("al_other"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, mc.get("other_sound", "ding"), lambda n: self.set_mk("other_sound", n)).pack(side="left")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        for i, (key, lab) in enumerate((("sound", "mk_sound"), ("overlay", "mk_overlay"), ("alarm_all", "mk_all_alarm"))):
-            v = tk.BooleanVar(value=mc.get(key, False))
-            Toggle(r, T(lab), v, lambda key=key, v=v: self.set_mk(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text=T("mk_keep"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        kl = tk.Label(r, text=str(mc.get("keep_ball", 5)), bg=C["card"], fg=C["text"], font=(FONT, 10, "bold"), width=3)
-        def kstep(d):
-            n = max(1, min(20, int(self.cfg["markers"].get("keep_ball", 5)) + d)); kl.configure(text=str(n))
-            self.set_mk("keep_ball", n); self.scanner.prune_markers()
-        Btn(r, "−", lambda: kstep(-1), "ghost", small=True).pack(side="left"); kl.pack(side="left"); Btn(r, "+", lambda: kstep(1), "ghost", small=True).pack(side="left")
-        tk.Label(r, text="  ·  " + T("mk_ttl"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
-
-        # --- Dein Name im Marker
-        o, c = card(body, "📣 " + T("al_names")); o.pack(fill="x", pady=(px(12), 0))
-        tk.Label(c, text=T("al_names_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        vn = tk.StringVar(value=mc.get("my_names", ""))
-        en_ = entry(r, vn, 30); en_.pack(side="left")
-        en_.bind("<FocusOut>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
-        en_.bind("<Return>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
-        tk.Label(c, text=T("al_names_auto", n=", ".join(self.my_names()) or "–"), bg=C["card"], fg=C["muted"], font=(FONT, 8),
-                 wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, mc.get("mention_sound", "sirene"), lambda n: self.set_mk("mention_sound", n)).pack(side="left")
-
-        # --- Buffs
-        o, c = card(body, "⏳ " + T("al_buffs")); o.pack(fill="x", pady=(px(12), 0))
-        tk.Label(c, text=T("al_buffs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        for i, (key, lab) in enumerate((("buff_army", "bf_army"), ("buff_attack", "bf_attack"), ("buff_def", "bf_def"), ("buff_shield", "bf_shield"))):
-            v = tk.BooleanVar(value=ac.get(key, False))
-            Toggle(r, T(lab), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, ac.get("buff_sound", "sirene"), lambda n: self.set_al("buff_sound", n)).pack(side="left")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        vp = tk.BooleanVar(value=ac.get("buff_popup", False))
-        Toggle(r, T("buff_popup"), vp, lambda: self.set_al("buff_popup", vp.get())).pack(side="left")
-        Btn(r, "✥ " + T("toast_place"), self.toast.place_mode, "ghost", small=True).pack(side="left", padx=(px(16), 0))
-        # 50 % Expansion aus den Kampfberichten
-        tk.Label(c, text="🪖 " + T("exp_title"), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold")).pack(anchor="w", pady=(px(12), px(2)))
-        tk.Label(c, text=T("exp_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(4), 0))
-        for i, (key, lab) in enumerate((("exp_show", "exp_show"), ("exp_alert", "exp_alert"))):
-            v = tk.BooleanVar(value=ac.get(key, True))
-            Toggle(r, T(lab), v, lambda key=key, v=v: (self.set_al(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw())
-                   ).grid(row=0, column=i, sticky="w", padx=(0, px(18)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text=T("exp_limit"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        ve = tk.StringVar(value=str(int(ac.get("exp_limit", 400000)) // 1000))
-        ee = entry(r, ve, 6, center=True); ee.pack(side="left")
-        tk.Label(r, text="K", bg=C["card"], fg=C["dim"], font=(FONT, 9)).pack(side="left", padx=(px(4), px(12)))
-
-        def set_lim(_e=None):
-            try:
-                self.set_al("exp_limit", int(float(ve.get().replace(",", ".")) * 1000))
-                self._sig = None
-            except ValueError:
-                pass
-        ee.bind("<Return>", set_lim); ee.bind("<FocusOut>", set_lim)
-        ex = getattr(self, "_exp", None)
-        tk.Label(r, text=(T("exp_now_on") if ex[0] else T("exp_now_off")) % fmt_num(ex[1], self.cfg["lang"]) if ex else T("exp_none"),
-                 bg=C["card"], fg=(C["good"] if ex and ex[0] else C["bad"]) if ex else C["dim"], font=(FONT, 9, "bold")).pack(side="left")
-
-        # --- Nachrichten: gespaeht, Lost Kingdom, Lazarett
-        o, c = card(body, "✉ " + T("al_msgs")); o.pack(fill="x", pady=(px(12), 0))
-        tk.Label(c, text=T("al_msgs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        for i, key in enumerate(("msg_scout", "msg_rank", "msg_hosp70", "msg_hosp85", "msg_hospdead")):
-            v = tk.BooleanVar(value=ac.get(key, True))
-            Toggle(r, T(key), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
-        for key, lab, dflt in (("scout_sound", "msg_scout", "doppel"), ("rank_sound", "msg_rank", "glocke"), ("hosp_sound", "ms_hosp_s", "sirene")):
-            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-            tk.Label(r, text="🔊 " + T(lab), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=18, anchor="w").pack(side="left", padx=(0, px(6)))
-            self.sound_chips(r, ac.get(key, dflt), lambda n, key=key: self.set_al(key, n)).pack(side="left")
-
-        # --- Gebaeude / Flaggen
-        o, c = card(body, "🏰 " + T("al_bld")); o.pack(fill="x", pady=(px(12), 0))
-        v = tk.BooleanVar(value=ac.get("bld", True))
-        Toggle(c, T("al_bld_on"), v, lambda: self.set_al("bld", v.get())).pack(anchor="w")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text=T("al_bld_filter"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        vf = tk.StringVar(value=ac.get("bld_filter", ""))
-        ef = entry(r, vf, 22); ef.pack(side="left")
-        ef.bind("<FocusOut>", lambda _e: self.set_al("bld_filter", vf.get())); ef.bind("<Return>", lambda _e: self.set_al("bld_filter", vf.get()))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        for lab, val in ((T("bld_all"), ""), ("Pass 7", "7 Pass"), ("Pass 7 + Altar", "7 Pass, Altar"), ("Kingsland", "Kingsland, Ziggurat")):
-            Chip(r, lab, ac.get("bld_filter", "") == val, lambda val=val: (self.set_al("bld_filter", val), self.render())).pack(side="left", padx=(0, px(4)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, ac.get("bld_sound", "glocke"), lambda n: self.set_al("bld_sound", n)).pack(side="left")
-
-        # --- Allgemein + Test
-        o, c = card(body, "🧪 " + T("al_test")); o.pack(fill="x", pady=(px(12), 0))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        tk.Label(r, text=T("al_volume"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        self.vol_chips = {}
-        for vv in (30, 60, 80, 100):
-            ch = Chip(r, "%d%%" % vv, int(ac.get("volume", 80)) == vv, lambda vv=vv: self.set_volume(vv)); ch.pack(side="left", padx=(0, px(4)))
-            self.vol_chips[vv] = ch
-        self.show_chips = {}
-        for key, lab in (("dur_army", "al_dur_army"), ("show_min", "al_dur_other")):
+        sec = getattr(self, "al_sec", "marker")
+        Seg(body, [("marker", "📍 " + T("as_marker")), ("buffs", "⏳ " + T("as_buffs")), ("msgs", "✉ " + T("as_msgs")), ("bld", "🏰 " + T("as_bld")),
+                   ("popups", "💬 " + T("as_popups")), ("test", "🔊 " + T("as_test"))], sec,
+            lambda v: (setattr(self, "al_sec", v), self.render())).pack(anchor="w", pady=(0, px(10)))
+        if sec == "marker":
+            # --- Marker-Regeln
+            o, c = card(body, "📍 " + T("al_rules")); o.pack(fill="x")
+            tk.Label(c, text=T("al_rules_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
+            self.rule_vars = []
+            ri = rune_idx(rules)
+            for i, r in enumerate(rules[:4]):
+                box = tk.Frame(c, bg=C["card2"], padx=px(10), pady=px(8)); box.pack(fill="x", pady=px(4))
+                top = tk.Frame(box, bg=C["card2"]); top.pack(fill="x")
+                tk.Label(top, text="🎯" if i == 0 else ("🔷" if i == ri else "📍"), bg=C["card2"], fg=C["text"], font=(FONT, 12)).pack(side="left")
+                vn, vw = tk.StringVar(value=r.get("name", "")), tk.StringVar(value=r.get("words", ""))
+                en = entry(top, vn, 10); en.pack(side="left", padx=px(6))
+                tk.Label(top, text=T("al_words"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(px(6), px(4)))
+                ew = entry(top, vw, 30); ew.pack(side="left", fill="x", expand=True)
+                for e_ in (en, ew):
+                    e_.bind("<FocusOut>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
+                    e_.bind("<Return>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
+                sr = tk.Frame(box, bg=C["card2"]); sr.pack(fill="x", pady=(px(6), 0))
+                tk.Label(sr, text="🔊", bg=C["card2"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
+                sc_ = self.sound_chips(sr, r.get("sound", "ding"), lambda n, i=i: self.set_rule(i, sound=n)); sc_.configure(bg=C["card2"]); sc_.pack(side="left")
             r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-            tk.Label(r, text="⏱ " + T(lab), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=22, anchor="w").pack(side="left", padx=(0, px(6)))
-            cur = int(ac.get(key, ac.get("show_min", 10)))
-            chs = {}
-            for mm in (1, 2, 3, 5, 10, 30):
-                ch = Chip(r, "%d min" % mm, cur == mm, lambda mm=mm, key=key, chs=chs: (self.set_al(key, mm), [x.set(k2 == mm) for k2, x in chs.items()]))
-                ch.pack(side="left", padx=(0, px(4))); chs[mm] = ch
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
-        Btn(r, "🎯 " + T("t_ball"), lambda: self.test_alert("ball"), small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "📍 " + T("t_marker"), lambda: self.test_alert("marker"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "⏳ " + T("t_buff"), lambda: self.test_alert("buff"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "🏰 " + T("t_bld"), lambda: self.test_alert("bld"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "📣 " + T("t_name"), lambda: self.test_alert("name"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        for grp in ((("🪖", "army"), ("🔭", "scout"), ("⚔", "battle"), ("🏆", "rank")), (("🏥", "hosp70"), ("⚠", "hosp85"), ("💀", "hospdead"))):
+            tk.Label(r, text="📍 " + T("al_other"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            self.sound_chips(r, mc.get("other_sound", "ding"), lambda n: self.set_mk("other_sound", n)).pack(side="left")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            for i, (key, lab) in enumerate((("sound", "mk_sound"), ("overlay", "mk_overlay"), ("alarm_all", "mk_all_alarm"))):
+                v = tk.BooleanVar(value=mc.get(key, False))
+                Toggle(r, T(lab), v, lambda key=key, v=v: self.set_mk(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            tk.Label(r, text=T("mk_keep"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            kl = tk.Label(r, text=str(mc.get("keep_ball", 5)), bg=C["card"], fg=C["text"], font=(FONT, 10, "bold"), width=3)
+            def kstep(d):
+                n = max(1, min(20, int(self.cfg["markers"].get("keep_ball", 5)) + d)); kl.configure(text=str(n))
+                self.set_mk("keep_ball", n); self.scanner.prune_markers()
+            Btn(r, "−", lambda: kstep(-1), "ghost", small=True).pack(side="left"); kl.pack(side="left"); Btn(r, "+", lambda: kstep(1), "ghost", small=True).pack(side="left")
+            tk.Label(r, text="  ·  " + T("mk_ttl"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
+
+        if sec == "marker":
+            # --- Dein Name im Marker
+            o, c = card(body, "📣 " + T("al_names")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("al_names_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            vn = tk.StringVar(value=mc.get("my_names", ""))
+            en_ = entry(r, vn, 30); en_.pack(side="left")
+            en_.bind("<FocusOut>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
+            en_.bind("<Return>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
+            tk.Label(c, text=T("al_names_auto", n=", ".join(self.my_names()) or "–"), bg=C["card"], fg=C["muted"], font=(FONT, 8),
+                     wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
             r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-            for ico, k in grp:
-                Btn(r, ico + " " + T("t_" + k), lambda k=k: self.test_alert(k), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        Btn(r, "▶ " + T("t_all"), lambda: self.test_alert("all"), small=True).pack(side="left")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
-        Btn(r, "💾 " + T("mk_export"), self.export_samples, "ghost", small=True).pack(side="left")
-        tk.Label(r, text="  " + T("mk_export_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
+            tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
+            self.sound_chips(r, mc.get("mention_sound", "sirene"), lambda n: self.set_mk("mention_sound", n)).pack(side="left")
+
+        if sec == "buffs":
+            # --- Buffs
+            o, c = card(body, "⏳ " + T("al_buffs")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("al_buffs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            for i, (key, lab) in enumerate((("buff_army", "bf_army"), ("buff_attack", "bf_attack"), ("buff_def", "bf_def"), ("buff_shield", "bf_shield"))):
+                v = tk.BooleanVar(value=ac.get(key, False))
+                Toggle(r, T(lab), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
+            self.sound_chips(r, ac.get("buff_sound", "sirene"), lambda n: self.set_al("buff_sound", n)).pack(side="left")
+
+            # 50 % Expansion aus den Kampfberichten
+            tk.Label(c, text="🪖 " + T("exp_title"), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold")).pack(anchor="w", pady=(px(12), px(2)))
+            tk.Label(c, text=T("exp_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(4), 0))
+            for i, (key, lab) in enumerate((("exp_show", "exp_show"), ("exp_alert", "exp_alert"))):
+                v = tk.BooleanVar(value=ac.get(key, True))
+                Toggle(r, T(lab), v, lambda key=key, v=v: (self.set_al(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw())
+                       ).grid(row=0, column=i, sticky="w", padx=(0, px(18)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            tk.Label(r, text=T("exp_limit"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            ve = tk.StringVar(value=str(int(ac.get("exp_limit", 400000)) // 1000))
+            ee = entry(r, ve, 6, center=True); ee.pack(side="left")
+            tk.Label(r, text="K", bg=C["card"], fg=C["dim"], font=(FONT, 9)).pack(side="left", padx=(px(4), px(12)))
+
+            def set_lim(_e=None):
+                try:
+                    self.set_al("exp_limit", int(float(ve.get().replace(",", ".")) * 1000))
+                    self._sig = None
+                except ValueError:
+                    pass
+            ee.bind("<Return>", set_lim); ee.bind("<FocusOut>", set_lim)
+            ex = getattr(self, "_exp", None)
+            tk.Label(r, text=(T("exp_now_on") if ex[0] else T("exp_now_off")) % fmt_num(ex[1], self.cfg["lang"]) if ex else T("exp_none"),
+                     bg=C["card"], fg=(C["good"] if ex and ex[0] else C["bad"]) if ex else C["dim"], font=(FONT, 9, "bold")).pack(side="left")
+
+        if sec == "popups":
+            # --- Pop-ups: was soll als Pop-up kommen?
+            o, c = card(body, "💬 " + T("pp_title")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("pp_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
+            tk.Label(g, text=T("pp_color"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).grid(row=0, column=1, sticky="w")
+            pc = self.cfg.get("popups_col") or {}
+            for i, (k, icon, _d) in enumerate(self.POPUPS):
+                v = tk.BooleanVar(value=self.popup_on(k))
+                Toggle(g, "%s  %s" % (icon, T("pp_" + k)), v, lambda k=k, v=v: self.set_popup(k, v.get())).grid(row=i + 1, column=0, sticky="w", padx=(0, px(18)), pady=px(2))
+                ColorDots(g, pc.get(k, ""), lambda col, k=k: self.set_popup_col(k, col)).grid(row=i + 1, column=1, sticky="w")
+                Btn(g, "▶", lambda k=k: self.test_popups(only=k), "ghost", small=True).grid(row=i + 1, column=2, sticky="w", padx=(px(8), 0))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            Btn(r, "✥ " + T("toast_place"), self.toast.place_mode, "ghost", small=True).pack(side="left")
+            Btn(r, "▶ " + T("pp_test"), self.test_popups, "ghost", small=True).pack(side="left", padx=(px(8), 0))
+
+        if sec == "msgs":
+            # --- Nachrichten: gespaeht, Lost Kingdom, Lazarett
+            o, c = card(body, "✉ " + T("al_msgs")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("al_msgs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            for i, key in enumerate(("msg_scout", "msg_rank", "msg_hosp70", "msg_hosp85", "msg_hospdead")):
+                v = tk.BooleanVar(value=ac.get(key, True))
+                Toggle(r, T(key), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+            for key, lab, dflt in (("scout_sound", "msg_scout", "doppel"), ("rank_sound", "msg_rank", "glocke"), ("hosp_sound", "ms_hosp_s", "sirene")):
+                r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+                tk.Label(r, text="🔊 " + T(lab), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=18, anchor="w").pack(side="left", padx=(0, px(6)))
+                self.sound_chips(r, ac.get(key, dflt), lambda n, key=key: self.set_al(key, n)).pack(side="left")
+
+        if sec == "bld":
+            # --- Gebaeude / Flaggen
+            o, c = card(body, "🏰 " + T("al_bld")); o.pack(fill="x", pady=(px(12), 0))
+            v = tk.BooleanVar(value=ac.get("bld", True))
+            Toggle(c, T("al_bld_on"), v, lambda: self.set_al("bld", v.get())).pack(anchor="w")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            tk.Label(r, text=T("al_bld_filter"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            vf = tk.StringVar(value=ac.get("bld_filter", ""))
+            ef = entry(r, vf, 22); ef.pack(side="left")
+            ef.bind("<FocusOut>", lambda _e: self.set_al("bld_filter", vf.get())); ef.bind("<Return>", lambda _e: self.set_al("bld_filter", vf.get()))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            for lab, val in ((T("bld_all"), ""), ("Pass 7", "7 Pass"), ("Pass 7 + Altar", "7 Pass, Altar"), ("Kingsland", "Kingsland, Ziggurat")):
+                Chip(r, lab, ac.get("bld_filter", "") == val, lambda val=val: (self.set_al("bld_filter", val), self.render())).pack(side="left", padx=(0, px(4)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
+            self.sound_chips(r, ac.get("bld_sound", "glocke"), lambda n: self.set_al("bld_sound", n)).pack(side="left")
+
+        if sec == "test":
+            # --- Allgemein + Test
+            o, c = card(body, "🧪 " + T("al_test")); o.pack(fill="x", pady=(px(12), 0))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            tk.Label(r, text=T("al_volume"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            self.vol_chips = {}
+            for vv in (30, 60, 80, 100):
+                ch = Chip(r, "%d%%" % vv, int(ac.get("volume", 80)) == vv, lambda vv=vv: self.set_volume(vv)); ch.pack(side="left", padx=(0, px(4)))
+                self.vol_chips[vv] = ch
+            self.show_chips = {}
+            for key, lab in (("dur_army", "al_dur_army"), ("show_min", "al_dur_other")):
+                r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+                tk.Label(r, text="⏱ " + T(lab), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=22, anchor="w").pack(side="left", padx=(0, px(6)))
+                cur = int(ac.get(key, ac.get("show_min", 10)))
+                chs = {}
+                for mm in (1, 2, 3, 5, 10, 30):
+                    ch = Chip(r, "%d min" % mm, cur == mm, lambda mm=mm, key=key, chs=chs: (self.set_al(key, mm), [x.set(k2 == mm) for k2, x in chs.items()]))
+                    ch.pack(side="left", padx=(0, px(4))); chs[mm] = ch
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
+            Btn(r, "🎯 " + T("t_ball"), lambda: self.test_alert("ball"), small=True).pack(side="left", padx=(0, px(6)))
+            Btn(r, "📍 " + T("t_marker"), lambda: self.test_alert("marker"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
+            Btn(r, "⏳ " + T("t_buff"), lambda: self.test_alert("buff"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
+            Btn(r, "🏰 " + T("t_bld"), lambda: self.test_alert("bld"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
+            Btn(r, "📣 " + T("t_name"), lambda: self.test_alert("name"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
+            for grp in ((("🪖", "army"), ("🔭", "scout"), ("⚔", "battle"), ("🏆", "rank")), (("🏥", "hosp70"), ("⚠", "hosp85"), ("💀", "hospdead"))):
+                r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+                for ico, k in grp:
+                    Btn(r, ico + " " + T("t_" + k), lambda k=k: self.test_alert(k), "ghost", small=True).pack(side="left", padx=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            Btn(r, "▶ " + T("t_all"), lambda: self.test_alert("all"), small=True).pack(side="left")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
+            Btn(r, "💾 " + T("mk_export"), self.export_samples, "ghost", small=True).pack(side="left")
+            tk.Label(r, text="  " + T("mk_export_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
 
     def rune_markers(self):
         rules = self.cfg["markers"].get("rules", [])
@@ -4142,6 +4284,31 @@ class App:
         if 0 <= i < len(rules):
             rules[i].update(kw); save_cfg(self.cfg)
             self.overlay._drawn = None
+
+    def set_popup(self, k, on):
+        if k == "battle":
+            self.cfg["overlay"]["toast"] = on
+        else:
+            self.cfg.setdefault("popups", {})[k] = on
+        save_cfg(self.cfg)
+
+    def set_popup_col(self, k, col):
+        self.cfg.setdefault("popups_col", {})[k] = col; save_cfg(self.cfg)
+
+    def test_popups(self, only=None):
+        T = self.t
+        demo = {"battle": None, "ball": ("🎯", "BALL 2  ·  X 612 · Y 845", "Pass 7", C["bad"]), "marker": ("📍", "RALLY  ·  X 540 · Y 700", "TEST", C["gold"]),
+                "mention": ("📣", T("mention_title"), "Mirox Rally Pass 7", "#fb923c"), "army": ("🪖", T("bf_ended", b=T("bf_army")).upper(), "TEST", C["bad"]),
+                "buff": ("⏳", T("bf_ended", b=T("bf_attack")).upper(), "TEST", C["bad"]), "exp": ("🪖", T("exp_gone"), T("exp_troops", n="276K"), C["bad"]),
+                "scout": ("🔭", T("ms_scout"), "TEST [ABC]Spion", C["bad"]), "hosp": ("🏥", T("ms_hosp", p=85), "TEST", C["bad"]),
+                "rank": ("🏆", T("ms_rank", t="S+"), "TEST", C["gold"]), "bld": ("🏰", T("bld_lost", n="Lvl 7 Pass"), "X 616 · Y 879", C["bad"])}
+        for k, _i, _d in self.POPUPS:
+            if (only == k) or (only is None and self.popup_on(k)):
+                if k == "battle":
+                    self.test_alert("battle")
+                else:
+                    ic, ti, su, co = demo[k]
+                    self.toast.show_msg(ic, ti, su, self.popup_col(k, co))
 
     def set_al(self, key, val):
         self.cfg["alerts"][key] = val; save_cfg(self.cfg)
@@ -4241,6 +4408,7 @@ class App:
         self.overlay.add_alert({"icon": "📣", "title": self.t("mention_title").upper(), "sub": (mk.get("text") or "")[:52],
                                 "tone": "orange", "blink": True, "xy": (mk["x"], mk["y"]) if mk.get("x") else None, "key": mk.get("key")})
         play_sound(self.cfg["markers"].get("mention_sound", "sirene"), ac.get("volume", 80))
+        self.popup("mention", "📣", self.t("mention_title"), (mk.get("text") or "")[:50], "#fb923c")
         self._mention_until = time.time() + 120
         self._mention_text = mk.get("text") or ""
         if IS_WIN:                                       # Taskleisten-Knopf der App blinkt
@@ -4280,6 +4448,9 @@ class App:
                                     "blink": ball, "xy": (mk["x"], mk["y"]), "key": mk.get("key")})
         if mc.get("sound", True):
             play_sound(rules[rule].get("sound", "ding") if rule >= 0 else mc.get("other_sound", "ding"), self.cfg["alerts"].get("volume", 80))
+        self.popup("ball" if ball else "marker", "🎯" if ball else "📍",
+                   "%s%s  ·  X %d · Y %d" % ((name or "Marker").upper(), (" %d" % mk["num"]) if mk.get("num") else "", mk["x"], mk["y"]),
+                   (mk.get("text") or "")[:50], C["bad"] if ball else C["gold"])
         self.refresh_markers(True)
 
     def event_alarm(self, ev):
@@ -4292,12 +4463,15 @@ class App:
             sub = "%s%s" % ((who + " · ") if who else "", self.ago(ev["t"]))
             if k == "scout":                                 # wie Army-Buff: rot blinkend im Overlay
                 self.overlay.add_alert({"icon": "🔭", "title": T("ms_scout").upper(), "sub": (ev.get("text") or "")[:60] or sub, "tone": "bad", "blink": True})
+                self.popup("scout", "🔭", T("ms_scout"), (ev.get("text") or "")[:50] or sub)
                 play_sound(ac.get("scout_sound", "doppel"), vol)
             elif k == "rank":                                # Pop-up wie nach einem Kampf
                 tier = ev.get("tier") or "?"
-                self.toast.show_msg("🏆", T("ms_rank", t=tier), sub, C["gold"])
+                self.popup("rank", "🏆", T("ms_rank", t=tier), sub, C["gold"])
                 play_sound(ac.get("rank_sound", "glocke"), vol)
-            elif k == "hosp70":                              # wie Army-Buff
+            if k.startswith("hosp"):
+                self.popup("hosp", "💀" if k == "hospdead" else "🏥", T("ms_dead") if k == "hospdead" else T("ms_hosp", p=ev.get("pct") or 70), sub)
+            if k == "hosp70":                              # wie Army-Buff
                 self.overlay.add_alert({"icon": "🏥", "title": T("ms_hosp", p=ev.get("pct") or 70).upper(), "sub": sub, "tone": "bad", "blink": True})
                 play_sound(ac.get("hosp_sound", "sirene"), vol)
             elif k == "hosp85":                              # + Warnung oben am Bildschirmrand
@@ -4322,8 +4496,7 @@ class App:
             if ev["kind"] == "army":
                 a["until"] = time.time() + 60 * float(ac.get("dur_army", ac.get("show_min", 10)))
             self.overlay.add_alert(a)
-            if ac.get("buff_popup", False):                       # zusaetzlich Pop-up (Position einstellbar)
-                self.toast.show_msg(icon, title, sub, C["bad"])
+            self.popup("army" if ev["kind"] == "army" else "buff", icon, title, sub)
             play_sound(ac.get("buff_sound", "sirene"), ac.get("volume", 80))
         elif ev["ev"] == "bld":
             if not ac.get("bld", True):
@@ -4340,6 +4513,7 @@ class App:
             self.overlay.add_alert({"icon": icon, "title": title.upper(), "sub": "X %d · Y %d%s" % (ev["x"], ev["y"], ("  · [%s]" % ev["ally"]) if ev.get("ally") else ""),
                                     "tone": tone, "blink": ev["lost"], "xy": (ev["x"], ev["y"])})
             play_sound(ac.get("bld_sound", "glocke"), ac.get("volume", 80))
+            self.popup("bld", icon, title, "X %d · Y %d" % (ev["x"], ev["y"]), C["bad"] if ev["lost"] else (C["good"] if ev["ours"] else C["gold"]))
 
     def test_alert(self, kind):
         now = int(time.time())
@@ -4473,11 +4647,29 @@ class App:
         T = self.t
         self.focus_bar(body, C["bg"]).pack(fill="x", pady=(0, px(10)))
         sub = getattr(self, "ov_sub", "view")
-        Seg(body, [("view", "👁 " + T("ovt_view")), ("mods", "✨ " + T("ovt_mods")), ("pos", "📐 " + T("ovt_pos")), ("vals", "📊 " + T("ovt_vals"))],
+        if sub == "mods":
+            sub = self.ov_sub = "march"
+        Seg(body, [("view", "👁 " + T("ovt_view")), ("vals", "📊 " + T("ovt_vals")), ("march", "⚔ " + T("ovt_march")),
+                   ("feed", "📰 " + T("ovt_feed")), ("pos", "📐 " + T("ovt_pos"))],
             sub, lambda v: (setattr(self, "ov_sub", v), self.render())).pack(anchor="w", pady=(0, px(4)))
-        {"view": self._ov_view, "mods": self._ov_mods, "pos": self.pos_card, "vals": self._ov_vals}.get(sub, self._ov_view)(body)
+        {"view": self._ov_view, "march": self._ov_march, "feed": self._ov_modules, "pos": self.pos_card, "vals": self._ov_vals}.get(sub, self._ov_view)(body)
+
+    def _ov_view_extra(self, body):
+        T, ov = self.t, self.cfg["overlay"]
+        o, c = card(body, "🎨 " + T("look_title")); o.pack(fill="x", pady=(px(14), 0))
+        g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
+        for i, (key, lab) in enumerate((("icons", "opt_icons"), ("mk_coords", "opt_coords"))):
+            v = tk.BooleanVar(value=ov.get(key, True))
+            Toggle(g, T(lab), v, lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw(),
+                                                       self.march.draw(True))).grid(row=0, column=i, sticky="w", padx=(0, px(24)))
+        self.chips_row(c, T("opt_spacing"), "spacing", [3, 5, 7, 10, 14], lambda v: "%d px" % v,
+                       lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw()), ("px", 1, 0, 40))
 
     def _ov_view(self, body):
+        self._ov_view_main(body)
+        self._ov_view_extra(body)
+
+    def _ov_view_main(self, body):
         T, ov = self.t, self.cfg["overlay"]
         top = tk.Frame(body, bg=C["bg"]); top.pack(fill="x", pady=(px(10), 0))
         o, c = card(top, T("card_view")); ov_cards = [o]
@@ -4583,10 +4775,9 @@ class App:
     def _ov_modules(self, body):
         T, ov = self.t, self.cfg["overlay"]
         # --- Module
-        o, c = card(body, "✨ " + T("card_modules")); o.pack(fill="x", pady=(px(14), 0))
+        o, c = card(body, "📰 " + T("ovt_feed")); o.pack(fill="x", pady=(px(14), 0))
         g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
-        items = (("feed", "mod_feed"), ("toast", "mod_toast"), ("march", "mod_march"), ("clickthrough", "mod_click"), ("feed_pve", "mod_feed_pve"),
-                 ("icons", "opt_icons"), ("mk_coords", "opt_coords"), ("march_icons", "opt_march_icons"))
+        items = (("feed", "mod_feed"), ("feed_pve", "mod_feed_pve"), ("toast", "mod_toast"), ("clickthrough", "mod_click"))
         for i, (key, lab) in enumerate(items):
             v = tk.BooleanVar(value=ov.get(key, key in ("feed", "toast", "icons", "mk_coords", "march_icons")))
             if key == "clickthrough":
@@ -4598,25 +4789,26 @@ class App:
             else:
                 cmd = lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self, "_sig", None))
             Toggle(g, T(lab), v, cmd).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(24)), pady=px(3))
-        redraw = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
-        self.chips_row(c, T("opt_spacing"), "spacing", [3, 5, 7, 10, 14], lambda v: "%d px" % v, redraw, ("px", 1, 0, 40))
         self.chips_row(c, T("feed_n"), "feed_n", [3, 4, 5, 6], str, lambda: self.feed.draw(True))
-        self.chips_row(c, "🏁 " + T("goal_today"), "goal_kp", [0, 5000000, 10000000, 25000000, 50000000],
-                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Mio.", 1000000, 0, 5000))
-        self.chips_row(c, "★ " + T("goal_acc"), "goal_acc", [0, 50000, 100000, 250000, 500000],
-                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Tsd.", 1000, 0, 100000))
-        self.chips_row(c, "⏱ " + T("feed_settle"), "feed_settle", [0, 10, 15, 30, 60], lambda v: T("off") if not v else "%d s" % v,
+        self.chips_row(c, "⏱ " + T("feed_settle"), "feed_settle", [0, 10, 15, 30, 60], lambda v: T("live") if not v else "%d s" % v,
                        lambda: (self._sig_reset(), self.feed.draw(True)), ("s", 1, 0, 600))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
         vm = tk.BooleanVar(value=ov.get("feed_merge", False))
         Toggle(r, T("feed_merge"), vm, lambda: (self.set_opt("feed_merge", vm.get()), self._sig_reset(), self.feed.draw(True))).pack(anchor="w")
-        self.chips_row(c, "⚙ " + T("calc_every"), "calc_every", [2, 5, 10], lambda v: "%d s" % v, None, ("s", 1, 1, 60))
+        # Leistung
+        o, c = card(body, "⚙ " + T("perf_title")); o.pack(fill="x", pady=(px(14), 0))
+        self.chips_row(c, T("calc_every"), "calc_every", [2, 5, 10], lambda v: "%d s" % v, None, ("s", 1, 1, 60))
         tk.Label(c, text=T("calc_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(4), 0))
-        tk.Label(c, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
+        tk.Label(c, text=T("perf_tips"), bg=C["card"], fg=C["muted"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
 
     def _ov_march(self, body):
         T, ov = self.t, self.cfg["overlay"]
         o, c = card(body, "⚔ " + T("mod_march")); o.pack(fill="x", pady=(px(14), 0))
+        g = tk.Frame(c, bg=C["card"]); g.pack(fill="x", pady=(0, px(8)))
+        vm_ = tk.BooleanVar(value=ov.get("march", False))
+        Toggle(g, T("march_show"), vm_, lambda: self.set_module("march", vm_.get())).grid(row=0, column=0, sticky="w", padx=(0, px(24)))
+        vi_ = tk.BooleanVar(value=ov.get("march_icons", True))
+        Toggle(g, T("opt_march_icons"), vi_, lambda: (self.set_opt("march_icons", vi_.get()), self.march.draw(True))).grid(row=0, column=1, sticky="w")
         tk.Label(c, text=T("slot_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
         n = int(ov.get("march_n", 4))
         sl = list(ov.get("march_slots") or []) + [None] * 7
@@ -4693,6 +4885,16 @@ class App:
         self._sig_reset(); self.render(); self.flash("📌 " + self.t("slot_fixed"))
 
     def _ov_vals(self, body):
+        self._ov_vals_main(body)
+        T, ov = self.t, self.cfg["overlay"]
+        redraw = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
+        o, c = card(body, "🏁 " + T("goals_title")); o.pack(fill="x", pady=(px(14), 0))
+        self.chips_row(c, "🏁 " + T("goal_today"), "goal_kp", [0, 5000000, 10000000, 25000000, 50000000],
+                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Mio.", 1000000, 0, 5000))
+        self.chips_row(c, "★ " + T("goal_acc"), "goal_acc", [0, 50000, 100000, 250000, 500000],
+                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Tsd.", 1000, 0, 100000))
+
+    def _ov_vals_main(self, body):
         T, ov = self.t, self.cfg["overlay"]
         o, c = card(body, T("card_values")); o.pack(fill="both", expand=True, pady=(14, 0))
         grid = tk.Frame(c, bg=C["card"]); grid.pack(anchor="w")
@@ -4891,6 +5093,24 @@ class App:
                 messagebox.showerror(self.t("err"), str(err)); return
             self.cfg["links"] = d.get("links", []); save_cfg(self.cfg); self.render()
         self.run_bg(lambda: self.api("link" if on else "unlink", {"governor_id": str(pid), "gov_name": name, "kind": kind}), done)
+
+    POPUPS = [("battle", "⚔", True), ("ball", "🎯", False), ("marker", "📍", False), ("mention", "📣", True), ("army", "🪖", False),
+              ("buff", "⏳", False), ("exp", "🪖", False), ("scout", "🔭", False), ("hosp", "🏥", False), ("rank", "🏆", True), ("bld", "🏰", False)]
+
+    def popup_on(self, kind):
+        p = self.cfg.get("popups") or {}
+        if kind == "battle":
+            return self.cfg["overlay"].get("toast", True)
+        if kind == "army" and "army" not in p and self.cfg["alerts"].get("buff_popup"):
+            return True
+        return p.get(kind, dict((k, d) for k, _i, d in self.POPUPS).get(kind, False))
+
+    def popup_col(self, kind, dflt=None):
+        return (self.cfg.get("popups_col") or {}).get(kind) or dflt
+
+    def popup(self, kind, icon, title, sub, col=None):
+        if self.popup_on(kind):
+            self.toast.show_msg(icon, title, sub, self.popup_col(kind, col or C["bad"]))
 
     def ov_on(self):
         return self.cfg["overlay"].get("all_on", True) and (not self.cfg.get("rok_only") or getattr(self, "_rok_up", True))
@@ -5132,8 +5352,7 @@ class App:
             if sig_changed:
                 self._sig = sig
                 self._calc_at = now
-                with self.scanner.lock:
-                    bs = list(self.scanner.battles.values())
+                bs = self.scanner.battle_list()
                 self._local = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
                 if ov.get("source", "web") == "web" and getattr(self, "_web_stats", None) and self.cfg.get("token"):
                     self._vals = web_vals(self._web_stats, self._local, self.cfg.get("lang", "de"))   # bis neue Website-Zahlen da sind
