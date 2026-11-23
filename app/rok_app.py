@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.37-test"
+APP_VERSION = "0.40-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -114,6 +114,9 @@ TXT = {
     "perf_title": "Leistung", "perf_tips": "Flüssig bleiben: Deckkraft 100 % (Durchsichtigkeit kostet Windows am meisten) · nur die Fenster an, die du brauchst · RoK im Fenster-/randlosen Modus · „Neu rechnen alle“ im großen Kampf auf 10 s.",
     "as_marker": "Marker", "as_buffs": "Buffs & 50 %", "as_msgs": "Nachrichten", "as_bld": "Gebäude", "as_popups": "Pop-ups", "as_test": "Ton & Test",
     "pp_color": "Farbe (A = Standard)",
+    "streak_gap": "Battle Streak bis", "streak_info": "Nur falls das Spiel keine Hauptbericht-Nummer mitschickt: Berichte desselben Marsches, die dichter als diese Zeit kommen, zählen als EINE Battle Streak (wie im Spiel „Battle Streak: 5“).",
+    "md_export": "Berichte als Datei für Claude",
+    "md_parts": "Aktuelle Battle Streak: {h} von {n} Teilen im Mail-Ordner.", "md_parts_miss": "Es fehlen Teile – öffne den Bericht einmal im Spiel, dann lädt RoK sie nach und die Zahl stimmt.",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -221,6 +224,9 @@ TXT = {
     "perf_title": "Performance", "perf_tips": "Stay smooth: opacity 100 % (transparency costs Windows the most) · only the windows you need · RoK in windowed/borderless mode · set “Recalculate every” to 10 s in big fights.",
     "as_marker": "Markers", "as_buffs": "Buffs & 50 %", "as_msgs": "Messages", "as_bld": "Buildings", "as_popups": "Pop-ups", "as_test": "Sound & test",
     "pp_color": "Colour (A = default)",
+    "streak_gap": "Battle streak up to", "streak_info": "Only if the game sends no main-report number: reports of the same march closer than this count as ONE battle streak (like “Battle Streak: 5” in game).",
+    "md_export": "Export reports for Claude",
+    "md_parts": "Current battle streak: {h} of {n} parts in the mail folder.", "md_parts_miss": "Parts are missing – open the report once in game, then RoK downloads them and the number is right.",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -419,6 +425,19 @@ def _n(d, k):
     return v if isinstance(v, (int, float)) else 0
 
 
+def _parent_of(mail, content):
+    """ID des Hauptberichts (Battle Streak) – Feldname im Spiel nicht sicher, daher alle Kandidaten."""
+    for d in (mail, mail.get("body") or {}, content or {}):
+        if not isinstance(d, dict):
+            continue
+        for k, v in d.items():
+            kl = str(k).lower()
+            if ("parent" in kl or "streak" in kl or kl in ("pid_mail", "groupid", "gid")) and v not in (None, "", 0, "0") \
+                    and not isinstance(v, (dict, list)):
+                return v
+    return None
+
+
 def summarize(mail):
     """Kleine Zusammenfassung eines Kampfberichts fuer das Overlay (oder None)."""
     if not isinstance(mail, dict) or mail.get("type") != "Battle":
@@ -432,7 +451,8 @@ def summarize(mail):
     if isinstance(t, (int, float)) and t > 1e14:
         t = t / 1e6
     out = {"id": str(mail.get("id")), "pid": pid, "name": me.get("PName"), "t": int(t or 0), "arch": mail.get("box") == "Archive", "fights": [],
-           "par": str(mail.get("parentId") or mail.get("id")),       # Battle Streak: alle Teil-Berichte haengen am Hauptbericht
+           "par": str(_parent_of(mail, c) or mail.get("id")),       # Battle Streak: alle Teil-Berichte haengen am Hauptbericht
+           "cno": int(mail.get("childNo") or 0),                      # Teil-Nr. in der Streak (1, 2, 3 …)
            "h": [me.get("HId") or 0, me.get("HId2") or 0]}                      # eigene Kommandanten (= welcher Marsch)
     for a in (c.get("Attacks") or {}).values():
         if not isinstance(a, dict):
@@ -1205,11 +1225,13 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
         if in_r:
             t_first = b["t"] if t_first is None else min(t_first, b["t"])
             t_last = b["t"] if t_last is None else max(t_last, b["t"])
-        if b["t"] > last_t and any(f[0] for f in b["fights"]):
-            last_t = b["t"]
-            last_kp = sum(f[1] for f in b["fights"] if f[0])
-            last_enemy = next((f[10] for f in b["fights"] if f[0] and f[10]), "")
-            last_b = b
+    # "Letzter Kampf" = der ganze Bericht wie im Spiel (alle Teile der Battle Streak zusammen), nie nur der letzte Teil
+    for g in reports(battles, ids, True):
+        if (g["t0"], g["t"]) > (last_t, 0) or last_b is None:
+            last_t, last_b = g["t0"], g
+    if last_b is not None:
+        last_kp = sum(f[1] for f in last_b["fights"] if f[0])
+        last_enemy = next((f[10] for f in last_b["fights"] if f[0] and f[10]), "")
     out = fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang)
     out.update(enemy_marches(battles, ids, last_b, lang))
     out.update(npc_counts(battles, ids, since_ts, lang))
@@ -1261,27 +1283,53 @@ def battle_card(b):
     lvl = next((f[15] for f in fs if f[15]), 0)
     return {"t": b["t"], "win": win, "kp": kp, "trade": (en_l / own_l) if own_l else (None if not en_l else float("inf")),
             "h": list(b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": sum(1 for f in fs if not (len(f) > 20 and f[20] == "sum")),
-            "dead_march": own_rem <= 0, "ol": own_l, "el": en_l, "acc": sum(f[19] for f in fs if len(f) > 19), "kills": sum(f[6] + f[7] for f in fs)}
+            "parts": (b.get("nrep", 1), b.get("cmax", 0)), "dead_march": own_rem <= 0, "ol": own_l, "el": en_l, "acc": sum(f[19] for f in fs if len(f) > 19), "kills": sum(f[6] + f[7] for f in fs)}
+
+
+STREAK_GAP = {"v": 90}     # s: Berichte desselben Marsches dichter als das = eine Battle Streak (nur wenn die Mail keine Hauptbericht-ID hat)
+
+
+def streak_ids(battles):
+    """Fuer Berichte OHNE Hauptbericht-ID: aufeinanderfolgende Berichte desselben Marsches (Abstand <= STREAK_GAP) zusammenfassen."""
+    gap = STREAK_GAP["v"]
+    res = {}
+    if not gap:
+        return res
+    per = {}
+    for b in battles:
+        if (b.get("par") or b["id"]) == b["id"] and b.get("h") and b["h"][0]:
+            per.setdefault((b["pid"], b["h"][0], b["h"][1]), []).append(b)
+    for lst in per.values():
+        lst.sort(key=lambda b: b["t"])
+        gid, prev = None, None
+        for b in lst:
+            if prev is None or b["t"] - prev > gap:
+                gid = b["id"]
+            res[b["id"]] = gid
+            prev = b["t"]
+    return res
 
 
 def reports(battles, ids, pvp_only):
     """Ein Bericht wie im Spiel: Hauptbericht + alle Teil-Berichte (Battle Streak, gleiche parentId) zusammengerechnet.
     Waechst, solange der Kampf weiterlaeuft; ein neuer Hauptbericht = neuer Bericht (faengt bei 0 an)."""
     per = {}
+    sid = streak_ids(battles)
     for b in battles:
         if (ids is not None and b["pid"] not in ids) or b.get("arch"):
             continue
-        k = (b["pid"], b.get("par") or b["id"])
+        k = (b["pid"], sid.get(b["id"]) or b.get("par") or b["id"])
         g = per.get(k)
         if g is None:
             g = per[k] = {"id": k[1], "pid": b["pid"], "h": list(b.get("h") or (0, 0)), "t0": b["t"], "t": b["t"], "mt": b.get("mt", 0),
-                          "fights": [], "nrep": 0}
+                          "fights": [], "nrep": 0, "cmax": 0}
         g["fights"].extend(b["fights"])          # (vorher jedes Mal neue Liste -> im grossen Kampf sehr langsam)
+        g["cmax"] = max(g["cmax"], b.get("cno") or 0)          # hoechste Teil-Nr. = so viele Teile hat die Streak mindestens
         g["nrep"] += 1
         if "rem" in b and (b["t"], b.get("mt", 0)) >= (g.get("_rt", 0), 0):
             g["rem"], g["_rt"] = b["rem"], b["t"]          # Resttruppen aus dem neuesten Teil
         g["t0"] = min(g["t0"], b["t"]); g["t"] = max(g["t"], b["t"]); g["mt"] = max(g["mt"], b.get("mt", 0))
-        if b["id"] == k[1] and b.get("h") and b["h"][0]:
+        if b["id"] == k[1] and b.get("h") and b["h"][0]:                # (bei Notfall-Gruppe = erster Bericht)
             g["h"] = list(b["h"])                       # Kommandanten vom Hauptbericht
     out = list(per.values())
     if pvp_only:
@@ -2856,7 +2904,9 @@ class FeedWin(Float):
                   "%s%s" % (c["enemy"] or "NPC", (" Lv %d" % c["lvl"]) if c["lvl"] else "")
             cv.create_text(x, y + px(22), text=sub, anchor="nw", fill=C["text"], font=(FONT, 9, "bold"))
             if c["pvp"]:
-                cv.create_text(x, y + px(37), text="%s %s · %s" % (T("trade"), fmt_trade(c["trade"]), c["enemy"][:14]), anchor="nw",
+                have, need = c.get("parts", (1, 0))
+                miss = ("  · %d/%d" % (have, need)) if need and have < need else ""
+                cv.create_text(x, y + px(37), text="%s %s · %s%s" % (T("trade"), fmt_trade(c["trade"]), c["enemy"][:14], miss), anchor="nw",
                                fill=C["muted"], font=(FONT, 8))
             y += ch + gap
 
@@ -2982,7 +3032,7 @@ class Toast:
                 pass
         w = self._pw = tk.Toplevel(app.root)
         w.overrideredirect(True); w.attributes("-topmost", True); w.configure(bg="#0b0f19")
-        f = tk.Frame(w, bg="#0b0f19", highlightthickness=2, highlightbackground=C["gold"], padx=px(14), pady=px(10)); f.pack()
+        f = tk.Frame(w, bg="#0b0f19", highlightthickness=2, highlightbackground=C["gold"], padx=px(14), pady=px(8)); f.pack()
         tk.Label(f, text="✥ " + T("toast_drag"), bg="#0b0f19", fg=C["gold"], font=(FONT, 13, "bold")).pack(anchor="w")
         tk.Label(f, text=T("toast_drag2"), bg="#0b0f19", fg=C["text"], font=(FONT, 10)).pack(anchor="w")
         Btn(f, "✔ " + T("done"), lambda: done(), small=True).pack(anchor="e", pady=(px(6), 0))
@@ -2998,12 +3048,16 @@ class Toast:
             if "d" in st:
                 w.geometry("+%d+%d" % (e.x_root - st["d"][0], e.y_root - st["d"][1]))
 
+        def save(_e=None):
+            w.update_idletasks()
+            app.cfg["overlay"]["pos_toast"] = [w.winfo_rootx(), w.winfo_rooty()]; save_cfg(app.cfg)   # sofort gespeichert
+
         def done():
-            app.cfg["overlay"]["pos_toast"] = [w.winfo_x(), w.winfo_y()]; save_cfg(app.cfg)
+            save()
             w.destroy(); self._pw = None
             app.test_alert("battle")
         for wid in (w, f) + tuple(f.winfo_children()[:2]):
-            wid.bind("<ButtonPress-1>", start); wid.bind("<B1-Motion>", move)
+            wid.bind("<ButtonPress-1>", start); wid.bind("<B1-Motion>", move); wid.bind("<ButtonRelease-1>", save)
 
     def show_msg(self, icon, title, sub, col):
         """Gleiches Pop-up wie nach einem Kampf, fuer Nachrichten (z. B. Lost Kingdom S+)."""
@@ -3837,11 +3891,13 @@ class App:
         bs.sort(key=lambda b: (b["t"], b.get("mt", 0)))
         day = datetime.combine(date.today(), datetime.min.time()).timestamp()
         order = {}                                       # Hauptbericht -> Bericht-Nr. (wie im Spiel: Teil-Berichte gehoeren dazu)
+        sid = streak_ids(bs)
+        gk = lambda b: sid.get(b["id"]) or b.get("par") or b["id"]
         for b in bs:
-            order.setdefault(b.get("par") or b["id"], len(order) + 1)
+            order.setdefault(gk(b), len(order) + 1)
         rows = []
         for b in bs:
-            g = order[b.get("par") or b["id"]]
+            g = order[gk(b)]
             kp_all = sum(f[1] for f in b["fights"]); kp_pvp = sum(f[1] for f in b["fights"] if f[0])
             en = next((f[10] for f in b["fights"] if f[10]), "") or ("NPC" if b["fights"] else "–")
             rows.append((b, g, kp_all, kp_pvp, en))
@@ -3858,6 +3914,12 @@ class App:
         kr = tk.Frame(w, bg=C["bg"]); kr.pack(fill="x", padx=px(18))
         for lab, v, col in ((T("md_fight"), tot_g, C["gold"]), (T("md_today"), tot_day, None), (T("md_all"), tot_all, None), (T("md_reports"), len(rows), None)):
             kpi(kr, lab, fmt_num(v, lang) if lab != T("md_reports") else str(v), value_col=col).pack(side="left", padx=(0, px(8)))
+        cur_parts = [r for r in rows if r[1] == last_g]
+        cmax = max((r[0].get("cno") or 0 for r in cur_parts), default=0)
+        if cmax:
+            ok_ = len(cur_parts) >= cmax
+            tk.Label(w, text=T("md_parts", h=len(cur_parts), n=cmax) + ("" if ok_ else "  " + T("md_parts_miss")), bg=C["bg"],
+                     fg=C["good"] if ok_ else "#fb923c", font=(FONT, 9, "bold"), wraplength=px(680), justify="left").pack(anchor="w", padx=px(18), pady=(px(6), 0))
         tk.Label(w, text=T("md_info"), bg=C["bg"], fg=C["dim"], font=(FONT, 9), wraplength=px(680), justify="left").pack(anchor="w", padx=px(18), pady=(px(8), px(4)))
         sc = Scroll(w, C["bg"]); sc.pack(fill="both", expand=True, padx=(px(18), px(6)), pady=(0, px(6)))
         lines = ["%s | %s" % (self.pair_name(k), APP_VERSION), "Zeit | Gefecht | KP gesamt | KP PvP | Kaempfe | Gegner | ID"]
@@ -3874,6 +3936,26 @@ class App:
             lines.append("%s | %d | %d | %d | %d | %s | %s" % (datetime.fromtimestamp(b["t"]).strftime("%d.%m. %H:%M:%S"), gi, ka, kpv, len(b["fights"]), en, b["id"]))
         bt = tk.Frame(w, bg=C["bg"]); bt.pack(fill="x", padx=px(18), pady=(0, px(12)))
         Btn(bt, "📋 " + T("md_copy"), lambda: self.copy_text("\n".join(lines)), small=True).pack(side="left")
+        Btn(bt, "📤 " + T("md_export"), lambda: self.export_reports(bs[-15:]), "ghost", small=True).pack(side="left", padx=(px(8), 0))
+
+    def export_reports(self, bs):
+        """Die neuesten Berichte dieses Marsches komplett (entschluesselt) als Datei – damit Claude die echten Felder sieht."""
+        out = {"app": APP_VERSION, "mails": []}
+        for b in bs:
+            try:
+                m = read_mail(b["file"])
+                out["mails"].append({"file": os.path.basename(b["file"]), "summary": {k: b.get(k) for k in ("id", "par", "t", "mt", "h", "init", "rem")}, "mail": m})
+            except Exception as e:
+                out["mails"].append({"file": b.get("file"), "error": str(e)})
+        fn = os.path.join(DATA, "bericht_export.json")
+        with open(fn, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=1, default=str)
+        self.flash("📤 " + fn)
+        try:
+            if IS_WIN:
+                os.startfile(DATA)
+        except Exception:
+            pass
 
     def pair_name(self, k):
         return "%s + %s" % (self.hero_name(k[0]), self.hero_name(k[1])) if k else "⚡ " + self.t("march_auto")
@@ -4841,6 +4923,9 @@ class App:
         vo = tk.BooleanVar(value=ov.get("hero_one", False))
         Toggle(r, T("hero_one"), vo, lambda: (self.set_opt("hero_one", vo.get()), redraw_all())).pack(anchor="w")
         self.chips_row(c, "⚖ " + T("trade_fmt"), "trade_fmt", ["pct", "ratio"], lambda v: T("tf_" + v), redraw_all)
+        self.chips_row(c, "🔗 " + T("streak_gap"), "streak_gap", [0, 60, 90, 120, 180], lambda v: T("off") if not v else "%d s" % v,
+                       lambda: (STREAK_GAP.update(v=int(self.cfg["overlay"].get("streak_gap", 90))), self._sig_reset(), self.feed.draw(True)), ("s", 1, 0, 900))
+        tk.Label(c, text=T("streak_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(2), 0))
         self.chips_row(c, T("march_kind"), "march_kind", ["auto", "pvp", "pve"], lambda v: T("mk_" + v),
                        lambda: (self._sig_reset(), self.march.draw(True)))
         self.chips_row(c, T("march_n"), "march_n", [1, 2, 3, 4, 5, 6, 7], str, lambda: (self.march.draw(True), self._sig_reset(), self.render()))
@@ -5342,6 +5427,7 @@ class App:
                 nm, self.scanner.new_markers = self.scanner.new_markers, []
                 ver = self.scanner.ver
             TRADE_FMT["v"], TRADE_FMT["lang"] = ov.get("trade_fmt", "pct"), self.cfg.get("lang", "de")
+            STREAK_GAP["v"] = int(ov.get("streak_gap", 90))
             every = max(1, int(ov.get("calc_every", 5)))
             self.scanner.calc_every = every
             if ver != getattr(self, "_ver_used", None) and now - getattr(self, "_calc_at", 0) >= every:
