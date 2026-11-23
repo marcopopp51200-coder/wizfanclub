@@ -84,8 +84,8 @@ tailwind.config = { theme: { extend: {
       <ul id="pilots" class="divide-y divide-ink-700 text-sm"></ul>
     </div>
 
-    <div class="panel rounded-xl p-5 space-y-2">
-      <h2 class="font-semibold text-gold-300" data-t="devices"></h2>
+    <div id="devBox" class="panel rounded-xl p-5 space-y-2 hidden">
+      <h2 class="font-semibold text-gold-300"><span data-t="devices"></span> <span class="text-[11px] ml-1 px-1.5 py-0.5 rounded bg-gold-500/15 text-gold-300 align-middle">Admin</span></h2>
       <ul id="devices" class="divide-y divide-ink-700 text-sm"></ul>
     </div>
   </section>
@@ -102,7 +102,7 @@ tailwind.config = { theme: { extend: {
           dlWarn: 'Die App ist (noch) nicht kostenpflichtig signiert. Windows zeigt deshalb evtl. „Der Computer wurde durch Windows geschützt“. Klick auf „Weitere Informationen“ → „Trotzdem ausführen“. Die Datei wird automatisch von GitHub aus dem öffentlichen Quellcode gebaut.',
           step1: '1. Code erzeugen', step1txt: 'Klick auf den Button und gib den Code in der Wiz-fan-Club-App unter „Verbinden“ ein. Der Code gilt 10 Minuten.',
           oneTitle: '1. Mit der App verbinden', oneTxt: 'App herunterladen und einmal starten. Danach hier klicken – Windows fragt „Wiz fan Club App öffnen?“, die App verbindet sich von selbst.',
-          oneBtn: 'Mit App verbinden', oneHint: 'Nichts passiert? Starte die App zuerst einmal (oben herunterladen), dann noch einmal klicken.', oneOk: '✔ Verbunden mit „{n}“',
+          oneBtn: 'Mit App verbinden', oneHint: 'Nichts passiert? Starte die App zuerst einmal (oben herunterladen), dann noch einmal klicken.', oneOk: '✔ Verbunden mit „{n}“', oneOk2: '✔ Die App ist verbunden!',
           manual: 'Klappt nicht? Manuell mit Code verbinden',
           newCode: 'Code erzeugen', appAddr: 'Website-Adresse für die App:', copy: 'Kopieren', copied: 'Kopiert ✓', left: 'noch {m}:{s} gültig', expired: 'Abgelaufen – neuen Code erzeugen.',
           ids: 'Gebundene Governor-IDs', idsTxt: 'Diese IDs hast du in der App gebunden. Nur ihre Kämpfe werden hochgeladen und gezählt.',
@@ -117,7 +117,7 @@ tailwind.config = { theme: { extend: {
           dlWarn: 'The app is not (yet) code-signed. Windows may show “Windows protected your PC”. Click “More info” → “Run anyway”. The file is built automatically by GitHub from the public source code.',
           step1: '1. Create a code', step1txt: 'Click the button and enter the code in the Wiz fan Club app under "Connect". The code is valid for 10 minutes.',
           oneTitle: '1. Connect with the app', oneTxt: 'Download the app and start it once. Then click here – Windows asks “Open Wiz fan Club App?”, the app connects by itself.',
-          oneBtn: 'Connect with app', oneHint: 'Nothing happened? Start the app once first (download above), then click again.', oneOk: '✔ Connected with “{n}”',
+          oneBtn: 'Connect with app', oneHint: 'Nothing happened? Start the app once first (download above), then click again.', oneOk: '✔ Connected with “{n}”', oneOk2: '✔ The app is connected!',
           manual: 'Not working? Connect manually with a code',
           newCode: 'Create code', appAddr: 'Website address for the app:', copy: 'Copy', copied: 'Copied ✓', left: 'valid for {m}:{s}', expired: 'Expired – create a new code.',
           ids: 'Linked governor IDs', idsTxt: 'You linked these IDs in the app. Only their battles are uploaded and counted.',
@@ -164,7 +164,6 @@ tailwind.config = { theme: { extend: {
   $('oneBtn').onclick = async () => {
     showErr(''); $('oneHint').classList.add('hidden'); $('oneOk').classList.add('hidden');
     try {
-      const before = new Set(((await api('overview')).devices || []).map((d) => d.id));
       const d = await api('newcode', {});
       location.href = `wizfanclub://pair?c=${d.code}&s=${encodeURIComponent(location.origin)}`;
       setTimeout(() => { if ($('oneOk').classList.contains('hidden')) $('oneHint').classList.remove('hidden'); }, 6000);
@@ -172,8 +171,8 @@ tailwind.config = { theme: { extend: {
       watch = setInterval(async () => {
         if (++n > 60) return clearInterval(watch);
         try {
-          const o = await api('overview'); const nd = (o.devices || []).find((x) => !before.has(x.id));
-          if (nd) { clearInterval(watch); $('oneHint').classList.add('hidden'); $('oneOk').textContent = t('oneOk', { n: nd.device_name || 'PC' }); $('oneOk').classList.remove('hidden'); load(); }
+          const o = await api('codestatus&code=' + d.code);
+          if (o.used) { clearInterval(watch); $('oneHint').classList.add('hidden'); $('oneOk').textContent = t('oneOk2'); $('oneOk').classList.remove('hidden'); setTimeout(load, 1500); }
         } catch {}
       }, 3000);
     } catch (e) { showErr(e.message); }
@@ -202,7 +201,8 @@ tailwind.config = { theme: { extend: {
     try {
       const d = await api('overview');
       const kindCls = { main: 'bg-gold-500/20 text-gold-300', alt: 'bg-sky-900/40 text-sky-300', pilot: 'bg-violet-900/40 text-violet-300' };
-      $('links').innerHTML = d.links.length ? d.links.map((x) => `<li class="py-2 flex items-center gap-2 flex-wrap">
+      const lks = d.links || [];
+      $('links').innerHTML = lks.length ? lks.map((x) => `<li class="py-2 flex items-center gap-2 flex-wrap">
         <span class="text-[11px] px-1.5 rounded ${kindCls[x.kind] || kindCls.alt}">${t('k_' + (x.kind || 'alt'))}</span>
         <span class="font-mono" translate="no">${esc(x.governor_id)}</span><span class="text-slate-300">${esc(x.gov_name || '')}</span>
         ${x.status === 'pending' ? `<span class="text-[11px] px-1.5 rounded bg-amber-900/40 text-amber-300">${t('pending')}</span>`
@@ -218,8 +218,10 @@ tailwind.config = { theme: { extend: {
             <button data-pilot="${p.id}" data-allow="0" class="ml-auto text-xs text-red-300 hover:text-red-200">${t('remove')}</button>`
           : `<button data-pilot="${p.id}" data-allow="1" class="ml-auto text-xs px-2 py-1 rounded bg-gold-500 text-ink-950 font-semibold">${t('allow')}</button>
             <button data-pilot="${p.id}" data-allow="0" class="text-xs text-red-300 hover:text-red-200">${t('deny')}</button>`}</li>`).join('');
-      $('devices').innerHTML = d.devices.length ? d.devices.map((x) => `<li class="py-2 flex items-center gap-3">
-        <span>💻 ${esc(x.device_name || 'PC')}</span><span class="text-xs text-slate-500">${t('lastSeen')}: ${fmtDate(x.last_seen)}</span>
+      $('devBox').classList.toggle('hidden', !d.admin);
+      const devs = d.devices || [];
+      $('devices').innerHTML = devs.length ? devs.map((x) => `<li class="py-2 flex items-center gap-3">
+        <span>💻 ${esc(x.device_name || 'PC')}</span><span class="text-xs text-gold-300/80">${esc(x.owner || '')}</span><span class="text-xs text-slate-500">${t('lastSeen')}: ${fmtDate(x.last_seen)}</span>
         <button data-dev="${x.id}" class="ml-auto text-xs text-red-300 hover:text-red-200">${t('disconnect')}</button></li>`).join('')
         : `<li class="py-2 text-slate-500">${t('noDev')}</li>`;
     } catch (e) { showErr(e.message); }
