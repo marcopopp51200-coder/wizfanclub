@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.42-test"
+APP_VERSION = "0.44-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -28,7 +28,7 @@ LOG_FILE = os.path.join(DATA, "app_log.txt")
 RES = getattr(sys, "_MEIPASS", HERE)            # mitgelieferte Dateien (Icon)
 MARKER_TTL = 3600       # Ball-Marker loeschen sich nach 1 Stunde selbst
 MARKER_TTL_OTHER = 1800 # alle anderen Marker nach 30 Minuten
-CACHE_VER = 8          # 2: + Marker-Mails (einmal alles neu einlesen)
+CACHE_VER = 9          # 2: + Marker-Mails (einmal alles neu einlesen)
 
 try:                                    # vorhandener Uploader (v16) im selben Ordner -> fuer Hochladen
     sys.path.insert(0, HERE)
@@ -114,7 +114,7 @@ TXT = {
     "perf_title": "Leistung", "perf_tips": "Flüssig bleiben: Deckkraft 100 % (Durchsichtigkeit kostet Windows am meisten) · nur die Fenster an, die du brauchst · RoK im Fenster-/randlosen Modus · „Neu rechnen alle“ im großen Kampf auf 10 s.",
     "as_marker": "Marker", "as_buffs": "Buffs & 50 %", "as_msgs": "Nachrichten", "as_bld": "Gebäude", "as_popups": "Pop-ups", "as_test": "Ton & Test",
     "pp_color": "Farbe (A = Standard)",
-    "streak_gap": "Battle Streak bis", "streak_info": "Nur falls das Spiel keine Hauptbericht-Nummer mitschickt: Berichte desselben Marsches, die dichter als diese Zeit kommen, zählen als EINE Battle Streak (wie im Spiel „Battle Streak: 5“).",
+    "streak_gap": "Streak max. Pause", "streak_info": "🔗 Battle Streak: Alle Runden desselben Marsches werden zusammengerechnet (wie „Data Summary“ im Spiel) – auch wenn du rumstehst. Erst wenn du den Marsch neu losschickst, fängt es wieder bei 0 an.",
     "md_export": "Berichte als Datei für Claude",
     "md_parts": "Aktuelle Battle Streak: {h} von {n} Teilen im Mail-Ordner.", "md_parts_miss": "Es fehlen Teile – öffne den Bericht einmal im Spiel, dann lädt RoK sie nach und die Zahl stimmt.",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
@@ -224,7 +224,7 @@ TXT = {
     "perf_title": "Performance", "perf_tips": "Stay smooth: opacity 100 % (transparency costs Windows the most) · only the windows you need · RoK in windowed/borderless mode · set “Recalculate every” to 10 s in big fights.",
     "as_marker": "Markers", "as_buffs": "Buffs & 50 %", "as_msgs": "Messages", "as_bld": "Buildings", "as_popups": "Pop-ups", "as_test": "Sound & test",
     "pp_color": "Colour (A = default)",
-    "streak_gap": "Battle streak up to", "streak_info": "Only if the game sends no main-report number: reports of the same march closer than this count as ONE battle streak (like “Battle Streak: 5” in game).",
+    "streak_gap": "Streak max. pause", "streak_info": "🔗 Battle streak: all rounds of the same march are added up (like “Data Summary” in game) – even while standing still. Only when you send the march out again does it start at 0.",
     "md_export": "Export reports for Claude",
     "md_parts": "Current battle streak: {h} of {n} parts in the mail folder.", "md_parts_miss": "Parts are missing – open the report once in game, then RoK downloads them and the number is right.",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
@@ -323,6 +323,8 @@ def load_cfg():
             rl.append({"name": "Runen", "words": "rune, runes, runen, rn", "sound": "ding"})
         if cfg.get("api_base", "").rstrip("/") == "https://rok-scanner.vercel.app":   # v0.30: alte Standard-Adresse gibt es nicht
             cfg["api_base"] = "https://wiz-fanclub.vercel.app"
+        if not cfg.get("sg44"):                                      # v0.44: Streak ueber Truppen, Zeit nur noch als lange Grenze
+            cfg["overlay"]["streak_gap"] = 1800; cfg["sg44"] = True
         if cfg["overlay"].get("march_reset") == "fight":              # v0.28: Gefecht-Modus entfernt -> aktuellster Bericht
             cfg["overlay"]["march_reset"] = "last"
         if len(rl) >= 3 and rl[2].get("name") == "Sammeln":          # v0.19: 3. Art ist jetzt Garnison
@@ -475,6 +477,19 @@ def summarize(mail):
     out["init"] = max(out.get("init", 0), _n(sov, "InitMax"), _n(sov, "Max"))       # Truppen beim Start (50 % Expansion -> 400K+)
     if sov and ("Cnt" in sov or "Remain" in sov):
         out["rem"] = _n(sov, "Cnt") or _n(sov, "Remain")                              # "Remaining" aus Data Summary
+    # Truppen am Anfang / Ende DIESER Runde (fuer Battle Streak: naechste Runde beginnt genau mit dem Rest der vorigen)
+    mx = [_n(a.get("Damage") or {}, "Max") for a in (c.get("Attacks") or {}).values() if isinstance(a, dict)]
+    cn = [_n(a.get("Damage") or {}, "Cnt") for a in (c.get("Attacks") or {}).values() if isinstance(a, dict)]
+    st = _n(sov, "Max") or (max(mx) if mx else 0)
+    en = (_n(sov, "Cnt") if sov and "Cnt" in sov else 0) or (min([x for x in cn if x] or [0]))
+    if st:
+        out["st"], out["en"] = st, en
+    # Marsch-ID: jeder losgeschickte Marsch bekommt im Spiel eine eigene Objekt-Nr. (STs) – steht schon LIVE in jeder Runde,
+    # auch wenn parentId/childNo noch fehlen. Gleiche Marsch-ID = gleiche Battle Streak (1:1 geprueft).
+    sts = c.get("STs") if isinstance(c.get("STs"), dict) else {}
+    mo = next((k for k, v in sts.items() if isinstance(v, dict) and v.get("PId") == pid), None) or (sorted(sts)[0] if sts else None)
+    if mo:
+        out["mo"] = str(mo)
     if sov and out["fights"]:
         # Die Runden (19-1, 18-1 …) sind im Spiel oft nur die letzten paar. Die HAUPTZAHL steht in "Data Summary".
         # -> Unterschied als eine Ausgleichs-Zeile anhaengen, damit alle Summen genau die Hauptzahl ergeben.
@@ -1286,27 +1301,75 @@ def battle_card(b):
             "parts": (b.get("nrep", 1), b.get("cmax", 0)), "dead_march": own_rem <= 0, "ol": own_l, "el": en_l, "acc": sum(f[19] for f in fs if len(f) > 19), "kills": sum(f[6] + f[7] for f in fs)}
 
 
-STREAK_GAP = {"v": 90}     # s: Berichte desselben Marsches dichter als das = eine Battle Streak (nur wenn die Mail keine Hauptbericht-ID hat)
+STREAK_GAP = {"v": 1800}     # s: Berichte desselben Marsches dichter als das = eine Battle Streak (nur wenn die Mail keine Hauptbericht-ID hat)
 
 
 def streak_ids(battles):
-    """Fuer Berichte OHNE Hauptbericht-ID: aufeinanderfolgende Berichte desselben Marsches (Abstand <= STREAK_GAP) zusammenfassen."""
-    gap = STREAK_GAP["v"]
-    res = {}
-    if not gap:
-        return res
+    """Battle Streak zuordnen – auch WAEHREND des Kampfes. Das Spiel schreibt die Runden zuerst OHNE Streak-Nummer
+    (parentId/childNo kommen erst spaeter). Jede Runde hat aber schon die Marsch-ID (STs): ein Marsch = eine Streak.
+    Neuer Marsch losgeschickt -> neue ID -> neue Streak (faengt bei 0 an). Rumstehen aendert nichts.
+    Sobald die echte Streak-Nummer da ist, bekommen alle Runden dieses Marsches diese Nummer."""
+    res, mo_par, rest = {}, {}, []
+    for b in battles:
+        real = b.get("par") if b.get("par") and b["par"] != b["id"] else None
+        if real and b.get("mo"):
+            mo_par.setdefault((b["pid"], b["mo"]), real)
+    for b in battles:
+        real = b.get("par") if b.get("par") and b["par"] != b["id"] else None
+        if real:
+            res[b["id"]] = real
+        elif b.get("mo"):
+            res[b["id"]] = mo_par.get((b["pid"], b["mo"])) or "m%s_%s" % (b["pid"], b["mo"])
+        else:
+            rest.append(b)
+    if rest:
+        res.update(_streak_ids_old(rest))
+    return res
+
+
+def _streak_ids_old(battles):
+    """Nur fuer alte Daten ohne Marsch-ID. Das Spiel schreibt die Runden zuerst OHNE Streak-Nummer
+    und traegt parentId/childNo erst spaeter nach. Darum ueber die TRUPPEN:
+    jede Runde einer Streak beginnt mit dem Rest der vorigen Runde (408.158 -> 408.158; mit Heil-Kommandant ca. +0,7 %).
+    Hat der Marsch am Anfang MEHR Truppen als zuletzt uebrig (wieder voll / geheilt / neu losgeschickt) -> neue Streak.
+    Rumstehen ohne Kampf trennt also nicht; nur eine sehr lange Pause (STREAK_GAP, Standard 30 Min) trennt immer.
+    Sobald eine Runde die echte Streak-Nummer hat, bekommt die ganze Gruppe diese Nummer."""
+    gap = max(60, STREAK_GAP["v"] or 1800)
     per = {}
     for b in battles:
-        if (b.get("par") or b["id"]) == b["id"] and b.get("h") and b["h"][0]:
+        if b.get("h") and b["h"][0]:
             per.setdefault((b["pid"], b["h"][0], b["h"][1]), []).append(b)
+    res = {}
     for lst in per.values():
-        lst.sort(key=lambda b: b["t"])
-        gid, prev = None, None
+        lst.sort(key=lambda b: (b["t"], b.get("cno") or 0))
+        groups = []
         for b in lst:
-            if prev is None or b["t"] - prev > gap:
-                gid = b["id"]
-            res[b["id"]] = gid
-            prev = b["t"]
+            real = b.get("par") if b.get("par") and b["par"] != b["id"] else None
+            cur = groups[-1] if groups else None
+            cont = False
+            if cur is not None and b["t"] - cur["last"] <= gap:
+                st, en = b.get("st") or 0, cur.get("en") or 0
+                if st and en:
+                    cont = st <= en * 1.02 + 500             # beginnt mit dem Rest der letzten Runde (+ etwas Heilung) -> gleiche Streak
+                else:
+                    cont = b["t"] - cur["last"] <= 300       # alte Daten ohne Truppenzahl: nur Zeit
+            if real:
+                if cur and cur["key"] == real:
+                    pass
+                elif cur and cont and not cur["real"]:
+                    cur["key"], cur["real"] = real, True      # Runden ohne Nummer davor gehoeren zu dieser Streak
+                else:
+                    cur = {"key": real, "real": True, "ids": [], "last": b["t"]}; groups.append(cur)
+            elif not cont:
+                cur = {"key": b["id"], "real": False, "ids": [], "last": b["t"]}; groups.append(cur)
+            cur["ids"].append(b["id"])
+            if b["t"] >= cur["last"]:
+                cur["last"] = b["t"]
+                if b.get("en"):
+                    cur["en"] = b["en"]
+        for g in groups:
+            for i in g["ids"]:
+                res[i] = g["key"]
     return res
 
 
@@ -1318,7 +1381,7 @@ def reports(battles, ids, pvp_only):
     for b in battles:
         if (ids is not None and b["pid"] not in ids) or b.get("arch"):
             continue
-        k = (b["pid"], sid.get(b["id"]) or b.get("par") or b["id"])
+        k = (b["pid"], sid.get(b["id"]) or b.get("par") or b["id"])     # Streak (echte Nummer oder Zeit-Zuordnung)
         g = per.get(k)
         if g is None:
             g = per[k] = {"id": k[1], "pid": b["pid"], "h": list(b.get("h") or (0, 0)), "t0": b["t"], "t": b["t"], "mt": b.get("mt", 0),
@@ -4923,8 +4986,6 @@ class App:
         vo = tk.BooleanVar(value=ov.get("hero_one", False))
         Toggle(r, T("hero_one"), vo, lambda: (self.set_opt("hero_one", vo.get()), redraw_all())).pack(anchor="w")
         self.chips_row(c, "⚖ " + T("trade_fmt"), "trade_fmt", ["pct", "ratio"], lambda v: T("tf_" + v), redraw_all)
-        self.chips_row(c, "🔗 " + T("streak_gap"), "streak_gap", [0, 60, 90, 120, 180], lambda v: T("off") if not v else "%d s" % v,
-                       lambda: (STREAK_GAP.update(v=int(self.cfg["overlay"].get("streak_gap", 90))), self._sig_reset(), self.feed.draw(True)), ("s", 1, 0, 900))
         tk.Label(c, text=T("streak_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(2), 0))
         self.chips_row(c, T("march_kind"), "march_kind", ["auto", "pvp", "pve"], lambda v: T("mk_" + v),
                        lambda: (self._sig_reset(), self.march.draw(True)))
@@ -5427,7 +5488,7 @@ class App:
                 nm, self.scanner.new_markers = self.scanner.new_markers, []
                 ver = self.scanner.ver
             TRADE_FMT["v"], TRADE_FMT["lang"] = ov.get("trade_fmt", "pct"), self.cfg.get("lang", "de")
-            STREAK_GAP["v"] = int(ov.get("streak_gap", 90))
+            STREAK_GAP["v"] = int(ov.get("streak_gap", 1800) or 1800)
             every = max(1, int(ov.get("calc_every", 5)))
             self.scanner.calc_every = every
             if ver != getattr(self, "_ver_used", None) and now - getattr(self, "_calc_at", 0) >= every:
