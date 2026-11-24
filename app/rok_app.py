@@ -17,7 +17,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.40-test"
+APP_VERSION = "0.42-test"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -1007,7 +1007,7 @@ class Scanner:
                 except OSError:
                     raw = b""
                 is_battle = b"Battle" in raw
-                if is_battle and key in self.seen and time.time() - self.parsed_at.get(key, 0) < self.calc_every:
+                if is_battle and key in self.seen and b"isMergeChild" not in raw and time.time() - self.parsed_at.get(key, 0) < self.calc_every:
                     continue                            # laeuft noch -> spaeter in einem Rutsch neu lesen (weniger Last im grossen Kampf)
                 if is_battle:
                     self.parsed_at[key] = time.time()
@@ -1155,7 +1155,7 @@ class Scanner:
                     except Exception:
                         heroes[b["dir"]] = {}
                 m = read_mail(b["file"])
-                r = UP.battle_rows(m, "App", heroes[b["dir"]])
+                r = UP.battle_rows(m, "App", heroes[b["dir"]])     # jede Runde einer Battle Streak ist eine eigene Mail-Datei
                 rows.extend(x for x in r if str(x.get("player_id")) in ids)
                 done.append(b["id"])
             except Exception as e:
