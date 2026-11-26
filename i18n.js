@@ -8,6 +8,8 @@ window.I18N = (() => {
     de: {},   // Grundsprache – Texte stehen direkt im HTML/JS
     en: {
       texts: {
+        // Heatmap 38 (battles.js)
+        "Andere": "Others", "Account anklicken – geladen wird erst dann.": "Click an account – it only loads then.", "Keine Governor-ID im Profil – wähle oben über 👑 Admin einen Account.": "No governor ID in your profile – pick an account via 👑 Admin above.",
         // Heatmap 37 (battles.js)
         "Mach lieber mal Pause": "Better take a break", "Kämpfe zwischen 0 und 2 Uhr nachts": "Battles between midnight and 2 am", "KP in einem einzigen Battle Streak, einer Rally oder Garnison (bei Rally/Garnison zählen die KP der ganzen Gruppe)": "KP in a single battle streak, rally or garrison (for rallies/garrisons the KP of the whole group count)", "Besiege Barbaren (nur normale Barbaren, keine Forts/Kahar)": "Defeat barbarians (normal barbarians only, no forts/Kahar)", "Längste Kette besiegter Barbaren mit demselben Marsch, höchstens 5 min Pause (keine Forts/Kahar)": "Longest chain of defeated barbarians with the same march, max. 5 min break (no forts/Kahar)", "⭐ Einzel-Erfolge": "⭐ Single achievements", "400 M · 600 M · 800 M · 1 B · 1,5 B · 2 B · 3 B · 5 B · 10 B": "400 M · 600 M · 800 M · 1 B · 1.5 B · 2 B · 3 B · 5 B · 10 B", "Constantine the Great": "Constantine the Great",
         // Heatmap 36 (battles.js)

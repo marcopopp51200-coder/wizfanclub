@@ -182,10 +182,12 @@ window.RokMods.battles = (R) => {
   function kbMyIds() { const s = new Set((kbSt().linkIds || []).map(String)); const p = kbProfileId(); if (p) s.add(p); if (typeof kbAdmIds !== 'undefined') kbAdmIds.forEach(x => s.add(x)); (kbAppIds || []).forEach(x => s.add(x)); if (!kbAppIds) kbLoadAppIds(); return s; }
   // In der Wiz-fan-Club-App gebundene IDs (Main + Zweitaccounts, bestätigt) zählen automatisch mit
   var kbAppIds = null;
+  var kbSeeIds = new Set();
   async function kbLoadAppIds() { if (kbAppIds) return; kbAppIds = new Set();
     try { const db = RokAuth?.db?.(); if (!db || !RokAuth?.userId?.()) { kbAppIds = null; return; }
-      const q = await db.from('governor_links').select('governor_id,kind,status').eq('status', 'ok').eq('user_id', RokAuth.userId());   // nur eigene Verknüpfungen (Admin darf sonst alle lesen)
-      (q.data || []).filter(x => x.kind !== 'pilot').forEach(x => kbAppIds.add(String(x.governor_id))); } catch {}
+      let q = await db.from('governor_links').select('governor_id,kind,status,user_id').eq('status', 'ok'); if (q.error) q = await db.from('governor_links').select('governor_id,kind,status').eq('status', 'ok').eq('user_id', RokAuth.userId());
+      const me = RokAuth.userId(); (q.data || []).filter(x => x.kind !== 'pilot').forEach(x => { const g = String(x.governor_id); if (!x.user_id || x.user_id === me) kbAppIds.add(g); else kbSeeIds.add(g); });   // eigene → werden geladen · fremde (nur als Admin lesbar) → nur anzeigen, laden erst beim Anklicken
+      kbAppIds.forEach(g => kbSeeIds.delete(g)); } catch {}
     if (kbAppIds.size && R.view === 'battles') renderKampf(); }
   var kbSiteNames = null;   // Governor-ID → Name auf der Website (leaderboard)
   async function kbLoadSiteNames() { if (kbSiteNames) return; kbSiteNames = new Map();
@@ -413,7 +415,10 @@ window.RokMods.battles = (R) => {
             <div class="max-h-72 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-1.5 pr-1">${fs.filter(([id, l]) => !st.farmQ || (l + ' ' + id).toLowerCase().includes(st.farmQ.toLowerCase())).map(([id, l]) => `<button type="button" data-kbaccbar="${esc(id)}" class="text-left rounded-lg border ${cur === id ? 'border-gold-400 bg-gold-500/20 text-gold-100' : 'border-ink-700 bg-ink-950/60 text-slate-300 hover:border-gold-500/60'} px-2 py-1 text-xs" translate="no"><div class="font-semibold truncate">🌾 ${esc(l)}</div><div class="text-[10px] text-slate-500 tabular-nums">${esc(id)}</div></button>`).join('')}</div></div>` : ''}</span>`; })() : ''}
       <input data-kblinkid inputmode="numeric" placeholder="+ ID" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1.5 text-xs w-24 text-slate-100 focus:outline-none focus:border-gold-500">
       ${kbAdmHtml(st)}
-      ${ids.length ? '' : '<span class="text-[11px] text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}</div>`;
+      ${(() => { const see = [...kbSeeIds].filter(id => !ids.includes(id)); if (!see.length) return ids.length ? '' : '<span class="text-[11px] text-amber-300">Keine Governor-ID im Profil – wähle oben über 👑 Admin einen Account.</span>';
+        if (ids.length && !st.seeOpen) return `<button type="button" data-kbseetog class="rounded-xl border border-ink-600 bg-ink-950/60 px-3 py-1.5 text-sm text-slate-400 hover:border-gold-500/60">👁️ <span>Andere</span> <span class="text-[10px] text-slate-500">▾ ${see.length}</span></button>`;
+        return `${ids.length ? '<button type="button" data-kbseetog class="rounded-xl border border-gold-500/60 bg-ink-950/60 px-3 py-1.5 text-sm text-slate-300">👁️ <span>Andere</span> ▴</button>' : '<span class="basis-full text-center text-[11px] text-slate-500">Account anklicken – geladen wird erst dann.</span>'}${see.sort((a, b) => String(kbIdName(a, names) || a).localeCompare(String(kbIdName(b, names) || b), 'de')).map(id => { const n = kbIdName(id, names);
+          return `<button type="button" data-kbseeacc="${esc(id)}" class="rounded-xl border border-dashed border-ink-600 bg-ink-950/40 px-3 py-1.5 text-sm text-slate-400 hover:border-gold-500/60 hover:text-slate-200" translate="no">👁️ ${n ? esc(n) : '<span class="text-slate-500">?</span>'} <span class="text-[10px] text-slate-600 tabular-nums">${esc(id)}</span></button>`; }).join('')}`; })()}</div>`;
   }
   function renderKampf() {
     const el = $('battlesView'); if (!el) return; const st0 = kbSt(); kbBuffStart(); kbKvkFillLoad();
@@ -890,6 +895,8 @@ window.RokMods.battles = (R) => {
     el.querySelectorAll('[data-kblive]').forEach(b => b.onclick = () => { st.acc = b.dataset.kblive; st.page = 'heat'; const h = hmCfg(st); h.mode = 'my'; re(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
     el.querySelectorAll('[data-kbadm]').forEach(b => b.onclick = (e) => { e.stopPropagation(); st.admOpen = !st.admOpen; renderKampf(); });
     el.querySelectorAll('[data-kbadmq]').forEach(i => { i.oninput = () => { const q = i.value.toLowerCase(); i.nextElementSibling.querySelectorAll('[data-kbadmpick]').forEach(b => b.style.display = !q || b.textContent.toLowerCase().includes(q) ? '' : 'none'); }; setTimeout(() => i.focus(), 0); });
+    el.querySelectorAll('[data-kbseeacc]').forEach(b => b.onclick = () => { const id = b.dataset.kbseeacc; kbAdmIds.add(id); st.acc = id; st.accV2 = 1; savePassive(); re(); });
+    el.querySelectorAll('[data-kbseetog]').forEach(b => b.onclick = () => { st.seeOpen = !st.seeOpen; re(); });
     el.querySelectorAll('[data-kbadmpick]').forEach(b => b.onclick = () => { const id = b.dataset.kbadmpick; kbAdmIds.add(id); st.admOpen = false; st.acc = id; re(); });
     if (st.page !== 'heat') { const h = hmCfg(st);
       el.querySelectorAll('[data-hmfw]').forEach(b => b.onclick = (e) => { e.preventDefault(); h.fw = +b.dataset.hmfw; re(); });
