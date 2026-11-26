@@ -1317,7 +1317,8 @@ class Scanner:
     def upload_new(self):
         if UP is None:
             return
-        ids = {str(x["governor_id"]) for x in self.app.cfg.get("links", []) if x.get("status", "ok") == "ok"}
+        # Pilot: auch noch nicht bestaetigte Pilot-Accounts hochladen – die Website zeigt sie erst nach der Freigabe durch den Besitzer
+        ids = {str(x["governor_id"]) for x in self.app.cfg.get("links", []) if x.get("status", "ok") == "ok" or x.get("kind") == "pilot"}
         if not ids:
             return
         cutoff = time.time() - 86400 * max(1, int(self.app.cfg.get("upload_days") or 14))
