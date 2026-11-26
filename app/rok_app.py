@@ -18,7 +18,7 @@ import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.54-test"
+APP_VERSION = "1.0"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -88,7 +88,7 @@ TXT = {
     "t_rank": "Lost Kingdom S+", "t_hosp70": "Lazarett 70 %", "t_hosp85": "Lazarett 85 %", "t_hospdead": "Truppen gestorben", "t_all": "Alles nacheinander testen",
     "al_msgs": "Nachrichten", "al_msgs_info": "Gespäht = rot blinkend wie ein Buff · Lost Kingdom A+/S/S+ = Pop-up wie nach einem Kampf · Lazarett 70 % = rot blinkend · 85 % = zusätzlich Warnung oben am Bildschirm · Truppen gestorben = alles + lila Rahmen um den Bildschirm.",
     "msg_scout": "Gespäht worden", "msg_rank": "Lost Kingdom Rang", "msg_hosp70": "Lazarett 70 %", "msg_hosp85": "Lazarett 85 %", "msg_hospdead": "Truppen gestorben",
-    "ms_hosp_s": "Lazarett", "chain_avg": "Ø Kette", "chain": "Kette", "today_s": "heute", "goal_acc": "Acclaim-Ziel heute", "goal_barb": "Barbaren-Ziel heute", "pv_lvl": "⭐ Level", "pv_avg": "🔗 Ø Kette", "pv_last": "🔗 Letzte Kette", "pv_today": "🪓 Heute getötet", "pv_ap": "🧪 AP heute", "pv_run": "🧪 AP seit Start", "pv_waste": "🗑 AP-Waste", "pv_last_s": "Letzte", "march_pve_vals": "PvE-Werte", "march_idle": "Automatisch ausblenden nach", "feed_fields": "Mehr Daten", "ff_trade": "Trade", "ff_sum_kp": "Σ KP", "ff_sum_trade": "Σ Trade", "ff_acc": "★ Acclaim", "ff_sum_acc": "Σ Acclaim", "pos_s": "Platz", "mk_vol": "Lautstärke", "mk_dur": "Dauer", "mk_once": "1×", "pop_dur": "Pop-up sichtbar", "t_info": "Klick = Test (Ton kommt immer, der gewählte Knopf wird orange)", "t_kbuff": "Heal-Buff", "kb_heal": "Heal Buff aktiv", "goal_gems": "Edelstein-Ziel heute", "m_gems": "Edelsteine gesammelt", "m_gems_all": "Edelsteine gesamt", "m_rss": "Ressourcen gesammelt", "al_tab_snd": "Sounds", "snd_title": "Sounds für jeden Alarm", "snd_info": "Für jeden Alarm eigener Ton, Lautstärke und Dauer (wie lange er wiederholt wird). Eigene Töne (.wav/.mp3): „📁 Neu …“ – danach haben sie einen festen Knopf. Mitgelieferte Töne liegen im Build-Ordner app/sounds.", "snd_folder": "Eigene Töne liegen in: {p}", "snd_play": "Anhören", "snd_new": "Neu …", "snd_goto": "Ton einstellen (Reiter Sounds)", "snd_g_marker": "📍 Marker", "snd_g_buffs": "⏳ Buffs", "snd_g_msgs": "✉ Nachrichten", "snd_g_bld": "🏰 Gebäude", "snd_g_battle": "⚔ Kampf", "snd_i_mention": "Dein Name im Marker", "snd_i_other": "Andere Marker", "snd_i_bld_won": "Gebäude erobert", "snd_i_bld_lost": "Gebäude verloren", "snd_i_bld_other": "Gebäude sonst", "snd_i_battle": "Kampf-Pop-up (Sieg)", "snd_i_dead_march": "Marsch tot", "mumu_title": "MuMu-Farmen (Android-Emulator)", "mumu_info": "Liest die Mails deiner Farmen aus jeder laufenden MuMu-Instanz (über ADB, ohne Root – ändert in MuMu nichts). Damit zählen Sammeln/Edelsteine, Barbaren usw. der Farmen mit. Beim ersten Mal werden alle Mails kopiert (ein paar Minuten), danach nur neue.", "mumu_on": "MuMu-Farmen einlesen", "mumu_every": "Alle", "mumu_now": "Jetzt holen", "mumu_busy": "Hole Mails aus MuMu …", "mumu_ok": "✔ {n} Instanzen · {m} Mails · zuletzt {t}", "mumu_off": "MuMu läuft gerade nicht – sobald es läuft, holt die App die Mails.", "mumu_noadb": "adb.exe nicht gefunden (MuMu-Ordner unter Programme\\Netease).", "mumu_err": "Fehler beim Holen – siehe app_log.txt.", "mumu_idle": "Noch nicht geholt.", "snd_ownlist": "Eigene Töne ({n})", "mods_title": "Im {m}-Overlay anzeigen", "mods_info": "Für diesen Modus getrennt gespeichert – z. B. Ball-Marker und Army Expansion nur in PvP, in PvE aus. Aus = keine Anzeige, kein Pop-up, kein Ton.", "mod_markers_s": "Ball-Marker", "mod_exp_s": "Army Expansion", "mod_buffs_s": "Buffs abgelaufen", "mod_kbuff_s": "Heal Buff", "mod_hosp_s": "Lazarett", "mod_scout_s": "Gespäht", "mod_bld_s": "Gebäude", "show_clock": "Datum + Uhrzeit (PC) unter dem Namen", "size_title": "Größe & Durchsichtigkeit – {w}", "mode_edit": "Overlay für:", "npc_1": "Barbar", "npc_41": "Kahar", "kb_title": "Kingdom-Buff (Heilung)", "kb_info": "Kommt die Mail „Kingdom Buff Activated“ (z. B. Healing First, +30 % Heilung, 8 Std.), steht im Overlay unter „50 % aktiv“: HEAL-BUFF AKTIV mit Restzeit. Falls die Mail nicht erkannt wird: hier von Hand starten.", "kb_show": "Im Overlay anzeigen (mit Timer)", "kb_manual": "Von Hand:", "kb_stop": "Stopp", "kb_none": "kein Buff aktiv", "kb_active": "{n} aktiv", "kb_until": "noch {t}", "waste_s": "Waste", "snd_own": "Eigener Ton …", "snd_files": "Töne", "ov_width": "Breite (+/−)", "mode_badge": "Modus-Zeichen ⚔ / 🪓 im Overlay-Kopf", "feed_gap": "Abstand Feed-Karten", "mode_title": "Modus & Charakter", "mode_fight": "PvP", "mode_off": "PvE", "mode_auto": "Automatisch umschalten", "mode_auto_sw": "Modus gewechselt: {m}", "mode_info": "Jeder Modus hat sein eigenes, festes Overlay (Werte, Farben, Positionen, Märsche, Feed). Einfach umschalten und das Overlay für diesen Modus einstellen. Automatisch: 5 Barbaren-Angriffe hintereinander → PvE · Kampf mit Kill Points → Fight.", "ap_title": "AP-Kosten (PvE)", "ap_info": "1 Bericht = 1 Angriff. Barbar: Start-AP, jeder Folgeangriff desselben Marsches (ohne Heimkehr) kostet weniger, bis zum Minimum. AP-Waste = AP für Barbaren, die nicht gestorben sind.",
+    "ms_hosp_s": "Lazarett", "chain_avg": "Ø Kette", "chain": "Kette", "today_s": "heute", "goal_acc": "Acclaim-Ziel heute", "goal_barb": "Barbaren-Ziel heute", "pv_lvl": "⭐ Level", "pv_avg": "🔗 Ø Kette", "pv_last": "🔗 Letzte Kette", "pv_today": "🪓 Heute getötet", "pv_ap": "🧪 AP heute", "pv_run": "🧪 AP seit Start", "pv_waste": "🗑 AP-Waste", "pv_last_s": "Letzte", "march_pve_vals": "PvE-Werte", "march_idle": "Automatisch ausblenden nach", "feed_fields": "Mehr Daten", "ff_trade": "Trade", "ff_sum_kp": "Σ KP", "ff_sum_trade": "Σ Trade", "ff_acc": "★ Acclaim", "ff_sum_acc": "Σ Acclaim", "pos_s": "Platz", "mk_vol": "Lautstärke", "mk_dur": "Dauer", "mk_once": "1×", "pop_dur": "Pop-up sichtbar", "t_info": "Klick = Test (Ton kommt immer, der gewählte Knopf wird orange)", "t_kbuff": "Heal-Buff", "kb_heal": "Heal Buff aktiv", "goal_gems": "Edelstein-Ziel heute", "m_gems": "Edelsteine gesammelt", "m_gems_all": "Edelsteine gesamt", "m_rss": "Ressourcen gesammelt", "al_tab_snd": "Sounds", "snd_title": "Sounds für jeden Alarm", "snd_info": "Für jeden Alarm eigener Ton, Lautstärke und Dauer (wie lange er wiederholt wird). Eigene Töne (.wav/.mp3): „📁 Neu …“ – danach haben sie einen festen Knopf. Mitgelieferte Töne liegen im Build-Ordner app/sounds.", "snd_folder": "Eigene Töne liegen in: {p}", "snd_play": "Anhören", "snd_new": "Neu …", "snd_goto": "Ton einstellen (Reiter Sounds)", "snd_g_marker": "📍 Marker", "snd_g_buffs": "⏳ Buffs", "snd_g_msgs": "✉ Nachrichten", "snd_g_bld": "🏰 Gebäude", "snd_g_battle": "⚔ Kampf", "snd_i_mention": "Dein Name im Marker", "snd_i_other": "Andere Marker", "snd_i_bld_won": "Gebäude erobert", "snd_i_bld_lost": "Gebäude verloren", "snd_i_bld_other": "Gebäude sonst", "snd_i_battle": "Kampf-Pop-up (Sieg)", "snd_i_dead_march": "Marsch tot", "mumu_title": "MuMu-Farmen (Android-Emulator)", "mumu_info": "Liest die Mails deiner Farmen aus jeder laufenden MuMu-Instanz (über ADB, ohne Root – ändert in MuMu nichts). Damit zählen Sammeln/Edelsteine, Barbaren usw. der Farmen mit. Beim ersten Mal werden alle Mails kopiert (ein paar Minuten), danach nur neue.", "mumu_on": "MuMu-Farmen einlesen", "mumu_every": "Alle", "mumu_now": "Jetzt holen", "mumu_busy": "Hole Mails aus MuMu …", "mumu_ok": "✔ {n} Instanzen · {m} Mails · zuletzt {t}", "mumu_off": "MuMu läuft gerade nicht – sobald es läuft, holt die App die Mails.", "mumu_noadb": "adb.exe nicht gefunden (MuMu-Ordner unter Programme\\Netease).", "mumu_err": "Fehler beim Holen – siehe app_log.txt.", "mumu_idle": "Noch nicht geholt.", "snd_ownlist": "Eigene Töne ({n})", "snd_master": "Ton (alle Alarme)", "snd_on": "Ton an", "snd_mvol": "Gesamt-Lautstärke", "mods_title": "Im {m}-Overlay anzeigen", "mods_info": "Für diesen Modus getrennt gespeichert – z. B. Ball-Marker und Army Expansion nur in PvP, in PvE aus. Aus = keine Anzeige, kein Pop-up, kein Ton.", "mod_markers_s": "Ball-Marker", "mod_exp_s": "Army Expansion", "mod_buffs_s": "Buffs abgelaufen", "mod_kbuff_s": "Heal Buff", "mod_hosp_s": "Lazarett", "mod_scout_s": "Gespäht", "mod_bld_s": "Gebäude", "show_clock": "Datum + Uhrzeit (PC) unter dem Namen", "size_title": "Größe & Durchsichtigkeit – {w}", "mode_edit": "Overlay für:", "npc_1": "Barbar", "npc_41": "Kahar", "kb_title": "Kingdom-Buff (Heilung)", "kb_info": "Kommt die Mail „Kingdom Buff Activated“ (z. B. Healing First, +30 % Heilung, 8 Std.), steht im Overlay unter „50 % aktiv“: HEAL-BUFF AKTIV mit Restzeit. Falls die Mail nicht erkannt wird: hier von Hand starten.", "kb_show": "Im Overlay anzeigen (mit Timer)", "kb_manual": "Von Hand:", "kb_stop": "Stopp", "kb_none": "kein Buff aktiv", "kb_active": "{n} aktiv", "kb_until": "noch {t}", "waste_s": "Waste", "snd_own": "Eigener Ton …", "snd_files": "Töne", "ov_width": "Breite (+/−)", "mode_badge": "Modus-Zeichen ⚔ / 🪓 im Overlay-Kopf", "feed_gap": "Abstand Feed-Karten", "mode_title": "Modus & Charakter", "mode_fight": "PvP", "mode_off": "PvE", "mode_auto": "Automatisch umschalten", "mode_auto_sw": "Modus gewechselt: {m}", "mode_info": "Jeder Modus hat sein eigenes, festes Overlay (Werte, Farben, Positionen, Märsche, Feed). Einfach umschalten und das Overlay für diesen Modus einstellen. Automatisch: 5 Barbaren-Angriffe hintereinander → PvE · Kampf mit Kill Points → Fight.", "ap_title": "AP-Kosten (PvE)", "ap_info": "1 Bericht = 1 Angriff. Barbar: Start-AP, jeder Folgeangriff desselben Marsches (ohne Heimkehr) kostet weniger, bis zum Minimum. AP-Waste = AP für Barbaren, die nicht gestorben sind.",
     "ap_barb": "Barbar AP", "ap_step": "− je Folgeangriff", "ap_min": "Minimum", "ap_kahar": "Kahar AP", "show_waste": "AP-Waste in der March-Leiste (neben Kette)",
     "feed_settle": "Feed erst nach", "feed_age": "Marsch ausblenden nach (unbenutzt)", "feed_per_march": "Nur 1 Eintrag je Marsch (neuester Bericht)", "feed_more": "Mehr Daten: Acclaim + rechts Σ ganzer Marsch (KP, Trade, Acclaim im Zeitraum)", "live": "Live (alle 5 s)", "feed_merge": "Gleicher Gegner = eine Schlacht (z. B. 4 Märsche zusammen)",
     "calc_every": "Neu rechnen alle", "calc_info": "Im großen Kampf ändern sich ständig Berichte. Die App liest laufende Berichte und rechnet nur alle X Sekunden neu – Marker kommen trotzdem sofort. Höher = weniger Last.",
@@ -199,7 +199,7 @@ TXT = {
     "t_rank": "Lost Kingdom S+", "t_hosp70": "Hospital 70 %", "t_hosp85": "Hospital 85 %", "t_hospdead": "Troops died", "t_all": "Test everything in a row",
     "al_msgs": "Messages", "al_msgs_info": "Scouted = red blinking like a buff · Lost Kingdom A+/S/S+ = pop-up like after a battle · Hospital 70 % = red blinking · 85 % = plus warning at the top of the screen · Troops died = all + purple border around the screen.",
     "msg_scout": "Scouted", "msg_rank": "Lost Kingdom rank", "msg_hosp70": "Hospital 70 %", "msg_hosp85": "Hospital 85 %", "msg_hospdead": "Troops died",
-    "ms_hosp_s": "Hospital", "chain_avg": "Ø chain", "chain": "Chain", "today_s": "today", "goal_acc": "Acclaim goal today", "goal_barb": "Barbarian goal today", "pv_lvl": "⭐ Level", "pv_avg": "🔗 Avg chain", "pv_last": "🔗 Last chain", "pv_today": "🪓 Killed today", "pv_ap": "🧪 AP today", "pv_run": "🧪 AP since start", "pv_waste": "🗑 AP waste", "pv_last_s": "Last", "march_pve_vals": "PvE values", "march_idle": "Auto-hide after", "feed_fields": "More data", "ff_trade": "Trade", "ff_sum_kp": "Σ KP", "ff_sum_trade": "Σ trade", "ff_acc": "★ Acclaim", "ff_sum_acc": "Σ acclaim", "pos_s": "Pos.", "mk_vol": "Volume", "mk_dur": "Duration", "mk_once": "1×", "pop_dur": "Pop-up visible", "t_info": "Click = test (sound always plays, the chosen button turns orange)", "t_kbuff": "Heal buff", "kb_heal": "Heal Buff active", "goal_gems": "Gem goal today", "m_gems": "Gems gathered", "m_gems_all": "Gems total", "m_rss": "Resources gathered", "al_tab_snd": "Sounds", "snd_title": "Sounds for every alert", "snd_info": "Own sound, volume and duration (how long it repeats) for every alert. Own sounds (.wav/.mp3): “📁 New …” – then they get a fixed button. Bundled sounds live in the build folder app/sounds.", "snd_folder": "Own sounds are stored in: {p}", "snd_play": "Play", "snd_new": "New …", "snd_goto": "Set sound (Sounds tab)", "snd_g_marker": "📍 Markers", "snd_g_buffs": "⏳ Buffs", "snd_g_msgs": "✉ Messages", "snd_g_bld": "🏰 Buildings", "snd_g_battle": "⚔ Battle", "snd_i_mention": "Your name in a marker", "snd_i_other": "Other markers", "snd_i_bld_won": "Building captured", "snd_i_bld_lost": "Building lost", "snd_i_bld_other": "Building other", "snd_i_battle": "Battle pop-up (victory)", "snd_i_dead_march": "March dead", "mumu_title": "MuMu farms (Android emulator)", "mumu_info": "Reads your farms' mails from every running MuMu instance (via ADB, no root – changes nothing in MuMu). Gathering/gems, barbarians etc. of the farms then count too. The first time all mails are copied (a few minutes), afterwards only new ones.", "mumu_on": "Read MuMu farms", "mumu_every": "Every", "mumu_now": "Fetch now", "mumu_busy": "Fetching mails from MuMu …", "mumu_ok": "✔ {n} instances · {m} mails · last {t}", "mumu_off": "MuMu is not running – the app fetches the mails as soon as it runs.", "mumu_noadb": "adb.exe not found (MuMu folder under Program Files\\Netease).", "mumu_err": "Error while fetching – see app_log.txt.", "mumu_idle": "Not fetched yet.", "snd_ownlist": "Own sounds ({n})", "mods_title": "Show in the {m} overlay", "mods_info": "Saved separately for this mode – e.g. ball markers and army expansion only in PvP, off in PvE. Off = no display, no pop-up, no sound.", "mod_markers_s": "Ball markers", "mod_exp_s": "Army expansion", "mod_buffs_s": "Buffs expired", "mod_kbuff_s": "Heal buff", "mod_hosp_s": "Hospital", "mod_scout_s": "Scouted", "mod_bld_s": "Buildings", "show_clock": "Date + time (PC) below the name", "size_title": "Size & transparency – {w}", "mode_edit": "Overlay for:", "npc_1": "Barbarian", "npc_41": "Kahar", "kb_title": "Kingdom buff (healing)", "kb_info": "When the mail “Kingdom Buff Activated” arrives (e.g. Healing First, +30 % healing, 8 h), the overlay shows HEAL BUFF ACTIVE with time left below “50 % active”. If the mail is not detected: start it here by hand.", "kb_show": "Show in overlay (with timer)", "kb_manual": "By hand:", "kb_stop": "Stop", "kb_none": "no buff active", "kb_active": "{n} active", "kb_until": "{t} left", "waste_s": "waste", "snd_own": "Own sound …", "snd_files": "Sounds", "ov_width": "Width (+/−)", "mode_badge": "Mode sign ⚔ / 🪓 in overlay header", "feed_gap": "Feed card spacing", "mode_title": "Mode & character", "mode_fight": "PvP", "mode_off": "PvE", "mode_auto": "Switch automatically", "mode_auto_sw": "Mode switched: {m}", "mode_info": "Each mode has its own fixed overlay (values, colors, positions, marches, feed). Just switch and set up the overlay for that mode. Automatic: 5 barbarian attacks in a row → PvE · battle with kill points → fight.", "ap_title": "AP costs (PvE)", "ap_info": "1 report = 1 attack. Barbarian: start AP, each follow-up attack of the same march (without returning) costs less, down to the minimum. AP waste = AP for barbarians that did not die.",
+    "ms_hosp_s": "Hospital", "chain_avg": "Ø chain", "chain": "Chain", "today_s": "today", "goal_acc": "Acclaim goal today", "goal_barb": "Barbarian goal today", "pv_lvl": "⭐ Level", "pv_avg": "🔗 Avg chain", "pv_last": "🔗 Last chain", "pv_today": "🪓 Killed today", "pv_ap": "🧪 AP today", "pv_run": "🧪 AP since start", "pv_waste": "🗑 AP waste", "pv_last_s": "Last", "march_pve_vals": "PvE values", "march_idle": "Auto-hide after", "feed_fields": "More data", "ff_trade": "Trade", "ff_sum_kp": "Σ KP", "ff_sum_trade": "Σ trade", "ff_acc": "★ Acclaim", "ff_sum_acc": "Σ acclaim", "pos_s": "Pos.", "mk_vol": "Volume", "mk_dur": "Duration", "mk_once": "1×", "pop_dur": "Pop-up visible", "t_info": "Click = test (sound always plays, the chosen button turns orange)", "t_kbuff": "Heal buff", "kb_heal": "Heal Buff active", "goal_gems": "Gem goal today", "m_gems": "Gems gathered", "m_gems_all": "Gems total", "m_rss": "Resources gathered", "al_tab_snd": "Sounds", "snd_title": "Sounds for every alert", "snd_info": "Own sound, volume and duration (how long it repeats) for every alert. Own sounds (.wav/.mp3): “📁 New …” – then they get a fixed button. Bundled sounds live in the build folder app/sounds.", "snd_folder": "Own sounds are stored in: {p}", "snd_play": "Play", "snd_new": "New …", "snd_goto": "Set sound (Sounds tab)", "snd_g_marker": "📍 Markers", "snd_g_buffs": "⏳ Buffs", "snd_g_msgs": "✉ Messages", "snd_g_bld": "🏰 Buildings", "snd_g_battle": "⚔ Battle", "snd_i_mention": "Your name in a marker", "snd_i_other": "Other markers", "snd_i_bld_won": "Building captured", "snd_i_bld_lost": "Building lost", "snd_i_bld_other": "Building other", "snd_i_battle": "Battle pop-up (victory)", "snd_i_dead_march": "March dead", "mumu_title": "MuMu farms (Android emulator)", "mumu_info": "Reads your farms' mails from every running MuMu instance (via ADB, no root – changes nothing in MuMu). Gathering/gems, barbarians etc. of the farms then count too. The first time all mails are copied (a few minutes), afterwards only new ones.", "mumu_on": "Read MuMu farms", "mumu_every": "Every", "mumu_now": "Fetch now", "mumu_busy": "Fetching mails from MuMu …", "mumu_ok": "✔ {n} instances · {m} mails · last {t}", "mumu_off": "MuMu is not running – the app fetches the mails as soon as it runs.", "mumu_noadb": "adb.exe not found (MuMu folder under Program Files\\Netease).", "mumu_err": "Error while fetching – see app_log.txt.", "mumu_idle": "Not fetched yet.", "snd_ownlist": "Own sounds ({n})", "snd_master": "Sound (all alerts)", "snd_on": "Sound on", "snd_mvol": "Master volume", "mods_title": "Show in the {m} overlay", "mods_info": "Saved separately for this mode – e.g. ball markers and army expansion only in PvP, off in PvE. Off = no display, no pop-up, no sound.", "mod_markers_s": "Ball markers", "mod_exp_s": "Army expansion", "mod_buffs_s": "Buffs expired", "mod_kbuff_s": "Heal buff", "mod_hosp_s": "Hospital", "mod_scout_s": "Scouted", "mod_bld_s": "Buildings", "show_clock": "Date + time (PC) below the name", "size_title": "Size & transparency – {w}", "mode_edit": "Overlay for:", "npc_1": "Barbarian", "npc_41": "Kahar", "kb_title": "Kingdom buff (healing)", "kb_info": "When the mail “Kingdom Buff Activated” arrives (e.g. Healing First, +30 % healing, 8 h), the overlay shows HEAL BUFF ACTIVE with time left below “50 % active”. If the mail is not detected: start it here by hand.", "kb_show": "Show in overlay (with timer)", "kb_manual": "By hand:", "kb_stop": "Stop", "kb_none": "no buff active", "kb_active": "{n} active", "kb_until": "{t} left", "waste_s": "waste", "snd_own": "Own sound …", "snd_files": "Sounds", "ov_width": "Width (+/−)", "mode_badge": "Mode sign ⚔ / 🪓 in overlay header", "feed_gap": "Feed card spacing", "mode_title": "Mode & character", "mode_fight": "PvP", "mode_off": "PvE", "mode_auto": "Switch automatically", "mode_auto_sw": "Mode switched: {m}", "mode_info": "Each mode has its own fixed overlay (values, colors, positions, marches, feed). Just switch and set up the overlay for that mode. Automatic: 5 barbarian attacks in a row → PvE · battle with kill points → fight.", "ap_title": "AP costs (PvE)", "ap_info": "1 report = 1 attack. Barbarian: start AP, each follow-up attack of the same march (without returning) costs less, down to the minimum. AP waste = AP for barbarians that did not die.",
     "ap_barb": "Barbarian AP", "ap_step": "− per follow-up", "ap_min": "Minimum", "ap_kahar": "Kahar AP", "show_waste": "AP waste in march bar (next to chain)",
     "feed_settle": "Feed only after", "feed_age": "Hide march after (unused)", "feed_per_march": "Only 1 entry per march (newest report)", "feed_more": "More data: acclaim + Σ whole march on the right (KP, trade, acclaim in period)", "live": "Live (every 5 s)", "feed_merge": "Same enemy = one battle (e.g. 4 marches together)",
     "calc_every": "Recalculate every", "calc_info": "In big fights reports change all the time. The app re-reads running reports and recalculates only every X seconds – markers still come instantly. Higher = less load.",
@@ -734,63 +734,85 @@ def mumu_sync(cfg, status):
 _MCI_N = [0]
 
 
+SOUND_MASTER = {"on": True, "vol": 100}      # Haupt-Schalter + Haupt-Lautstaerke (Start / Sounds)
+
+
 def play_file(path, vol=80, dur=0):
-    """Eigener Ton (.wav / .mp3) ueber Windows-MCI – mit Lautstaerke, im Hintergrund.
-    dur > 0: nach genau so vielen Sekunden ist Schluss (kuerzere Toene werden bis dahin wiederholt)."""
+    """Ton (.wav / .mp3) ueber Windows-MCI. dur > 0 = HARTE Grenze: das Geraet spielt selbst nur bis dur ms
+    ("play … from 0 to X"), kuerzere Toene werden bis dahin wiederholt. Danach ist garantiert Ruhe."""
     if not IS_WIN or not os.path.isfile(path):
         return
     import ctypes
     _MCI_N[0] += 1
     al = "wfc%d" % _MCI_N[0]
-    buf = ctypes.create_unicode_buffer(64)
-    mci = lambda c: ctypes.windll.winmm.mciSendStringW(c, None, 0, None)
+    buf = ctypes.create_unicode_buffer(128)
+
+    def mci(c, out=False):
+        rc = ctypes.windll.winmm.mciSendStringW(c, buf if out else None, 128 if out else 0, None)
+        if rc:
+            log("mci %s -> %d" % (c.split(" ")[0], rc))
+        return rc
+    opened = False
     try:
         if mci('open "%s" type mpegvideo alias %s' % (path, al)) != 0:
             import winsound
             winsound.PlaySound(path, winsound.SND_FILENAME)
             return
+        opened = True
+        mci("set %s time format milliseconds" % al)
         mci("setaudio %s volume to %d" % (al, max(0, min(1000, int(vol * 10)))))
-        if not dur:
+        if not dur or float(dur) <= 0:
             mci("play %s wait" % al)
             return
-        end = time.time() + float(dur)
-        mci("play %s from 0" % al)
-        while time.time() < end:
-            time.sleep(0.1)
-            ctypes.windll.winmm.mciSendStringW("status %s mode" % al, buf, 64, None)
-            if buf.value.lower() not in ("playing", "seeking"):   # Ton zu Ende, Zeit noch nicht -> nochmal
-                mci("play %s from 0" % al)
-        mci("stop %s" % al)
+        length = 0
+        if mci("status %s length" % al, True) == 0:
+            try:
+                length = int(buf.value or 0)
+            except ValueError:
+                length = 0
+        left = int(float(dur) * 1000)
+        while left > 50:
+            seg = min(left, length) if length > 0 else left
+            mci("play %s from 0 to %d wait" % (al, seg))
+            left -= seg
+            if length <= 0:
+                break
     finally:
-        mci("close %s" % al)
+        if opened:
+            mci("stop %s" % al)
+            mci("close %s" % al)
+
+
+def _tone_file(name):
+    """Eingebaute Toene als .wav im App-Ordner (volle Lautstaerke) -> laufen ueber denselben Weg wie eigene Toene."""
+    d = os.path.join(DATA, "sounds_builtin"); os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, name + ".wav")
+    if not os.path.isfile(p):
+        data = sound_bytes(name, 1.0)
+        if not data:
+            return None
+        with open(p, "wb") as f:
+            f.write(data)
+    return p
 
 
 def play_sound(name, vol=80, dur=0):
-    """Spielt einen Ton im Hintergrund (blockiert nichts). "file:<pfad>" = eigene Datei.
-    dur = Sekunden: so lange wird der Ton wiederholt (0 = einmal)."""
-    if not name or name == "aus":
+    """Spielt einen Ton im Hintergrund (blockiert nichts). "file:<name>" = eigene Datei.
+    dur = Sekunden: nach genau so langer Zeit ist der Ton weg (0 = einmal ganz). Haupt-Schalter/-Lautstaerke gelten immer."""
+    if not name or name == "aus" or not SOUND_MASTER["on"]:
         return
-    if str(name).startswith("file:"):                       # eigene Datei: Dauer = harte Grenze (nach X s ist der Ton weg)
+    vol = max(0, min(100, vol * SOUND_MASTER["vol"] / 100.0))
+    p = None
+    if str(name).startswith("file:"):
         p = name[5:]
         if not os.path.isfile(p):                            # nur Dateiname gespeichert -> in den Sound-Ordnern suchen
             p = next((pp for f, pp in sound_lib() if f.lower() == os.path.basename(p).lower()), p)
-        threading.Thread(target=lambda: _safe(lambda: play_file(p, vol, dur)), daemon=True).start()
-        return
-
-    def once():
-        data = sound_bytes(name, max(0.05, min(1.0, vol / 100.0)))
-        if data and IS_WIN:
-            import winsound
-            winsound.PlaySound(data, winsound.SND_MEMORY)
-        elif not IS_WIN:
-            time.sleep(0.5)
 
     def run():
         try:
-            end = time.time() + max(0, float(dur or 0))
-            once()
-            while time.time() < end:
-                time.sleep(0.25); once()
+            pp = p or (_tone_file(name) if IS_WIN else None)
+            if pp:
+                play_file(pp, vol, dur)
         except Exception as e:
             log("sound: %s" % e)
     threading.Thread(target=run, daemon=True).start()
@@ -4200,6 +4222,7 @@ class App:
         Toggle(r, T("mode_auto"), va, lambda: (self.cfg.__setitem__("mode_auto", va.get()), save_cfg(self.cfg))).pack(side="left", padx=(px(18), 0))
         tk.Label(c.body, text=T("mode_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
         self.focus_bar(c.body, C["card"]).pack(anchor="w", pady=(px(10), 0))
+        self.sound_master(body)
         # --- 3 kurze Zahlen
         tiles = tk.Frame(body, bg=C["bg"]); tiles.pack(fill="x", pady=(px(12), 0)); tl = []
         self.home = {}
@@ -4746,7 +4769,7 @@ class App:
         self._mk_sig = None
         self.refresh_markers(True)
 
-    def sound_chips(self, parent, cur, cb, vol=None, per_row=7):
+    def sound_chips(self, parent, cur, cb, vol=None, per_row=7, dur=None):
         """Ton-Auswahl: eingebaute Toene als Knoepfe + eigene Toene im Aufklappfeld (scrollbar) + „📁 Neu …“.
         Klick = auswaehlen + anhoeren. Eigene Toene bleiben fest in der Liste."""
         bg = bg_of(parent)
@@ -4762,7 +4785,7 @@ class App:
             dd.set(str(n).startswith("file:"))
             dd.text = ("🎵 " + os.path.splitext(n[5:])[0][:22] + "  ▾") if str(n).startswith("file:") else ("🎵 " + self.t("snd_ownlist", n=len(own)) + "  ▾")
             dd._st = None; dd.draw()
-            cb(n); play_sound(n, V())
+            cb(n); play_sound(n, V(), dur() if dur else 0)
         r1 = tk.Frame(box, bg=bg); r1.pack(anchor="w")
         for n in SOUNDS:
             ch = Chip(r1, self.t("snd_" + n), n == cur, lambda n=n: pick(n)); ch.pack(side="left", padx=(0, px(4)), pady=px(2))
@@ -4790,6 +4813,26 @@ class App:
             self.render()
         Chip(r2, "📁 " + self.t("snd_new"), False, new).pack(side="left", padx=(0, px(4)), pady=px(2))
         return box
+
+    def sound_master(self, parent):
+        """Haupt-Schalter (Ton an/aus) + Haupt-Lautstaerke fuer ALLE Toene."""
+        T, ac = self.t, self.cfg["alerts"]
+        o, c = card(parent, "🔊 " + T("snd_master")); o.pack(fill="x", pady=(px(12), 0))
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+        vs = tk.BooleanVar(value=ac.get("sound_on", True))
+
+        def onoff():
+            ac["sound_on"] = vs.get(); SOUND_MASTER["on"] = vs.get(); save_cfg(self.cfg)
+        Toggle(r, T("snd_on"), vs, onoff).pack(side="left")
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text="🔉 " + T("snd_mvol"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+
+        def mv(v, save):
+            ac["master_vol"] = int(v); SOUND_MASTER["vol"] = int(v)
+            if save:
+                save_cfg(self.cfg); play_sound("ding", 80)
+        Slider(r, float(ac.get("master_vol", 100)), 0, 100, lambda v: mv(v, False), lambda v: mv(v, True), width=300,
+               fmt=lambda v: "%d %%" % v).pack(side="left")
 
     def snd_hint(self, c):
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
@@ -4821,7 +4864,8 @@ class App:
     def page_sounds(self, body):
         """Eigener Reiter: fuer JEDEN Alarm Ton, Lautstaerke und Dauer – sortiert nach Marker, Buffs, Nachrichten, Gebaeude, Kampf."""
         T, ac, mc = self.t, self.cfg["alerts"], self.cfg["markers"]
-        o, c = card(body, "🔊 " + T("snd_title")); o.pack(fill="x")
+        self.sound_master(body)
+        o, c = card(body, "🔊 " + T("snd_title")); o.pack(fill="x", pady=(px(12), 0))
         tk.Label(c, text=T("snd_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(660), justify="left").pack(anchor="w", pady=(0, px(6)))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
         tk.Label(r, text=T("al_volume"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
@@ -4837,7 +4881,7 @@ class App:
             top = tk.Frame(box, bg=C["card2"]); top.pack(fill="x")
             tk.Label(top, text="%s  %s" % (icon, label), bg=C["card2"], fg=C["text"], font=(FONT, 10, "bold")).pack(side="left")
             Btn(top, "▶ " + T("snd_play"), test, "ghost", small=True).pack(side="right")
-            self.sound_chips(box, cur, on_s, vol=lambda: int(vol())).pack(anchor="w", pady=(px(6), 0))
+            self.sound_chips(box, cur, on_s, vol=lambda: int(vol()), dur=lambda: float(dur() or 0)).pack(anchor="w", pady=(px(6), 0))
             vr = tk.Frame(box, bg=C["card2"]); vr.pack(fill="x", pady=(px(4), 0))
             tk.Label(vr, text="🔈 " + T("mk_vol"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
             Slider(vr, float(vol()), 0, 100, lambda v: None, on_v, width=170, fmt=lambda v: "%d %%" % v).pack(side="left", padx=(0, px(16)))
@@ -6539,6 +6583,7 @@ class App:
             TRADE_FMT["v"], TRADE_FMT["lang"] = ov.get("trade_fmt", "pct"), self.cfg.get("lang", "de")
             STREAK_GAP["v"] = int(ov.get("streak_gap", 1800) or 1800)
             AP_COST.update(self.cfg.get("ap_cost") or {})
+            SOUND_MASTER["on"] = bool(self.cfg["alerts"].get("sound_on", True)); SOUND_MASTER["vol"] = int(self.cfg["alerts"].get("master_vol", 100))
             every = max(1, int(ov.get("calc_every", 5)))
             self.scanner.calc_every = every
             if ver != getattr(self, "_ver_used", None) and now - getattr(self, "_calc_at", 0) >= every:
