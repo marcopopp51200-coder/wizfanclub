@@ -40,6 +40,7 @@ jobs:
         run: |
           EXTRA=""
           if [ -s app/Cinzel.ttf ]; then EXTRA='--add-data app/Cinzel.ttf;.'; fi
+          if [ -d app/sounds ] && [ -n "$(ls -A app/sounds 2>/dev/null)" ]; then EXTRA="$EXTRA --add-data app/sounds;sounds"; fi
           pyinstaller --onefile --noconsole --name WizFanClubApp --icon app/icon.ico --add-data "app/icon.ico;." --add-data "app/heroicons;heroicons" $EXTRA --paths app --hidden-import rok_kampf_upload app/rok_app.py
       - name: Release aktualisieren
         shell: bash

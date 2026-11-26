@@ -131,7 +131,11 @@ module.exports = async (req, res) => {
         if (!prof) return res.status(400).json({ error: 'In deinem Profil ist keine Governor-ID eingetragen.' });
         const id = parseInt(body.id, 10) || 0;
         const q = `governor_links?id=eq.${id}&governor_id=eq.${prof}&kind=eq.pilot`;
+        const lk = ((await rest('GET', q + '&select=user_id')) || [])[0];
         if (body.allow) await rest('PATCH', q, { status: 'ok' }); else await rest('DELETE', q);
+        // 🕹️ Kämpfe, die der Pilot schon vor der Freigabe hochgeladen hat: freigeben – oder bei Ablehnung löschen
+        if (lk?.user_id) { const qb = `rok_battles?player_id=eq.${prof}&pilot_user=eq.${lk.user_id}&pilot_ok=eq.false`;
+          try { if (body.allow) await rest('PATCH', qb, { pilot_ok: true }); else await rest('DELETE', qb); } catch { /* Spalte pilot_ok fehlt noch */ } }
         return res.json({ ok: true });
       }
       if (action === 'revoke') {
@@ -210,12 +214,30 @@ module.exports = async (req, res) => {
     if (action === 'upload') {
       const rows = Array.isArray(body.rows) ? body.rows.slice(0, MAX_ROWS) : [];
       if (!rows.length) return res.json({ ok: true, saved: 0 });
-      const mine = await okIds(u.id);                          // nur bestaetigte Bindungen (keine offenen Pilot-Anfragen)
+      // bestätigte Bindungen + offene Pilot-Anfragen: Pilot-Kämpfe werden schon gespeichert, zählen aber erst nach der Freigabe (pilot_ok)
+      const LK = (await links(u.id)) || [];
+      const mine = new Map(LK.filter((x) => x.status === 'ok' || x.kind === 'pilot').map((x) => [String(x.governor_id), x.gov_name || String(x.governor_id)]));
+      const pend = new Set(LK.filter((x) => x.kind === 'pilot' && x.status !== 'ok').map((x) => String(x.governor_id)));
       const ok = rows.filter((r) => r && r.mail_id && r.opponent_id != null && mine.has(String(r.player_id)))
         .map((r) => ({ ...r, account: mine.get(String(r.player_id)) }));
+      // 🕹️ Pilot: Kämpfe eines als „pilot“ gebundenen Accounts bekommen den Piloten (Profil-ID + Name) dazu.
+      // Die Kämpfe zählen beim gesteuerten Account (player_id); pilot_gov zeigt, wer gesteuert hat.
+      const pl = LK.filter((x) => x.kind === 'pilot').map((x) => String(x.governor_id));
+      let me = null; if (pl.length) { try { me = ((await rest('GET', `leaderboard?user_id=eq.${u.id}&select=username,governor_id`)) || [])[0] || null; } catch { me = null; } }
+      const pGov = me ? gidOf(me.governor_id) : null, pName = me ? String(me.username || '').slice(0, 40) : null;
+      const isP = (r) => pl.includes(String(r.player_id));
+      const rowsP = ok.map((r) => isP(r) ? { ...r, pilot_gov: pGov ? +pGov : null, pilot_name: pName, pilot_user: u.id, pilot_ok: !pend.has(String(r.player_id)) } : r);
       // ignore-duplicates: hat dein PC-Uploader den Kampf schon gespeichert, bleibt seine Zeile unveraendert (kein Doppelt, kein Ueberschreiben)
-      if (ok.length) await rest('POST', 'rok_battles?on_conflict=mail_id,opponent_id', ok, 'resolution=ignore-duplicates,return=minimal');
-      return res.json({ ok: true, saved: ok.length, skipped: rows.length - ok.length });
+      // fehlt in Supabase eine neue Spalte (SQL noch nicht ausgeführt), wird sie weggelassen statt dass der Upload scheitert
+      const put = async (arr) => { let cur = arr; for (let i = 0; i < 6; i++) { try { await rest('POST', 'rok_battles?on_conflict=mail_id,opponent_id', cur, 'resolution=ignore-duplicates,return=minimal'); return; }
+        catch (e) { const m = /'([a-z0-9_]+)' column/.exec(e.message || ''); if (!m || i === 5) throw e; const col = m[1]; cur = cur.map((x) => { const y = { ...x }; delete y[col]; return y; }); } } };
+      if (rowsP.length) await put(rowsP);
+      // schon vorhandene Zeilen (z. B. vom Uploader des Besitzers) nachträglich als gepilotet markieren
+      const byAcc = new Map(); rowsP.filter((r) => r.pilot_user).forEach((r) => { const k = String(r.player_id); if (!byAcc.has(k)) byAcc.set(k, new Set()); byAcc.get(k).add(String(r.mail_id)); });
+      for (const [pid, ms] of byAcc) { if (pend.has(pid)) continue; const ids = [...ms].filter((m) => /^[\w-]+$/.test(m)).slice(0, 150);
+        if (ids.length) await rest('PATCH', `rok_battles?player_id=eq.${+pid}&mail_id=in.(${ids.join(',')})&pilot_user=is.null`, { pilot_gov: pGov ? +pGov : null, pilot_name: pName, pilot_user: u.id, pilot_ok: !pend.has(pid) }).catch(() => {}); }
+      const ok2 = rowsP;
+      return res.json({ ok: true, saved: ok2.length, piloted: ok2.filter((r) => r.pilot_user).length, skipped: rows.length - ok2.length });
     }
     return res.status(400).json({ error: 'Unbekannte Aktion.' });
   } catch (e) {

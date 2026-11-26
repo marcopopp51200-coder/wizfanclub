@@ -11,13 +11,14 @@ Liest nur Dateien im Ordner <Spiel>\\save\\mailcache. Veraendert nichts am Spiel
 Braucht nur Python 3 (tkinter ist dabei). Start ohne Konsolenfenster: pythonw rok_app.py
 """
 import glob, json, os, re, struct, sys, threading, time, traceback
+import copy, shutil
 import urllib.request, urllib.error
 from datetime import datetime, date
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import tkinter.font as tkfont
 
-APP_VERSION = "0.30-test"
+APP_VERSION = "1.0"
 FROZEN = getattr(sys, "frozen", False)          # als .exe gebaut (PyInstaller)
 HERE = os.path.dirname(os.path.abspath(sys.executable if FROZEN else __file__))
 DATA = os.path.join(os.environ.get("APPDATA", HERE), "WizFanClub") if FROZEN else HERE   # Einstellungen/Cache der .exe
@@ -28,7 +29,7 @@ LOG_FILE = os.path.join(DATA, "app_log.txt")
 RES = getattr(sys, "_MEIPASS", HERE)            # mitgelieferte Dateien (Icon)
 MARKER_TTL = 3600       # Ball-Marker loeschen sich nach 1 Stunde selbst
 MARKER_TTL_OTHER = 1800 # alle anderen Marker nach 30 Minuten
-CACHE_VER = 8          # 2: + Marker-Mails (einmal alles neu einlesen)
+CACHE_VER = 9          # 2: + Marker-Mails (einmal alles neu einlesen)
 
 try:                                    # vorhandener Uploader (v16) im selben Ordner -> fuer Hochladen
     sys.path.insert(0, HERE)
@@ -72,7 +73,7 @@ TXT = {
     "pos_title": "Position", "pos_info": "Fenster wählen und per Knopf setzen – klappt auch, wenn „Durchklick“ an ist und du nicht ziehen kannst. Die Position bleibt gespeichert.",
     "pos_ov": "Overlay", "pos_march": "Marsch-Leiste", "pos_feed": "Kampf-Feed", "pos_quick": "Schnell-Platz", "pos_fine": "Feinjustieren",
     "pos_step": "Schritt", "pos_exact": "Genau eingeben", "pos_set": "Setzen",
-    "march_reset": "Marsch-Werte", "mr_last": "Aktuellster Bericht", "mr_sum": "Alles im Zeitraum",
+    "march_reset": "Marsch-Werte", "mr_last": "Last Report", "mr_sum": "Total",
     "last_info": "Aktuellster Bericht: Die Leiste zeigt den neuesten Bericht des Marsches so wie im Spiel unter „Data Summary“ – alle Teil-Kämpfe (Battle Streak) zusammengerechnet. Läuft der Kampf weiter, wächst die Zahl mit. Kommt ein komplett neuer Bericht, fängt der Marsch wieder bei 0 an. Barbaren/Späher ändern nichts, solange „nur PvP“ an ist.",
     "fight_gap": "Neues Gefecht nach", "fight_info": "Gefecht: Alle Berichte eines Marsches, die dichter als die eingestellte Pause beieinander liegen, werden zusammengerechnet. Erst nach der Pause startet der Marsch wieder bei 0. Pop-up kommt nur einmal pro Gefecht.",
     "ovt_view": "Anzeige", "ovt_mods": "Module & Märsche", "ovt_pos": "Position", "ovt_vals": "Werte",
@@ -81,6 +82,43 @@ TXT = {
     "md_title": "Details zu diesem Marsch", "md_fight": "Aktueller Bericht", "md_today": "Heute", "md_all": "Alle Berichte", "md_reports": "Berichte",
     "md_info": "Jede Zeile = ein Kampfbericht dieses Marsches (neueste oben). Gleiche Nummer = ein Bericht im Spiel (Battle Streak: Hauptbericht + Teil-Berichte werden zusammengerechnet). Hell hinterlegt = der aktuellste Bericht, den die Marsch-Leiste zeigt.",
     "md_time": "Zeit", "md_kp_all": "KP inkl. NPC", "md_n": "Kämpfe", "md_enemy": "Gegner", "md_copy": "Liste kopieren (für Claude)",
+    "feed_marches": "Märsche", "ms_scout": "Du wurdest gespäht!", "ms_rank": "Lost Kingdom: Rang {t}", "ms_hosp": "Lazarett {p} % voll",
+    "ms_banner85": "Achtung: Lazarett {p} % voll – heilen!", "ms_dead": "Truppen im Lazarett gestorben!", "ms_died": "gestorben",
+    "ms_banner_dead": "Lazarett voll – {n} Truppen gestorben!", "t_army": "Army-Buff", "t_scout": "Gespäht", "t_battle": "Kampf-Pop-up",
+    "t_rank": "Lost Kingdom S+", "t_hosp70": "Lazarett 70 %", "t_hosp85": "Lazarett 85 %", "t_hospdead": "Truppen gestorben", "t_all": "Alles nacheinander testen",
+    "al_msgs": "Nachrichten", "al_msgs_info": "Gespäht = rot blinkend wie ein Buff · Lost Kingdom A+/S/S+ = Pop-up wie nach einem Kampf · Lazarett 70 % = rot blinkend · 85 % = zusätzlich Warnung oben am Bildschirm · Truppen gestorben = alles + lila Rahmen um den Bildschirm.",
+    "msg_scout": "Gespäht worden", "msg_rank": "Lost Kingdom Rang", "msg_hosp70": "Lazarett 70 %", "msg_hosp85": "Lazarett 85 %", "msg_hospdead": "Truppen gestorben",
+    "ms_hosp_s": "Lazarett", "chain_avg": "Ø Kette", "chain": "Kette", "today_s": "heute", "goal_acc": "Acclaim-Ziel heute", "goal_barb": "Barbaren-Ziel heute", "pv_lvl": "⭐ Level", "pv_avg": "🔗 Ø Kette", "pv_last": "🔗 Letzte Kette", "pv_today": "🪓 Heute getötet", "pv_ap": "🧪 AP heute", "pv_run": "🧪 AP seit Start", "pv_waste": "🗑 AP-Waste", "pv_last_s": "Letzte", "march_pve_vals": "PvE-Werte", "march_idle": "Automatisch ausblenden nach", "feed_fields": "Mehr Daten", "ff_trade": "Trade", "ff_sum_kp": "Σ KP", "ff_sum_trade": "Σ Trade", "ff_acc": "★ Acclaim", "ff_sum_acc": "Σ Acclaim", "pos_s": "Platz", "mk_vol": "Lautstärke", "mk_dur": "Dauer", "mk_once": "1×", "pop_dur": "Pop-up sichtbar", "t_info": "Klick = Test (Ton kommt immer, der gewählte Knopf wird orange)", "t_kbuff": "Heal-Buff", "kb_heal": "Heal Buff aktiv", "goal_gems": "Edelstein-Ziel heute", "m_gems": "Edelsteine gesammelt", "m_gems_all": "Edelsteine gesamt", "m_rss": "Ressourcen gesammelt", "al_tab_snd": "Sounds", "snd_title": "Sounds für jeden Alarm", "snd_info": "Für jeden Alarm eigener Ton, Lautstärke und Dauer (wie lange er wiederholt wird). Eigene Töne (.wav/.mp3): „📁 Neu …“ – danach haben sie einen festen Knopf. Mitgelieferte Töne liegen im Build-Ordner app/sounds.", "snd_folder": "Eigene Töne liegen in: {p}", "snd_play": "Anhören", "snd_new": "Neu …", "snd_goto": "Ton einstellen (Reiter Sounds)", "snd_g_marker": "📍 Marker", "snd_g_buffs": "⏳ Buffs", "snd_g_msgs": "✉ Nachrichten", "snd_g_bld": "🏰 Gebäude", "snd_g_battle": "⚔ Kampf", "snd_i_mention": "Dein Name im Marker", "snd_i_other": "Andere Marker", "snd_i_bld_won": "Gebäude erobert", "snd_i_bld_lost": "Gebäude verloren", "snd_i_bld_other": "Gebäude sonst", "snd_i_battle": "Kampf-Pop-up (Sieg)", "snd_i_dead_march": "Marsch tot", "mumu_title": "MuMu-Farmen (Android-Emulator)", "mumu_info": "Liest die Mails deiner Farmen aus jeder laufenden MuMu-Instanz (über ADB, ohne Root – ändert in MuMu nichts). Damit zählen Sammeln/Edelsteine, Barbaren usw. der Farmen mit. Beim ersten Mal werden alle Mails kopiert (ein paar Minuten), danach nur neue.", "mumu_on": "MuMu-Farmen einlesen", "mumu_every": "Alle", "mumu_now": "Jetzt holen", "mumu_busy": "Hole Mails aus MuMu …", "mumu_ok": "✔ {n} Instanzen · {m} Mails · zuletzt {t}", "mumu_off": "MuMu läuft gerade nicht – sobald es läuft, holt die App die Mails.", "mumu_noadb": "adb.exe nicht gefunden (MuMu-Ordner unter Programme\\Netease).", "mumu_err": "Fehler beim Holen – siehe app_log.txt.", "mumu_idle": "Noch nicht geholt.", "snd_ownlist": "Eigene Töne ({n})", "snd_master": "Ton (alle Alarme)", "snd_on": "Ton an", "snd_mvol": "Gesamt-Lautstärke", "mods_title": "Im {m}-Overlay anzeigen", "mods_info": "Für diesen Modus getrennt gespeichert – z. B. Ball-Marker und Army Expansion nur in PvP, in PvE aus. Aus = keine Anzeige, kein Pop-up, kein Ton.", "mod_markers_s": "Ball-Marker", "mod_exp_s": "Army Expansion", "mod_buffs_s": "Buffs abgelaufen", "mod_kbuff_s": "Heal Buff", "mod_hosp_s": "Lazarett", "mod_scout_s": "Gespäht", "mod_bld_s": "Gebäude", "show_clock": "Datum + Uhrzeit (PC) unter dem Namen", "size_title": "Größe & Durchsichtigkeit – {w}", "mode_edit": "Overlay für:", "npc_1": "Barbar", "npc_41": "Kahar", "kb_title": "Kingdom-Buff (Heilung)", "kb_info": "Kommt die Mail „Kingdom Buff Activated“ (z. B. Healing First, +30 % Heilung, 8 Std.), steht im Overlay unter „50 % aktiv“: HEAL-BUFF AKTIV mit Restzeit. Falls die Mail nicht erkannt wird: hier von Hand starten.", "kb_show": "Im Overlay anzeigen (mit Timer)", "kb_manual": "Von Hand:", "kb_stop": "Stopp", "kb_none": "kein Buff aktiv", "kb_active": "{n} aktiv", "kb_until": "noch {t}", "waste_s": "Waste", "snd_own": "Eigener Ton …", "snd_files": "Töne", "ov_width": "Breite (+/−)", "mode_badge": "Modus-Zeichen ⚔ / 🪓 im Overlay-Kopf", "feed_gap": "Abstand Feed-Karten", "mode_title": "Modus & Charakter", "mode_fight": "PvP", "mode_off": "PvE", "mode_auto": "Automatisch umschalten", "mode_auto_sw": "Modus gewechselt: {m}", "mode_info": "Jeder Modus hat sein eigenes, festes Overlay (Werte, Farben, Positionen, Märsche, Feed). Einfach umschalten und das Overlay für diesen Modus einstellen. Automatisch: 5 Barbaren-Angriffe hintereinander → PvE · Kampf mit Kill Points → Fight.", "ap_title": "AP-Kosten (PvE)", "ap_info": "1 Bericht = 1 Angriff. Barbar: Start-AP, jeder Folgeangriff desselben Marsches (ohne Heimkehr) kostet weniger, bis zum Minimum. AP-Waste = AP für Barbaren, die nicht gestorben sind.",
+    "ap_barb": "Barbar AP", "ap_step": "− je Folgeangriff", "ap_min": "Minimum", "ap_kahar": "Kahar AP", "show_waste": "AP-Waste in der March-Leiste (neben Kette)",
+    "feed_settle": "Feed erst nach", "feed_age": "Marsch ausblenden nach (unbenutzt)", "feed_per_march": "Nur 1 Eintrag je Marsch (neuester Bericht)", "feed_more": "Mehr Daten: Acclaim + rechts Σ ganzer Marsch (KP, Trade, Acclaim im Zeitraum)", "live": "Live (alle 5 s)", "feed_merge": "Gleicher Gegner = eine Schlacht (z. B. 4 Märsche zusammen)",
+    "calc_every": "Neu rechnen alle", "calc_info": "Im großen Kampf ändern sich ständig Berichte. Die App liest laufende Berichte und rechnet nur alle X Sekunden neu – Marker kommen trotzdem sofort. Höher = weniger Last.",
+    "march_kind": "Leiste zeigt", "mk_auto": "Automatisch", "mk_pvp": "Nur PvP", "mk_pve": "Nur Barbaren", "chain_gap": "Kette endet nach",
+    "all_on": "Overlay (alles)", "all_on_info": "An: Overlay, Marsch-Leiste, Feed und Pop-ups laufen (je nach Einstellung im Reiter Overlay).",
+    "all_off_info": "Aus: Alle Overlay-Fenster und Pop-ups sind aus. Strg+Alt+O schaltet wieder an.", "ov_settings": "Overlay einstellen",
+    "icon_px": "Bildgröße", "hero_one": "Nur den ersten Kommandanten zeigen", "trade_fmt": "Trade anzeigen als", "tf_pct": "184 %", "tf_ratio": "1,84:1",
+    "al_main": "Overlay", "al_toast": "Pop-ups",
+    "al_dur_army": "Army Expansion anzeigen", "al_dur_other": "Alle anderen anzeigen", "buff_popup": "Zusätzlich als Pop-up",
+    "toast_place": "Pop-up-Position einstellen", "toast_drag": "Zieh mich dahin, wo Pop-ups erscheinen sollen", "toast_drag2": "Dann auf „Fertig“ – danach kommt ein Test-Pop-up.", "done": "Fertig",
+    "exp_title": "50 % Army Expansion (aus deinen Kampfberichten)", "exp_info": "Mit 50 % Expansion startet ein Marsch mit über 400K Truppen. Die App schaut in den neuesten Bericht (letzte 3 Std.) und zeigt im Overlay, ob deine 50 % noch aktiv ist.",
+    "exp_show": "Im Overlay anzeigen", "exp_alert": "Melden, wenn die 50 % weg ist", "exp_limit": "Ab wie vielen Truppen = 50 %:", "exp_on": "50 % aktiv", "exp_off": "ohne 50 %",
+    "exp_gone": "50 % Expansion weg!", "exp_troops": "Marsch nur noch {n} Truppen", "exp_now_on": "Gerade: aktiv (%s)", "exp_now_off": "Gerade: nicht aktiv (%s)", "exp_none": "Noch kein Bericht in den letzten 3 Std.",
+    "rok_only": "Nur mit Rise of Kingdoms öffnen", "rok_only_info": "Zusammen mit „Mit Windows starten“: Die App wartet unsichtbar und öffnet sich erst, wenn RoK läuft. Schließt du RoK, verschwinden App und Overlay wieder.",
+    "rok_now_on": "RoK läuft gerade ✓", "rok_now_off": "RoK läuft gerade nicht",
+    "metric_lab_col": "Namen auch in der Farbe", "metric_col_info": "Farbpunkte: eigene Farbe je Wert (A = Standard, Trade dann grün/rot). Gilt auch für Feed (KP, Acclaim).", "order_title": "Reihenfolge im Overlay", "order_info": "Mit ▲ ▼ verschieben – z. B. Acclaim über KP-Trade. Neue Werte kommen unten dazu.",
+    "hk_title": "Tastenkürzel", "hk_set_info": "Ins Feld klicken und die neue Kombination drücken (z. B. Strg+Umschalt+F2). Funktioniert auch im Spiel. ✖ = von einem anderen Programm belegt.",
+    "hk_overlay_l": "Overlay an/aus", "hk_reset_l": "Session neu", "hk_click_l": "Durchklick an/aus", "hk_busy": "belegt", "hk_reset_all": "Standard (Strg+Alt+O/R/D)",
+    "hk_need_mod": "Bitte mit Strg, Alt oder Shift kombinieren",
+    "pp_title": "Pop-ups", "pp_info": "Wähle, was zusätzlich als Pop-up (wie nach einem Kampf) erscheinen soll. Mehrere kommen nacheinander. Die Position stellst du mit dem Knopf unten ein.",
+    "pp_battle": "Kampf", "pp_ball": "Neuer Ball-Marker", "pp_marker": "Andere Marker", "pp_mention": "Dein Name im Marker", "pp_army": "Army Expansion abgelaufen",
+    "pp_buff": "Andere Buffs abgelaufen", "pp_exp": "50 % Expansion weg", "pp_scout": "Gespäht", "pp_hosp": "Lazarett", "pp_rank": "Lost Kingdom Rang", "pp_bld": "Gebäude / Flaggen", "pp_kbuff": "Kingdom-Buff aktiviert",
+    "pp_test": "Alle eingeschalteten testen",
+    "ovt_march": "Marsch-Leiste", "ovt_feed": "Feed & Leistung", "look_title": "Aussehen", "goals_title": "Tagesziele", "march_show": "Marsch-Leiste anzeigen",
+    "perf_title": "Leistung", "perf_tips": "Flüssig bleiben: Deckkraft 100 % (Durchsichtigkeit kostet Windows am meisten) · nur die Fenster an, die du brauchst · RoK im Fenster-/randlosen Modus · „Neu rechnen alle“ im großen Kampf auf 10 s.",
+    "as_marker": "Marker", "as_buffs": "Buffs & 50 %", "as_msgs": "Nachrichten", "as_bld": "Gebäude", "as_popups": "Pop-ups", "as_test": "Ton & Test",
+    "pp_color": "Farbe (A = Standard)",
+    "streak_gap": "Streak max. Pause", "streak_info": "🔗 Battle Streak: Alle Runden desselben Marsches werden zusammengerechnet (wie „Data Summary“ im Spiel) – auch wenn du rumstehst. Erst wenn du den Marsch neu losschickst, fängt es wieder bei 0 an.",
+    "md_export": "Berichte als Datei für Claude",
+    "md_parts": "Aktuelle Battle Streak: {h} von {n} Teilen im Mail-Ordner.", "md_parts_miss": "Es fehlen Teile – öffne den Bericht einmal im Spiel, dann lädt RoK sie nach und die Zahl stimmt.",
     "tab_marches": "Märsche", "sub_marches": "Wie gut jeder deiner Märsche ist – kurz und knapp.", "r_30d": "30 Tage",
     "mt_pair": "Marsch", "mt_n": "Kämpfe", "mt_kp": "Kill Points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Tote", "mt_trade": "Trade",
     "mt_total_kp": "Kill Points gesamt", "mt_meta_kp": "{n} Kämpfe · {m} Märsche", "mt_ratio": "Tote-Ratio", "mt_trade_l": "Trade", "mt_per_fight": "KP pro Kampf",
@@ -112,12 +150,12 @@ TXT = {
         "ov_show": "Overlay anzeigen", "ov_lock": "Position sperren", "ov_alpha": "Deckkraft", "ov_range": "Zeitraum",
         "ov_since": "Seit (JJJJ-MM-TT)", "ov_values": "Angezeigte Werte", "ov_reset": "Session neu starten", "ov_size": "Größe",
         "ov_pvp_only": "KP und Trades nur aus PvP", "ov_hint": "Overlay mit der Maus verschieben. Rechtsklick = Menü. Das Spiel im Fenster- oder randlosen Modus laufen lassen, sonst liegt es über dem Overlay.",
-        "r_session": "Session", "r_today": "Heute", "r_24h": "Letzte 24 Std.", "r_7d": "Letzte 7 Tage", "r_since": "Seit Datum (z. B. KvK-Start)", "r_all": "Alles",
-        "m_kp": "KP", "m_kp_all": "KP gesamt (alles)", "m_kp_last": "KP letzter Kampf", "m_kp_trade": "KP-Trade", "m_loss_trade": "Verlust-Trade",
+        "r_session": "Session", "r_today": "Heute", "r_24h": "24 Std.", "r_2d": "2 Tage", "r_3d": "3 Tage", "r_4d": "4 Tage", "r_5d": "5 Tage", "r_6d": "6 Tage", "r_7d": "7 Tage", "r_since": "Seit Datum (z. B. KvK-Start)", "r_all": "Alles",
+        "m_kp": "KP", "m_kp_all": "KP gesamt", "m_kp_last": "KP letzter Kampf", "m_kp_trade": "KP-Trade", "m_loss_trade": "Verlust-Trade",
         "m_power_trade": "Power-Trade", "m_dead": "Eigene Tote", "m_severe": "Eigene Schwerverw.", "m_wounded": "Eigene Leichtverw.",
         "m_enemy_out": "Gegner ausgeschaltet", "m_enemy_dead": "Gegner tot", "m_pvp": "PvP-Kämpfe", "m_pve": "PvE-Kämpfe", "m_kph": "KP pro Stunde",
         "m_last_enemy": "Letzter Gegner", "m_enemy_marches": "Märsche des Gegners", "m_last_marches": "Gegner-Märsche im letzten Kampf",
-        "m_barb": "Barbaren getötet", "m_barb_hits": "Barbaren-Kämpfe", "m_barb_lvl": "Höchstes Barbaren-Level", "m_forts": "Forts besiegt", "m_acclaim": "Acclaim",
+        "m_barb": "Barbaren getötet", "m_barb_hits": "Barbaren-Kämpfe", "m_barb_lvl": "Höchstes Barbaren-Level", "m_forts": "Kahar besiegt", "m_ap_used": "AP verbraucht", "m_ap_waste": "AP-Waste", "m_chain_avg": "Ø Kette", "m_acclaim": "Acclaim", "m_acc_all": "Acclaim gesamt",
         "folders": "Spielordner (mit save\\mailcache)", "add": "Hinzufügen…", "remove": "Entfernen", "detect": "Automatisch suchen",
         "upload": "Kampfberichte der gebundenen IDs hochladen", "upload_days": "Beim ersten Mal nur die letzten Tage",
         "upload_hint": "Nicht nötig, wenn der alte Uploader (rok_kampf_upload.py) schon läuft.", "upload_off": "Hochladen geht nur, wenn rok_kampf_upload.py im selben Ordner liegt.",
@@ -146,7 +184,7 @@ TXT = {
     "pos_title": "Position", "pos_info": "Pick a window and place it with the buttons – works even when click-through is on and you can't drag. Position is saved.",
     "pos_ov": "Overlay", "pos_march": "March bar", "pos_feed": "Battle feed", "pos_quick": "Quick spot", "pos_fine": "Fine tune",
     "pos_step": "Step", "pos_exact": "Exact", "pos_set": "Set",
-    "march_reset": "March values", "mr_last": "Latest report", "mr_sum": "Everything in range",
+    "march_reset": "March values", "mr_last": "Last Report", "mr_sum": "Total",
     "last_info": "Latest report: the bar always shows the newest battle report of the march. While the battle goes on, the number grows. A completely new report starts the march at 0 again.",
     "fight_gap": "New engagement after", "fight_info": "Engagement: all reports of a march closer together than the set pause are summed up. Only after the pause the march starts at 0 again. Pop-up comes once per engagement.",
     "ovt_view": "Display", "ovt_mods": "Modules & marches", "ovt_pos": "Position", "ovt_vals": "Values",
@@ -155,6 +193,43 @@ TXT = {
     "md_title": "Details for this march", "md_fight": "Current report", "md_today": "Today", "md_all": "All reports", "md_reports": "Reports",
     "md_info": "Each line = one battle report of this march (newest on top). Highlighted = the latest report shown in the march bar.",
     "md_time": "Time", "md_kp_all": "KP incl. NPC", "md_n": "Fights", "md_enemy": "Enemy", "md_copy": "Copy list",
+    "feed_marches": "marches", "ms_scout": "You were scouted!", "ms_rank": "Lost Kingdom: rank {t}", "ms_hosp": "Hospital {p} % full",
+    "ms_banner85": "Warning: hospital {p} % full – heal!", "ms_dead": "Troops died in hospital!", "ms_died": "died",
+    "ms_banner_dead": "Hospital full – {n} troops died!", "t_army": "Army buff", "t_scout": "Scouted", "t_battle": "Battle pop-up",
+    "t_rank": "Lost Kingdom S+", "t_hosp70": "Hospital 70 %", "t_hosp85": "Hospital 85 %", "t_hospdead": "Troops died", "t_all": "Test everything in a row",
+    "al_msgs": "Messages", "al_msgs_info": "Scouted = red blinking like a buff · Lost Kingdom A+/S/S+ = pop-up like after a battle · Hospital 70 % = red blinking · 85 % = plus warning at the top of the screen · Troops died = all + purple border around the screen.",
+    "msg_scout": "Scouted", "msg_rank": "Lost Kingdom rank", "msg_hosp70": "Hospital 70 %", "msg_hosp85": "Hospital 85 %", "msg_hospdead": "Troops died",
+    "ms_hosp_s": "Hospital", "chain_avg": "Ø chain", "chain": "Chain", "today_s": "today", "goal_acc": "Acclaim goal today", "goal_barb": "Barbarian goal today", "pv_lvl": "⭐ Level", "pv_avg": "🔗 Avg chain", "pv_last": "🔗 Last chain", "pv_today": "🪓 Killed today", "pv_ap": "🧪 AP today", "pv_run": "🧪 AP since start", "pv_waste": "🗑 AP waste", "pv_last_s": "Last", "march_pve_vals": "PvE values", "march_idle": "Auto-hide after", "feed_fields": "More data", "ff_trade": "Trade", "ff_sum_kp": "Σ KP", "ff_sum_trade": "Σ trade", "ff_acc": "★ Acclaim", "ff_sum_acc": "Σ acclaim", "pos_s": "Pos.", "mk_vol": "Volume", "mk_dur": "Duration", "mk_once": "1×", "pop_dur": "Pop-up visible", "t_info": "Click = test (sound always plays, the chosen button turns orange)", "t_kbuff": "Heal buff", "kb_heal": "Heal Buff active", "goal_gems": "Gem goal today", "m_gems": "Gems gathered", "m_gems_all": "Gems total", "m_rss": "Resources gathered", "al_tab_snd": "Sounds", "snd_title": "Sounds for every alert", "snd_info": "Own sound, volume and duration (how long it repeats) for every alert. Own sounds (.wav/.mp3): “📁 New …” – then they get a fixed button. Bundled sounds live in the build folder app/sounds.", "snd_folder": "Own sounds are stored in: {p}", "snd_play": "Play", "snd_new": "New …", "snd_goto": "Set sound (Sounds tab)", "snd_g_marker": "📍 Markers", "snd_g_buffs": "⏳ Buffs", "snd_g_msgs": "✉ Messages", "snd_g_bld": "🏰 Buildings", "snd_g_battle": "⚔ Battle", "snd_i_mention": "Your name in a marker", "snd_i_other": "Other markers", "snd_i_bld_won": "Building captured", "snd_i_bld_lost": "Building lost", "snd_i_bld_other": "Building other", "snd_i_battle": "Battle pop-up (victory)", "snd_i_dead_march": "March dead", "mumu_title": "MuMu farms (Android emulator)", "mumu_info": "Reads your farms' mails from every running MuMu instance (via ADB, no root – changes nothing in MuMu). Gathering/gems, barbarians etc. of the farms then count too. The first time all mails are copied (a few minutes), afterwards only new ones.", "mumu_on": "Read MuMu farms", "mumu_every": "Every", "mumu_now": "Fetch now", "mumu_busy": "Fetching mails from MuMu …", "mumu_ok": "✔ {n} instances · {m} mails · last {t}", "mumu_off": "MuMu is not running – the app fetches the mails as soon as it runs.", "mumu_noadb": "adb.exe not found (MuMu folder under Program Files\\Netease).", "mumu_err": "Error while fetching – see app_log.txt.", "mumu_idle": "Not fetched yet.", "snd_ownlist": "Own sounds ({n})", "snd_master": "Sound (all alerts)", "snd_on": "Sound on", "snd_mvol": "Master volume", "mods_title": "Show in the {m} overlay", "mods_info": "Saved separately for this mode – e.g. ball markers and army expansion only in PvP, off in PvE. Off = no display, no pop-up, no sound.", "mod_markers_s": "Ball markers", "mod_exp_s": "Army expansion", "mod_buffs_s": "Buffs expired", "mod_kbuff_s": "Heal buff", "mod_hosp_s": "Hospital", "mod_scout_s": "Scouted", "mod_bld_s": "Buildings", "show_clock": "Date + time (PC) below the name", "size_title": "Size & transparency – {w}", "mode_edit": "Overlay for:", "npc_1": "Barbarian", "npc_41": "Kahar", "kb_title": "Kingdom buff (healing)", "kb_info": "When the mail “Kingdom Buff Activated” arrives (e.g. Healing First, +30 % healing, 8 h), the overlay shows HEAL BUFF ACTIVE with time left below “50 % active”. If the mail is not detected: start it here by hand.", "kb_show": "Show in overlay (with timer)", "kb_manual": "By hand:", "kb_stop": "Stop", "kb_none": "no buff active", "kb_active": "{n} active", "kb_until": "{t} left", "waste_s": "waste", "snd_own": "Own sound …", "snd_files": "Sounds", "ov_width": "Width (+/−)", "mode_badge": "Mode sign ⚔ / 🪓 in overlay header", "feed_gap": "Feed card spacing", "mode_title": "Mode & character", "mode_fight": "PvP", "mode_off": "PvE", "mode_auto": "Switch automatically", "mode_auto_sw": "Mode switched: {m}", "mode_info": "Each mode has its own fixed overlay (values, colors, positions, marches, feed). Just switch and set up the overlay for that mode. Automatic: 5 barbarian attacks in a row → PvE · battle with kill points → fight.", "ap_title": "AP costs (PvE)", "ap_info": "1 report = 1 attack. Barbarian: start AP, each follow-up attack of the same march (without returning) costs less, down to the minimum. AP waste = AP for barbarians that did not die.",
+    "ap_barb": "Barbarian AP", "ap_step": "− per follow-up", "ap_min": "Minimum", "ap_kahar": "Kahar AP", "show_waste": "AP waste in march bar (next to chain)",
+    "feed_settle": "Feed only after", "feed_age": "Hide march after (unused)", "feed_per_march": "Only 1 entry per march (newest report)", "feed_more": "More data: acclaim + Σ whole march on the right (KP, trade, acclaim in period)", "live": "Live (every 5 s)", "feed_merge": "Same enemy = one battle (e.g. 4 marches together)",
+    "calc_every": "Recalculate every", "calc_info": "In big fights reports change all the time. The app re-reads running reports and recalculates only every X seconds – markers still come instantly. Higher = less load.",
+    "march_kind": "Bar shows", "mk_auto": "Automatic", "mk_pvp": "PvP only", "mk_pve": "Barbarians only", "chain_gap": "Chain ends after",
+    "all_on": "Overlay (everything)", "all_on_info": "On: overlay, march bar, feed and pop-ups run (as set in the Overlay tab).",
+    "all_off_info": "Off: all overlay windows and pop-ups are off. Ctrl+Alt+O turns them back on.", "ov_settings": "Overlay settings",
+    "icon_px": "Picture size", "hero_one": "Show only the first commander", "trade_fmt": "Show trade as", "tf_pct": "184 %", "tf_ratio": "1.84:1",
+    "al_main": "Overlay", "al_toast": "Pop-ups",
+    "al_dur_army": "Show army expansion", "al_dur_other": "Show all others", "buff_popup": "Also as pop-up",
+    "toast_place": "Set pop-up position", "toast_drag": "Drag me where pop-ups should appear", "toast_drag2": "Then click “Done” – a test pop-up follows.", "done": "Done",
+    "exp_title": "50 % army expansion (from your battle reports)", "exp_info": "With 50 % expansion a march starts with more than 400K troops. The app checks the newest report (last 3 h) and shows in the overlay whether your 50 % is still active.",
+    "exp_show": "Show in overlay", "exp_alert": "Alert when the 50 % is gone", "exp_limit": "From how many troops = 50 %:", "exp_on": "50 % active", "exp_off": "without 50 %",
+    "exp_gone": "50 % expansion gone!", "exp_troops": "March only {n} troops", "exp_now_on": "Now: active (%s)", "exp_now_off": "Now: not active (%s)", "exp_none": "No report in the last 3 h yet.",
+    "rok_only": "Only open with Rise of Kingdoms", "rok_only_info": "Together with “Start with Windows”: the app waits invisibly and only opens when RoK runs. Close RoK and app + overlay disappear again.",
+    "rok_now_on": "RoK is running ✓", "rok_now_off": "RoK is not running",
+    "metric_lab_col": "Names in the color too", "metric_col_info": "Color dots: own color per value (A = default, trade then green/red). Also used in the feed (KP, acclaim).", "order_title": "Order in overlay", "order_info": "Move with ▲ ▼ – e.g. acclaim above KP trade. New values are added at the bottom.",
+    "hk_title": "Hotkeys", "hk_set_info": "Click into the field and press the new combination (e.g. Ctrl+Shift+F2). Works in game too. ✖ = used by another program.",
+    "hk_overlay_l": "Overlay on/off", "hk_reset_l": "New session", "hk_click_l": "Click-through on/off", "hk_busy": "in use", "hk_reset_all": "Default (Ctrl+Alt+O/R/D)",
+    "hk_need_mod": "Please combine with Ctrl, Alt or Shift",
+    "pp_title": "Pop-ups", "pp_info": "Choose what should also appear as a pop-up (like after a battle). Several come one after another. Set the position with the button below.",
+    "pp_battle": "Battle", "pp_ball": "New ball marker", "pp_marker": "Other markers", "pp_mention": "Your name in a marker", "pp_army": "Army expansion ended",
+    "pp_buff": "Other buffs ended", "pp_exp": "50 % expansion gone", "pp_scout": "Scouted", "pp_hosp": "Hospital", "pp_rank": "Lost Kingdom rank", "pp_bld": "Buildings / flags", "pp_kbuff": "Kingdom buff activated",
+    "pp_test": "Test all enabled",
+    "ovt_march": "March bar", "ovt_feed": "Feed & performance", "look_title": "Look", "goals_title": "Daily goals", "march_show": "Show march bar",
+    "perf_title": "Performance", "perf_tips": "Stay smooth: opacity 100 % (transparency costs Windows the most) · only the windows you need · RoK in windowed/borderless mode · set “Recalculate every” to 10 s in big fights.",
+    "as_marker": "Markers", "as_buffs": "Buffs & 50 %", "as_msgs": "Messages", "as_bld": "Buildings", "as_popups": "Pop-ups", "as_test": "Sound & test",
+    "pp_color": "Colour (A = default)",
+    "streak_gap": "Streak max. pause", "streak_info": "🔗 Battle streak: all rounds of the same march are added up (like “Data Summary” in game) – even while standing still. Only when you send the march out again does it start at 0.",
+    "md_export": "Export reports for Claude",
+    "md_parts": "Current battle streak: {h} of {n} parts in the mail folder.", "md_parts_miss": "Parts are missing – open the report once in game, then RoK downloads them and the number is right.",
     "tab_marches": "Marches", "sub_marches": "How good each of your marches is – short and simple.", "r_30d": "30 days",
     "mt_pair": "March", "mt_n": "Fights", "mt_kp": "Kill points", "mt_kills": "Kills", "mt_acc": "Acclaim", "mt_dead": "Dead", "mt_trade": "Trade",
     "mt_total_kp": "Total kill points", "mt_meta_kp": "{n} fights · {m} marches", "mt_ratio": "dead ratio", "mt_trade_l": "trade", "mt_per_fight": "KP per fight",
@@ -186,12 +261,12 @@ TXT = {
         "ov_show": "Show overlay", "ov_lock": "Lock position", "ov_alpha": "Opacity", "ov_range": "Time range",
         "ov_since": "Since (YYYY-MM-DD)", "ov_values": "Shown values", "ov_reset": "Restart session", "ov_size": "Size",
         "ov_pvp_only": "KP and trades from PvP only", "ov_hint": "Drag the overlay with the mouse. Right-click = menu. Run the game in windowed or borderless mode, otherwise it covers the overlay.",
-        "r_session": "Session", "r_today": "Today", "r_24h": "Last 24 h", "r_7d": "Last 7 days", "r_since": "Since date (e.g. KvK start)", "r_all": "All",
-        "m_kp": "KP", "m_kp_all": "Total KP (all)", "m_kp_last": "KP last battle", "m_kp_trade": "KP trade", "m_loss_trade": "Loss trade",
+        "r_session": "Session", "r_today": "Today", "r_24h": "24 h", "r_2d": "2 days", "r_3d": "3 days", "r_4d": "4 days", "r_5d": "5 days", "r_6d": "6 days", "r_7d": "7 days", "r_since": "Since date (e.g. KvK start)", "r_all": "All",
+        "m_kp": "KP", "m_kp_all": "Total KP", "m_kp_last": "KP last battle", "m_kp_trade": "KP trade", "m_loss_trade": "Loss trade",
         "m_power_trade": "Power trade", "m_dead": "Own dead", "m_severe": "Own severely wounded", "m_wounded": "Own slightly wounded",
         "m_enemy_out": "Enemies taken out", "m_enemy_dead": "Enemies dead", "m_pvp": "PvP battles", "m_pve": "PvE battles", "m_kph": "KP per hour",
         "m_last_enemy": "Last enemy", "m_enemy_marches": "Enemy's marches", "m_last_marches": "Enemy marches in last battle",
-        "m_barb": "Barbarians killed", "m_barb_hits": "Barbarian battles", "m_barb_lvl": "Highest barbarian level", "m_forts": "Forts defeated", "m_acclaim": "Acclaim",
+        "m_barb": "Barbarians killed", "m_barb_hits": "Barbarian battles", "m_barb_lvl": "Highest barbarian level", "m_forts": "Kahar defeated", "m_ap_used": "AP used", "m_ap_waste": "AP waste", "m_chain_avg": "Avg chain", "m_acclaim": "Acclaim", "m_acc_all": "Total acclaim",
         "folders": "Game folders (containing save\\mailcache)", "add": "Add…", "remove": "Remove", "detect": "Search automatically",
         "upload": "Upload battle reports of linked IDs", "upload_days": "First time only the last days",
         "upload_hint": "Not needed if the old uploader (rok_kampf_upload.py) is already running.", "upload_off": "Uploading needs rok_kampf_upload.py in the same folder.",
@@ -201,9 +276,20 @@ TXT = {
         "no_data": "no battles yet",
     },
 }
-METRICS = ["m_kp", "m_kp_all", "m_kp_last", "m_kp_trade", "m_loss_trade", "m_power_trade", "m_dead", "m_severe", "m_wounded",
-           "m_enemy_out", "m_enemy_dead", "m_pvp", "m_pve", "m_kph", "m_last_enemy", "m_enemy_marches", "m_last_marches", "m_barb", "m_barb_hits", "m_barb_lvl", "m_forts", "m_acclaim"]
-RANGES = ["r_session", "r_today", "r_24h", "r_7d", "r_since", "r_all"]
+METRICS = ["m_kp", "m_kp_all", "m_kp_trade", "m_loss_trade", "m_power_trade", "m_dead", "m_severe",
+           "m_enemy_dead", "m_pvp", "m_kph", "m_last_enemy", "m_enemy_marches", "m_last_marches", "m_barb", "m_forts", "m_acclaim", "m_acc_all", "m_ap_used", "m_ap_waste", "m_chain_avg", "m_gems", "m_gems_all", "m_rss"]
+M_FIGHT = ["m_kp", "m_kp_trade", "m_kp_all", "m_acclaim", "m_acc_all", "m_dead", "m_severe", "m_enemy_dead", "m_loss_trade", "m_power_trade",
+           "m_kph", "m_pvp", "m_last_enemy", "m_enemy_marches", "m_last_marches"]
+M_OFF = ["m_barb", "m_chain_avg", "m_ap_used", "m_ap_waste", "m_forts", "m_gems", "m_gems_all", "m_rss"]
+RANGES = ["r_session", "r_today", "r_24h", "r_2d", "r_3d", "r_4d", "r_5d", "r_6d", "r_7d", "r_since", "r_all"]
+
+
+def range_days(rng):
+    """r_24h -> 1, r_2d -> 2 ... r_7d -> 7, sonst None"""
+    if rng == "r_24h":
+        return 1
+    m = re.match(r"r_(\d+)d$", str(rng))
+    return int(m.group(1)) if m and int(m.group(1)) <= 7 else None
 
 DEFAULT_CFG = {
     "api_base": "https://wiz-fanclub.vercel.app", "token": "", "user_name": "", "lang": "de",
@@ -212,10 +298,12 @@ DEFAULT_CFG = {
                 "metrics": ["m_kp", "m_kp_trade", "m_loss_trade", "m_dead", "m_kp_last"],
                 "range": "r_session", "since": "", "pvp_only": True, "count_pilot": False, "ball_n": 3, "style": "tiles", "source": "web", "focus": "auto", "mk_mode": "ball",
                 "feed": True, "feed_n": 4, "feed_pve": False, "toast": True, "march": False, "march_n": 4, "march_gap": 96,
-                "march_slots": [None, None, None, None, None], "march_vals": ["kp", "trade"], "march_reset": "last", "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
+                "march_slots": [None] * 7, "march_vals": ["kp", "trade"], "march_reset": "last", "goal_kp": 0, "icons": True, "spacing": 7, "mk_coords": True, "clickthrough": False},
     "upload": None, "upload_days": 14, "start_min": False,
     "alerts": {"buff_army": True, "buff_attack": True, "buff_def": True, "buff_shield": False, "buff_sound": "sirene",
-               "bld": True, "bld_filter": "", "bld_sound": "glocke", "show_min": 10, "overlay": True, "volume": 80},
+               "bld": True, "bld_filter": "", "bld_sound": "glocke", "show_min": 10, "overlay": True, "volume": 80,
+               "msg_scout": True, "msg_rank": True, "msg_hosp70": True, "msg_hosp85": True, "msg_hospdead": True,
+               "scout_sound": "doppel", "rank_sound": "glocke", "hosp_sound": "sirene"},
     "markers": {"filter": "all", "sort": "new", "keep_ball": 5, "words": "ball, garrison, garni, stack, def, rally", "sound": True, "overlay": True,
                 "rules": [{"name": "Ball", "words": "ball, stack, ballen", "sound": "alarm"},
                           {"name": "Rally", "words": "rally, ralli, hit, angriff, attack", "sound": "doppel"},
@@ -241,6 +329,30 @@ def load_cfg():
             rl.append({"name": "Runen", "words": "rune, runes, runen, rn", "sound": "ding"})
         if cfg.get("api_base", "").rstrip("/") == "https://rok-scanner.vercel.app":   # v0.30: alte Standard-Adresse gibt es nicht
             cfg["api_base"] = "https://wiz-fanclub.vercel.app"
+        if not cfg.get("p54"):                                        # v0.54: PvE ohne Ball-Marker / Army Expansion (je Modus einstellbar)
+            po = (cfg.get("profiles") or {}).get("off")
+            if isinstance(po, dict) and "mod_off" not in po:
+                po["mod_off"] = ["markers", "exp"]
+            if cfg.get("mode") == "off" and "mod_off" not in cfg["overlay"]:
+                cfg["overlay"]["mod_off"] = ["markers", "exp"]
+            cfg["p54"] = True
+        if not cfg.get("p49"):                                        # v0.49: Werte entfernt (KP letzter Kampf, Leichtverw. …); PvE-Maersche automatisch
+            for o in [cfg["overlay"]] + list((cfg.get("profiles") or {}).values()):
+                if isinstance(o, dict) and isinstance(o.get("metrics"), list):
+                    o["metrics"] = [m for m in o["metrics"] if m in METRICS]
+            po = (cfg.get("profiles") or {}).get("off")
+            if isinstance(po, dict):
+                po["march_slots"] = [None] * 7; po["march_kind"] = "pve"
+            if cfg.get("mode") == "off":
+                cfg["overlay"]["march_slots"] = [None] * 7; cfg["overlay"]["march_kind"] = "pve"
+            cfg["p49"] = True
+        if not cfg.get("f48"):                                        # v0.48: Standard-Charakter = Main (nicht der gerade gespielte)
+            mn = next((x for x in cfg.get("links", []) if x.get("kind") == "main"), None)
+            if mn and str(cfg["overlay"].get("focus", "auto")) == "auto":
+                cfg["overlay"]["focus"] = str(mn["governor_id"])
+            cfg["f48"] = True
+        if not cfg.get("sg44"):                                      # v0.44: Streak ueber Truppen, Zeit nur noch als lange Grenze
+            cfg["overlay"]["streak_gap"] = 1800; cfg["sg44"] = True
         if cfg["overlay"].get("march_reset") == "fight":              # v0.28: Gefecht-Modus entfernt -> aktuellster Bericht
             cfg["overlay"]["march_reset"] = "last"
         if len(rl) >= 3 and rl[2].get("name") == "Sammeln":          # v0.19: 3. Art ist jetzt Garnison
@@ -343,6 +455,19 @@ def _n(d, k):
     return v if isinstance(v, (int, float)) else 0
 
 
+def _parent_of(mail, content):
+    """ID des Hauptberichts (Battle Streak) – Feldname im Spiel nicht sicher, daher alle Kandidaten."""
+    for d in (mail, mail.get("body") or {}, content or {}):
+        if not isinstance(d, dict):
+            continue
+        for k, v in d.items():
+            kl = str(k).lower()
+            if ("parent" in kl or "streak" in kl or kl in ("pid_mail", "groupid", "gid")) and v not in (None, "", 0, "0") \
+                    and not isinstance(v, (dict, list)):
+                return v
+    return None
+
+
 def summarize(mail):
     """Kleine Zusammenfassung eines Kampfberichts fuer das Overlay (oder None)."""
     if not isinstance(mail, dict) or mail.get("type") != "Battle":
@@ -356,7 +481,8 @@ def summarize(mail):
     if isinstance(t, (int, float)) and t > 1e14:
         t = t / 1e6
     out = {"id": str(mail.get("id")), "pid": pid, "name": me.get("PName"), "t": int(t or 0), "arch": mail.get("box") == "Archive", "fights": [],
-           "par": str(mail.get("parentId") or mail.get("id")),       # Battle Streak: alle Teil-Berichte haengen am Hauptbericht
+           "par": str(_parent_of(mail, c) or mail.get("id")),       # Battle Streak: alle Teil-Berichte haengen am Hauptbericht
+           "cno": int(mail.get("childNo") or 0),                      # Teil-Nr. in der Streak (1, 2, 3 …)
            "h": [me.get("HId") or 0, me.get("HId2") or 0]}                      # eigene Kommandanten (= welcher Marsch)
     for a in (c.get("Attacks") or {}).values():
         if not isinstance(a, dict):
@@ -373,7 +499,65 @@ def summarize(mail):
                               1 if a.get("NpcKillLoot") else 0,                                          # Beute bekommen = besiegt
                               _n(own, "Cnt"), _n(opp, "Cnt"),                                            # Resttruppen (Sieg/Niederlage)
                               _n(own, "Contribute") or _n(own, "WarExploits")])                          # Acclaim (Verdienst), wie im Uploader
+        out["init"] = max(out.get("init", 0), _n(own, "InitMax"))
+    sov = c.get("SOv") if isinstance(c.get("SOv"), dict) else {}
+    oov = c.get("OOv") if isinstance(c.get("OOv"), dict) else {}
+    out["init"] = max(out.get("init", 0), _n(sov, "InitMax"), _n(sov, "Max"))       # Truppen beim Start (50 % Expansion -> 400K+)
+    if sov and ("Cnt" in sov or "Remain" in sov):
+        out["rem"] = _n(sov, "Cnt") or _n(sov, "Remain")                              # "Remaining" aus Data Summary
+    # Truppen am Anfang / Ende DIESER Runde (fuer Battle Streak: naechste Runde beginnt genau mit dem Rest der vorigen)
+    mx = [_n(a.get("Damage") or {}, "Max") for a in (c.get("Attacks") or {}).values() if isinstance(a, dict)]
+    cn = [_n(a.get("Damage") or {}, "Cnt") for a in (c.get("Attacks") or {}).values() if isinstance(a, dict)]
+    st = _n(sov, "Max") or (max(mx) if mx else 0)
+    en = (_n(sov, "Cnt") if sov and "Cnt" in sov else 0) or (min([x for x in cn if x] or [0]))
+    if st:
+        out["st"], out["en"] = st, en
+    # Marsch-ID: jeder losgeschickte Marsch bekommt im Spiel eine eigene Objekt-Nr. (STs) – steht schon LIVE in jeder Runde,
+    # auch wenn parentId/childNo noch fehlen. Gleiche Marsch-ID = gleiche Battle Streak (1:1 geprueft).
+    sts = c.get("STs") if isinstance(c.get("STs"), dict) else {}
+    mo = next((k for k, v in sts.items() if isinstance(v, dict) and v.get("PId") == pid), None) or (sorted(sts)[0] if sts else None)
+    if mo:
+        out["mo"] = str(mo)
+    if sov and out["fights"]:
+        # Die Runden (19-1, 18-1 …) sind im Spiel oft nur die letzten paar. Die HAUPTZAHL steht in "Data Summary".
+        # -> Unterschied als eine Ausgleichs-Zeile anhaengen, damit alle Summen genau die Hauptzahl ergeben.
+        fs = out["fights"]
+        tot = lambda i: sum(f[i] for f in fs)
+        want = {1: _n(sov, "KillScore"), 2: _n(oov, "KillScore"), 3: _n(sov, "Death") or _n(sov, "Dead"), 4: _n(sov, "BadHurt"),
+                5: _n(sov, "Hurt"), 6: _n(oov, "Death") or _n(oov, "Dead"), 7: _n(oov, "BadHurt"),
+                19: _n(sov, "Contribute") or _n(sov, "WarExploits")}
+        fix = [1 if any(f[0] for f in fs) else 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        changed = False
+        for i, v in want.items():
+            if v and v > tot(i):
+                fix[i] = v - tot(i); changed = True
+        if changed:
+            fix.append("sum")                            # Markierung: keine eigene Runde, nur Ausgleich zur Hauptzahl
+            fs.append(fix)
+        out["sum_kp"] = want[1] or tot(1)
     return out
+
+
+def dedupe_streaks(battles):
+    """Battle Streak: Hat der Hauptbericht schon die Summe aller Teil-Berichte, die Teil-Berichte nicht nochmal zaehlen."""
+    by_par = {}
+    for b in battles:
+        p = b.get("par")
+        if p and p != b["id"]:
+            by_par.setdefault(p, []).append(b)
+    if not by_par:
+        return list(battles)
+    skip = set()
+    ids = {b["id"]: b for b in battles}
+    for p, kids in by_par.items():
+        par = ids.get(p)
+        if not par:
+            continue
+        pk = sum(f[1] for f in par["fights"])
+        ck = sum(f[1] for k in kids for f in k["fights"])
+        if pk and pk >= ck * 0.95:                       # Hauptbericht enthaelt die Teil-Berichte schon
+            skip.update(k["id"] for k in kids)
+    return [b for b in battles if b["id"] not in skip]
 
 
 def owner_of(mail):
@@ -386,6 +570,38 @@ def owner_of(mail):
 # ---------------------------------------------------------------- Toene (werden beim Start erzeugt, keine Dateien noetig)
 import math, wave, io as _io
 SOUNDS = ["alarm", "sirene", "doppel", "glocke", "ding", "tief", "aus"]
+
+# Jeder Alarm bekommt eigenen Ton, Lautstaerke, Dauer (Reiter „Sounds“). alt = frueherer gemeinsamer Schluessel in cfg["alerts"]
+SND_GROUPS = [
+    ("snd_g_marker", [("mention", "📣", "snd_i_mention", "sirene", ("m", "mention_sound")), ("other", "📍", "snd_i_other", "ding", ("m", "other_sound"))]),
+    ("snd_g_buffs", [("army", "🪖", "bf_army", "sirene", ("a", "buff_sound")), ("attack", "⚔", "bf_attack", "sirene", ("a", "buff_sound")),
+                     ("def", "🛡", "bf_def", "sirene", ("a", "buff_sound")), ("shield", "🕊", "bf_shield", "sirene", ("a", "buff_sound")),
+                     ("exp", "🪖", "pp_exp", "sirene", ("a", "buff_sound")), ("kbuff", "💚", "kb_heal", "ding", None)]),
+    ("snd_g_msgs", [("scout", "🔭", "msg_scout", "doppel", ("a", "scout_sound")), ("rank", "🏆", "msg_rank", "glocke", ("a", "rank_sound")),
+                    ("hosp70", "🏥", "msg_hosp70", "sirene", ("a", "hosp_sound")), ("hosp85", "⚠", "msg_hosp85", "sirene", ("a", "hosp_sound")),
+                    ("hospdead", "💀", "msg_hospdead", "sirene", ("a", "hosp_sound"))]),
+    ("snd_g_bld", [("bld_won", "🏰", "snd_i_bld_won", "glocke", ("a", "bld_sound")), ("bld_lost", "💥", "snd_i_bld_lost", "glocke", ("a", "bld_sound")),
+                   ("bld_other", "🏳", "snd_i_bld_other", "glocke", ("a", "bld_sound"))]),
+    ("snd_g_battle", [("battle", "⚔", "snd_i_battle", "aus", None), ("dead_march", "☠", "snd_i_dead_march", "aus", None)]),
+]
+
+
+def sound_dirs():
+    """Ordner mit eigenen Toenen: mitgeliefert (app/sounds im Build) + selbst hochgeladen (App-Ordner/sounds)."""
+    return [os.path.join(RES, "sounds"), os.path.join(HERE, "sounds"), os.path.join(DATA, "sounds")]
+
+
+def sound_lib():
+    """Alle eigenen Toene (.wav/.mp3) als [(name, pfad)] – jeder bekommt einen festen Knopf."""
+    seen, out = set(), []
+    for d in sound_dirs():
+        try:
+            for f in sorted(os.listdir(d)):
+                if f.lower().endswith((".wav", ".mp3")) and f.lower() not in seen:
+                    seen.add(f.lower()); out.append((f, os.path.join(d, f)))
+        except OSError:
+            pass
+    return out
 _SND = {}
 
 
@@ -422,16 +638,181 @@ def sound_bytes(name, vol=0.8):
     return _SND[k]
 
 
-def play_sound(name, vol=80):
-    """Spielt einen Ton im Hintergrund (blockiert nichts)."""
-    if not name or name == "aus":
+def _safe(fn):
+    try:
+        fn()
+    except Exception as e:
+        log("sound: %s" % e)
+
+
+# ---------- MuMu Player (Farmen): Mails per ADB in den App-Ordner spiegeln ----------
+MUMU_DIR = "/sdcard/Android/data/com.lilithgame.roc.gp/files/GLGData/com_lilithgame_roc_gp/doc/mailcache"
+NOWIN = 0x08000000 if os.name == "nt" else 0
+
+
+def _adb(adb, *args, timeout=600):
+    import subprocess
+    r = subprocess.run([adb] + list(args), capture_output=True, timeout=timeout, creationflags=NOWIN)
+    return r.returncode, r.stdout.decode("utf-8", "replace")
+
+
+def find_adb(cfg):
+    a = (cfg.get("mumu") or {}).get("adb")
+    if a and os.path.isfile(a):
+        return a
+    import glob as _g
+    for base in (r"C:\Program Files\Netease", r"D:\Program Files\Netease", r"C:\Program Files (x86)\Netease", r"D:\Netease", r"C:\Netease"):
+        hits = _g.glob(os.path.join(base, "MuMu*", "**", "adb.exe"), recursive=True)
+        if hits:
+            return sorted(hits)[0]
+    return None
+
+
+def mumu_running():
+    if os.name != "nt":
+        return False
+    try:
+        import subprocess
+        tl = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, timeout=15, creationflags=NOWIN).stdout.decode("utf-8", "ignore").lower()
+        return "mumu" in tl or "nemu" in tl
+    except Exception:
+        return True
+
+
+def mumu_folders(cfg):
+    """Gespiegelte Farm-Ordner (wie ein Spielordner: <ordner>/save/mailcache)."""
+    if not (cfg.get("mumu") or {}).get("on"):
+        return []
+    root = os.path.join(DATA, "mumu")
+    try:
+        return [os.path.join(root, d) for d in sorted(os.listdir(root)) if os.path.isdir(os.path.join(root, d, "save", "mailcache"))]
+    except OSError:
+        return []
+
+
+def mumu_sync(cfg, status):
+    """Jede laufende MuMu-Instanz: neue/geaenderte Mails holen (liest nur, aendert in MuMu nichts)."""
+    if not mumu_running():
+        status["msg"] = "off"; return
+    adb = find_adb(cfg)
+    if not adb:
+        status["msg"] = "noadb"; return
+    status["adb"] = adb
+    ports = (cfg.get("mumu") or {}).get("ports") or [16384 + 32 * i for i in range(16)] + [7555]
+    found = {}
+    for port in ports:
+        dev = "127.0.0.1:%d" % port
+        try:
+            _adb(adb, "connect", dev, timeout=10)
+            rc, st = _adb(adb, "-s", dev, "get-state", timeout=10)
+            if rc != 0 or "device" not in st:
+                continue
+            rc, txt = _adb(adb, "-s", dev, "shell", "find %s -name 'Persistent.Mail.*' -exec stat -c '%%n|%%s' {} +" % MUMU_DIR, timeout=300)
+            if rc != 0:
+                continue
+            local = os.path.join(DATA, "mumu", str(port), "save", "mailcache")
+            os.makedirs(local, exist_ok=True)
+            need = []
+            for line in txt.splitlines():
+                if "|" not in line:
+                    continue
+                path, size = line.rsplit("|", 1)
+                lp = os.path.join(local, path.rsplit("/", 1)[-1])
+                if not os.path.exists(lp) or str(os.path.getsize(lp)) != size.strip():
+                    need.append(path)
+            if len(need) > 300:                                  # erstes Mal: ganzen Ordner auf einmal
+                _adb(adb, "-s", dev, "pull", MUMU_DIR, os.path.dirname(local), timeout=3600)
+            else:
+                for i in range(0, len(need), 100):
+                    _adb(adb, "-s", dev, "pull", *(need[i:i + 100] + [local]), timeout=600)
+            found[port] = (len(txt.splitlines()), len(need))
+        except Exception as e:
+            log("MuMu %d: %s" % (port, e))
+    status.update(msg="ok", ports=found, t=time.time())
+
+
+_MCI_N = [0]
+
+
+SOUND_MASTER = {"on": True, "vol": 100}      # Haupt-Schalter + Haupt-Lautstaerke (Start / Sounds)
+
+
+def play_file(path, vol=80, dur=0):
+    """Ton (.wav / .mp3) ueber Windows-MCI. dur > 0 = HARTE Grenze: das Geraet spielt selbst nur bis dur ms
+    ("play … from 0 to X"), kuerzere Toene werden bis dahin wiederholt. Danach ist garantiert Ruhe."""
+    if not IS_WIN or not os.path.isfile(path):
         return
+    import ctypes
+    _MCI_N[0] += 1
+    al = "wfc%d" % _MCI_N[0]
+    buf = ctypes.create_unicode_buffer(128)
+
+    def mci(c, out=False):
+        rc = ctypes.windll.winmm.mciSendStringW(c, buf if out else None, 128 if out else 0, None)
+        if rc:
+            log("mci %s -> %d" % (c.split(" ")[0], rc))
+        return rc
+    opened = False
+    try:
+        if mci('open "%s" type mpegvideo alias %s' % (path, al)) != 0:
+            import winsound
+            winsound.PlaySound(path, winsound.SND_FILENAME)
+            return
+        opened = True
+        mci("set %s time format milliseconds" % al)
+        mci("setaudio %s volume to %d" % (al, max(0, min(1000, int(vol * 10)))))
+        if not dur or float(dur) <= 0:
+            mci("play %s wait" % al)
+            return
+        length = 0
+        if mci("status %s length" % al, True) == 0:
+            try:
+                length = int(buf.value or 0)
+            except ValueError:
+                length = 0
+        left = int(float(dur) * 1000)
+        while left > 50:
+            seg = min(left, length) if length > 0 else left
+            mci("play %s from 0 to %d wait" % (al, seg))
+            left -= seg
+            if length <= 0:
+                break
+    finally:
+        if opened:
+            mci("stop %s" % al)
+            mci("close %s" % al)
+
+
+def _tone_file(name):
+    """Eingebaute Toene als .wav im App-Ordner (volle Lautstaerke) -> laufen ueber denselben Weg wie eigene Toene."""
+    d = os.path.join(DATA, "sounds_builtin"); os.makedirs(d, exist_ok=True)
+    p = os.path.join(d, name + ".wav")
+    if not os.path.isfile(p):
+        data = sound_bytes(name, 1.0)
+        if not data:
+            return None
+        with open(p, "wb") as f:
+            f.write(data)
+    return p
+
+
+def play_sound(name, vol=80, dur=0):
+    """Spielt einen Ton im Hintergrund (blockiert nichts). "file:<name>" = eigene Datei.
+    dur = Sekunden: nach genau so langer Zeit ist der Ton weg (0 = einmal ganz). Haupt-Schalter/-Lautstaerke gelten immer."""
+    if not name or name == "aus" or not SOUND_MASTER["on"]:
+        return
+    vol = max(0, min(100, vol * SOUND_MASTER["vol"] / 100.0))
+    p = None
+    if str(name).startswith("file:"):
+        p = name[5:]
+        if not os.path.isfile(p):                            # nur Dateiname gespeichert -> in den Sound-Ordnern suchen
+            p = next((pp for f, pp in sound_lib() if f.lower() == os.path.basename(p).lower()), p)
+
     def run():
         try:
-            data = sound_bytes(name, max(0.05, min(1.0, vol / 100.0)))
-            if data and IS_WIN:
-                import winsound
-                winsound.PlaySound(data, winsound.SND_MEMORY)
+            pp = p or (_tone_file(name) if IS_WIN else None)
+            if pp:
+                play_file(pp, vol, dur)
         except Exception as e:
             log("sound: %s" % e)
     threading.Thread(target=run, daemon=True).start()
@@ -539,6 +920,94 @@ def marker_rule(mk, rules):
     return -1
 
 
+_MSG_RE = re.compile(rb"Hospital|Treatment|Lost Kingdom|[Ss]couted|[Ss]couting")
+
+
+def _mail_text(b):
+    parts = []
+    for k in ("title", "subTitle", "content", "text", "desc"):
+        v = b.get(k)
+        if isinstance(v, (dict, list)):
+            v = json.dumps(v, ensure_ascii=False)
+        if v:
+            parts.append(str(v))
+    return " · ".join(parts)
+
+
+def msg_event(mail, own, t):
+    """System-Nachrichten: gespaeht, Lost-Kingdom-Rang (A+/S/S+), Lazarett 70 % / 85 % / Truppen gestorben."""
+    if mail.get("type") == "Battle":
+        return None
+    b = mail.get("body") or {}
+    txt = _mail_text(b)
+    lo = txt.lower()
+    ev = lambda kind, text, **kw: dict({"id": str(mail.get("id")), "ev": "msg", "kind": kind, "t": t, "pid": own, "text": text[:160]}, **kw)
+    if "lack of treatment" in lo or ("hospital" in lo and "died" in lo):
+        m = re.search(r"(\d{3,})\D{0,40}units? died|while\D{0,10}(\d{3,})", txt)
+        n = int(next(g for g in m.groups() if g)) if m else 0
+        return ev("hospdead", txt, n=n)
+    if "hospital" in lo and ("capacity" in lo or "almost full" in lo):
+        m = re.search(r"(\d{2,3})\s*%", txt)
+        pct = int(m.group(1)) if m else 0
+        return ev("hosp85" if pct >= 85 else "hosp70", txt, pct=pct)
+    if "lost kingdom" in lo and ("rank" in lo or "tier" in lo):
+        m = re.search(r"reached\s+([A-S][+]?)\s*tier", txt, re.I)
+        return ev("rank", txt, tier=(m.group(1).upper() if m else ""))
+    if re.search(r"scouted by|been scouted|were scouted|was scouted|is scouting you|scouting you", lo):
+        return ev("scout", txt, by=scout_name(txt))
+    if "kingdom buff" in lo and ("activat" in lo or "aktiv" in lo):
+        name = next((n for n in KBUFFS if n.lower() in lo), "")
+        m = re.search(r"(\d+)\s*(?:hours?|h\b|stunden)", lo)
+        hrs = min(4, int(m.group(1)) if m else KBUFFS.get(name, 4))          # Kingdom-Buffs laufen hoechstens 4 Std.
+        return ev("kbuff", txt, name=name or "Kingdom Buff", until=t + hrs * 3600)
+    return None
+
+
+_GATHER_RE = re.compile(rb"ResValue")
+RES_TYPES = {1: "food", 2: "wood", 3: "stone", 4: "gold", 5: "gems"}
+RES_ICON = {"food": "🌾", "wood": "🪵", "stone": "🪨", "gold": "🪙", "gems": "💎"}
+
+
+def gather_of(m):
+    """Sammel-Mail (type "Rss") -> {id, t, res: {food/wood/stone/gold/gems: Menge}}. Inhalt: ResType, ResValue (wie Website „Ressourcen“)."""
+    if not isinstance(m, dict) or m.get("type") != "Rss":
+        return None
+    b = m.get("body") if isinstance(m.get("body"), dict) else {}
+    c = b.get("content") if isinstance(b.get("content"), dict) else b
+    tn = RES_TYPES.get(int(c.get("ResType") or 0))
+    val = float(c.get("ResValue") or 0)
+    if not tn or val <= 0:
+        return None
+    t = m.get("time") or m.get("sendTime") or 0
+    t = int(t / 1e6) if t > 1e14 else (int(t / 1e3) if t > 1e11 else int(t or time.time()))
+    return {"id": str(m.get("id")), "t": t, "res": {tn: val}}
+
+
+GATHER_REF = {"d": {}}
+
+
+def gather_sum(gather, ids, since_ts):
+    out = {}
+    for g in gather.values():
+        if g["t"] >= since_ts and (ids is None or g.get("pid") in ids):
+            for k, v in g["res"].items():
+                out[k] = out.get(k, 0) + v
+    return out
+
+
+KBUFFS = {"Healing First": 4, "Rapid Healing": 4, "Healing": 4}      # Kingdom-Buffs (Name -> Stunden, falls die Mail keine Zeit nennt)
+
+
+def scout_name(txt):
+    """Wer hat gespaeht? z. B. "… · Evá Scouted Our City · …" oder "scouted by <color=…>NAME</color>"."""
+    t = re.sub(r"<[^>]+>", "", str(txt or ""))
+    for pat in (r"·\s*([^·]{1,40}?)\s+Scouted Our City", r"scouted by\s+(?:\[[^\]]*\])?\s*([^\s·,.!][^·,.!]{0,38})", r"([^·]{1,40}?)\s+is scouting"):
+        m = re.search(pat, t, re.I)
+        if m and m.group(1).strip():
+            return m.group(1).strip()
+    return ""
+
+
 def event_of(mail, own):
     """Buff abgelaufen / Gebaeude erobert oder verloren – gleiche Regeln wie im Uploader."""
     if not isinstance(mail, dict):
@@ -548,6 +1017,9 @@ def event_of(mail, own):
     if isinstance(t, (int, float)) and t > 1e14:
         t = t / 1e6
     t = int(t or 0)
+    me = msg_event(mail, own, t)
+    if me:
+        return me
     if mail.get("type") == "System" and (b.get("title") == "Buff Ended" or str(b.get("subType")) in ("340", "340.0")):
         sub = str(b.get("subTitle") or b.get("content") or "")
         for key, kind in (("peace shield", "shield"), ("army expansion", "army"), ("attack", "attack"), ("defen", "def")):
@@ -658,7 +1130,12 @@ class Scanner:
         self.dirty, self.saved_at = False, 0.0
         self.active = (None, 0)           # (Governor-ID, Zeit) des gerade gespielten Accounts
         self.events = {}                  # Buff abgelaufen / Gebaeude (letzte 24 h)
+        self.gather = {}                  # Sammel-Berichte: mail_id -> {pid, t, res: {typ: menge}}
         self.new_events = []
+        self.ver = 0                 # steigt bei jedem neuen/aktualisierten Kampfbericht -> App rechnet neu
+        self._bl = (None, [])
+        self.parsed_at = {}          # Datei -> wann zuletzt entschluesselt
+        self.calc_every = 5          # laufende Berichte hoechstens alle X s neu lesen (grosser Kampf = viele Aenderungen)
         self.owners = {}      # pid -> {"name", "mails", "last"}
         self.uploaded = set()
         self.status = ""
@@ -674,6 +1151,7 @@ class Scanner:
                 self.markers = d.get("markers", {})
                 self.deleted = set(d.get("deleted", []))
                 self.events = d.get("events", {})
+                self.gather = d.get("gather", {})
                 a = d.get("active") or [None, 0]
                 self.active = (a[0], a[1])
                 for k, m in self.markers.items():
@@ -690,17 +1168,34 @@ class Scanner:
         """Buff-/Gebaeude-Meldung merken (gleiche Mail auf mehreren Accounts nur einmal bei Gebaeuden)."""
         if time.time() - ev["t"] > 86400:
             return
-        key = ("b|%s|%s|%d" % (ev["pid"], ev["kind"], ev["t"] // 60)) if ev["ev"] == "buff" else ("g|%s|%d" % (ev["name"], ev["t"] // 60))
+        if ev["ev"] == "buff":
+            key = "b|%s|%s|%d" % (ev["pid"], ev["kind"], ev["t"] // 60)
+        elif ev["ev"] == "msg":
+            key = "m|%s|%s|%d" % (ev["pid"], ev["kind"], ev["t"] // 60)
+        else:
+            key = "g|%s|%d" % (ev["name"], ev["t"] // 60)
         with self.lock:
             if key in self.events:
                 return
             ev["key"] = key
             self.events[key] = ev
             if len(self.events) > 60:
-                for k in sorted(self.events, key=lambda k: self.events[k]["t"])[:len(self.events) - 60]:
+                keep = lambda e: e.get("kind") == "kbuff" and e.get("until", 0) > time.time()   # laufende Kingdom-Buffs behalten
+                for k in [k for k in sorted(self.events, key=lambda k: self.events[k]["t"]) if not keep(self.events[k])][:len(self.events) - 60]:
                     del self.events[k]
             if self.app.started and ev["t"] >= self.app.started - 300:
                 self.new_events.append(ev)
+
+    def battle_list(self):
+        """Alle Berichte, Battle-Streak-Teile bereinigt (zwischengespeichert, bis sich etwas aendert)."""
+        with self.lock:
+            if self._bl[0] == self.ver and self._bl[1]:
+                return self._bl[1]
+            bs = list(self.battles.values())
+            v = self.ver
+        res = dedupe_streaks(bs)
+        self._bl = (v, res)
+        return res
 
     def ttl(self, mk):
         """Ball-Marker 1 Stunde, alle anderen 30 Minuten."""
@@ -760,7 +1255,7 @@ class Scanner:
     def save(self):
         self.saved_at = time.time(); self.dirty = False
         with self.lock:
-            d = {"v": CACHE_VER, "seen": self.seen, "battles": self.battles, "markers": self.markers, "events": self.events, "active": list(self.active), "deleted": sorted(self.deleted)[-500:], "owners": self.owners, "uploaded": sorted(self.uploaded)}
+            d = {"v": CACHE_VER, "seen": self.seen, "battles": self.battles, "markers": self.markers, "events": self.events, "gather": self.gather, "active": list(self.active), "deleted": sorted(self.deleted)[-500:], "owners": self.owners, "uploaded": sorted(self.uploaded)}
         try:
             tmp = CACHE_FILE + ".tmp"
             with open(tmp, "w", encoding="utf-8") as f:
@@ -771,7 +1266,7 @@ class Scanner:
 
     def scan_once(self):
         T = self.app.t
-        folders = [g for g in self.app.cfg["game_folders"] if os.path.isdir(os.path.join(g, "save", "mailcache"))]
+        folders = [g for g in self.app.cfg["game_folders"] + mumu_folders(self.app.cfg) if os.path.isdir(os.path.join(g, "save", "mailcache"))]
         if not folders:
             self.status = T("status_nofolder"); return 0
         new = 0
@@ -805,8 +1300,15 @@ class Scanner:
                 except OSError:
                     raw = b""
                 is_battle = b"Battle" in raw
+                if is_battle and key in self.seen and b"isMergeChild" not in raw and time.time() - self.parsed_at.get(key, 0) < self.calc_every:
+                    continue                            # laeuft noch -> spaeter in einem Rutsch neu lesen (weniger Last im grossen Kampf)
+                if is_battle:
+                    self.parsed_at[key] = time.time()
+                    if len(self.parsed_at) > 4000:
+                        self.parsed_at.clear()
                 is_mark = not is_battle and _MARK_RE.search(raw) is not None
-                is_ev = not is_battle and (b"Buff" in raw or b"stronghold_pos" in raw)
+                is_ev = not is_battle and (b"Buff" in raw or b"stronghold_pos" in raw or _MSG_RE.search(raw) is not None)
+                is_gat = not is_battle and not is_ev and _GATHER_RE.search(raw) is not None and b"Carriage" not in raw
                 if is_ev and not is_mark:
                     try:
                         m = read_mail_bytes(raw)
@@ -825,6 +1327,16 @@ class Scanner:
                 if own is None:
                     om = _OWNER_RE.search(raw[:4000])
                     own = int(om.group(1)) if om else None
+                if is_gat:
+                    try:
+                        gm = read_mail_bytes(raw); g_ = gather_of(gm)
+                        if g_:
+                            g_["pid"] = owner_of(gm) or own
+                            with self.lock:
+                                self.gather[g_["id"]] = g_
+                                self.ver += 1
+                    except Exception as e:
+                        log("gather: %s" % e)
                 if mk:
                     self.add_marker(mk)
                 elif is_ev and m:
@@ -851,10 +1363,12 @@ class Scanner:
                         old = self.battles.get(s["id"])
                         if old is None:
                             new += 1
+                            self.ver += 1
                             self.battles[s["id"]] = s
                         elif len(s["fights"]) >= len(old["fights"]):   # gleicher Bericht, nur weitergeschrieben -> aktualisieren
                             if s["fights"] != old["fights"]:
                                 self.changed_at = time.time()
+                                self.ver += 1
                             self.battles[s["id"]] = s
                         # weniger Kaempfe als vorher = halb gelesen -> alten Stand behalten (kein Sprung auf 0)
                 if i and i % 3000 == 0:          # beim ersten grossen Einlesen zwischendurch sichern
@@ -899,7 +1413,7 @@ class Scanner:
             from ctypes import wintypes
             k = ctypes.windll.kernel32
             k.FindFirstChangeNotificationW.restype = wintypes.HANDLE
-            dirs = tuple(os.path.join(g, "save", "mailcache") for g in self.app.cfg["game_folders"]
+            dirs = tuple(os.path.join(g, "save", "mailcache") for g in self.app.cfg["game_folders"] + mumu_folders(self.app.cfg)
                          if os.path.isdir(os.path.join(g, "save", "mailcache")))
             if dirs != getattr(self, "_w_dirs", None):            # Ordner geaendert -> Beobachter neu anlegen
                 for h in getattr(self, "_w_handles", []):
@@ -945,7 +1459,7 @@ class Scanner:
                     except Exception:
                         heroes[b["dir"]] = {}
                 m = read_mail(b["file"])
-                r = UP.battle_rows(m, "App", heroes[b["dir"]])
+                r = UP.battle_rows(m, "App", heroes[b["dir"]])     # jede Runde einer Battle Streak ist eine eigene Mail-Datei
                 rows.extend(x for x in r if str(x.get("player_id")) in ids)
                 done.append(b["id"])
             except Exception as e:
@@ -1002,7 +1516,9 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
                 tot["kp_all"] += kp
             if not in_r:
                 continue
-            if pvp:
+            if len(f) > 20 and f[20] == "sum":
+                pass                                     # Ausgleich zur Hauptzahl: zaehlt in den Summen, ist aber kein eigener Kampf
+            elif pvp:
                 tot["pvp"] += 1
             else:
                 tot["pve"] += 1
@@ -1013,23 +1529,86 @@ def compute(battles, ids, rng, since_ts, pvp_only, lang):
         if in_r:
             t_first = b["t"] if t_first is None else min(t_first, b["t"])
             t_last = b["t"] if t_last is None else max(t_last, b["t"])
-        if b["t"] > last_t and any(f[0] for f in b["fights"]):
-            last_t = b["t"]
-            last_kp = sum(f[1] for f in b["fights"] if f[0])
-            last_enemy = next((f[10] for f in b["fights"] if f[0] and f[10]), "")
-            last_b = b
+    # "Letzter Kampf" = der ganze Bericht wie im Spiel (alle Teile der Battle Streak zusammen), nie nur der letzte Teil
+    for g in reports(battles, ids, True):
+        if (g["t0"], g["t"]) > (last_t, 0) or last_b is None:
+            last_t, last_b = g["t0"], g
+    if last_b is not None:
+        last_kp = sum(f[1] for f in last_b["fights"] if f[0])
+        last_enemy = next((f[10] for f in last_b["fights"] if f[0] and f[10]), "")
     out = fmt_totals(tot, t_first, t_last, last_kp, last_enemy, lang)
     out.update(enemy_marches(battles, ids, last_b, lang))
     out.update(npc_counts(battles, ids, since_ts, lang))
+    gs, ga = gather_sum(GATHER_REF["d"], ids, since_ts), gather_sum(GATHER_REF["d"], ids, 0)       # Sammeln (PvE)
+    out["m_gems"], out["m_gems_all"] = fmt_num(gs.get("gems", 0), lang), fmt_num(ga.get("gems", 0), lang)
+    out["m_rss"] = fmt_num(sum(v for k, v in gs.items() if k != "gems"), lang)
     acc = sum(f[19] for b in battles if b["t"] >= since_ts and not b.get("arch") and (ids is None or b["pid"] in ids)
               for f in b["fights"] if len(f) > 19)
     out["m_acclaim"] = fmt_num(acc, lang)
+    acc_all = sum(f[19] for b in battles if not b.get("arch") and (ids is None or b["pid"] in ids) for f in b["fights"] if len(f) > 19)
+    out["m_acc_all"] = fmt_num(acc_all, lang)                  # wie "KP gesamt (alles)": ohne Zeitraum
+    return out
+
+
+AP_COST = {"barb": 50, "step": 2, "min": 40, "kahar": 150}     # Barbar: 50 AP, je Folgeangriff desselben Marsches −2 bis 40 (wie Website)
+NPC_BARB, NPC_KAHAR = 1, 41
+NPC_NAMES = {1: "Barbar", 41: "Kahar", 47: "Baulur", 28: "Baulur", 29: "Baulur", 30: "Baulur", 2: "Raid-Boss", 13: "Karuak"}
+NPC_ICON = {1: "🪓", 41: "👹"}                                      # NpcBType im Bericht: 1 = Barbar (Kdt. 273), 41 = Kahar/Fort (Kdt. 272)
+
+
+def fmt_dec(v, lang, d=1):
+    return ("%.*f" % (d, v)).replace(".", "," if lang == "de" else ".")
+
+
+def _npc_dead(f):
+    """NPC besiegt: Beute im Bericht ODER keine Gegner-Truppen mehr uebrig (Beute-Limit erreicht)."""
+    return bool(f[16]) or (len(f) > 18 and f[18] == 0 and f[6] > 0)
+
+
+def pve_ap(battles, ids, since_ts):
+    """AP je Angriff (1 Bericht = 1 Angriff): Barbar 50 AP, Folgeangriffe desselben Marsches (gleiche Marsch-ID) je −2 bis 40.
+    AP-Waste = AP fuer Barbaren, die NICHT gestorben sind (Anteil am Angriff). Liefert Summen + je Marsch."""
+    runs, out = {}, {"ap": 0.0, "waste": 0.0, "atk": 0, "kills": 0, "kahar": 0, "per": {}, "outs": set()}
+    rows = []
+    for b in battles:
+        if (ids is not None and b["pid"] not in ids) or b.get("arch"):
+            continue
+        bb = [f for f in b["fights"] if len(f) > 18 and not f[0] and f[14] in (NPC_BARB, NPC_KAHAR)]
+        if bb:
+            rows.append((b["t"], b, bb))
+    rows.sort(key=lambda r: r[0])
+    for t, b, bb in rows:
+        rk = (b["pid"], b.get("mo") or tuple(b.get("h") or ()))
+        barbs = [f for f in bb if f[14] == NPC_BARB]
+        kah = [f for f in bb if f[14] == NPC_KAHAR]
+        cost = 0.0
+        if barbs:
+            i = runs.get(rk, 0); runs[rk] = i + 1          # wievielter Angriff dieses Marsches (ohne Heimkehr)
+            cost = max(AP_COST["min"], AP_COST["barb"] - AP_COST["step"] * i)
+        if t < since_ts:
+            continue
+        k = tuple(b.get("h") or ())
+        p = out["per"].setdefault(k, {"ap": 0.0, "waste": 0.0, "atk": 0, "kills": 0, "rk": None, "t0": 0, "run_ap": 0.0, "next": AP_COST["barb"]})
+        if barbs:
+            if p["rk"] != rk:                                  # neuer Ausflug (Marsch kam heim / volle Truppen) -> AP-Zaehlung neu
+                p["rk"], p["t0"], p["run_ap"] = rk, t, 0.0
+            p["run_ap"] += cost
+            p["next"] = max(AP_COST["min"], AP_COST["barb"] - AP_COST["step"] * runs.get(rk, 0))
+        if barbs:
+            dead = sum(1 for f in barbs if _npc_dead(f))
+            w = cost * (len(barbs) - dead) / len(barbs)
+            for d in (out, p):
+                d["ap"] += cost; d["waste"] += w; d["atk"] += 1; d["kills"] += dead
+            out["outs"].add(rk)                                # Ausflug (Marsch-ID) = eine Kette
+        if kah:
+            out["ap"] += AP_COST["kahar"]; p["ap"] += AP_COST["kahar"]
+            out["kahar"] += sum(1 for f in kah if _npc_dead(f))
     return out
 
 
 def npc_counts(battles, ids, since_ts, lang):
-    """Barbaren & Forts im Zeitraum: besiegt = der Bericht enthaelt Beute (wie auf der Website unter Loot)."""
-    barb = fort = hits = 0
+    """Barbaren & Kahar im Zeitraum: besiegt = Beute im Bericht oder Gegner ohne Truppen. Dazu AP verbraucht, AP-Waste, Ø Kette."""
+    barb = hits = 0
     mx = 0
     for b in battles:
         if b["t"] < since_ts or b.get("arch") or (ids is not None and b["pid"] not in ids):
@@ -1037,16 +1616,17 @@ def npc_counts(battles, ids, since_ts, lang):
         for f in b["fights"]:
             if len(f) < 17 or f[0]:
                 continue
-            bt, lv, won = f[14], f[15], f[16]
-            if bt == 1:
+            if f[14] == NPC_BARB:
                 hits += 1
-                if won:
+                if _npc_dead(f):
                     barb += 1
-                    mx = max(mx, lv or 0)
-            elif bt == 41 and won:
-                fort += 1
+                    mx = max(mx, f[15] or 0)
+    ap = pve_ap(battles, ids, since_ts)
     F = lambda v: fmt_num(v, lang)
-    return {"m_barb": F(barb), "m_barb_hits": F(hits), "m_barb_lvl": str(mx) if mx else "–", "m_forts": F(fort)}
+    ch = (ap["kills"] / ap["atk"]) if ap["atk"] else 0              # Ø Kette = getoetete Barbaren je Angriff
+    return {"m_barb": F(barb), "m_barb_hits": F(hits), "m_barb_lvl": str(mx) if mx else "–", "m_forts": F(ap["kahar"]),
+            "m_ap_used": F(round(ap["ap"])), "m_ap_waste": F(round(ap["waste"])),
+            "m_chain_avg": (("%.2f" % ch).replace(".", "," if lang == "de" else ".") if ch else "–"), "_barb_n": barb}
 
 
 def battle_card(b):
@@ -1057,35 +1637,116 @@ def battle_card(b):
     pvp = any(f[0] for f in fs)
     kp = sum(f[1] for f in fs)
     own_l = sum(f[3] + f[4] for f in fs); en_l = sum(f[6] + f[7] for f in fs)
-    own_rem = sum(f[17] for f in fs); en_rem = sum(f[18] for f in fs)
+    own_rem = b["rem"] if "rem" in b else sum(f[17] for f in fs)
+    en_rem = sum(f[18] for f in fs)
     if own_rem <= 0:
         win = False
     elif en_rem <= 0:
         win = True
     else:
         win = en_l >= own_l
-    enemy = next((f[10] for f in fs if f[10]), "") or ("NPC" if not pvp else "")
+    bt = next((f[14] for f in fs if not f[0] and f[14]), 0)
+    enemy = next((f[10] for f in fs if f[10]), "") or ("" if pvp else NPC_NAMES.get(bt, "Fort"))
     lvl = next((f[15] for f in fs if f[15]), 0)
-    return {"t": b["t"], "win": win, "kp": kp, "trade": (en_l / own_l) if own_l else (None if not en_l else float("inf")),
-            "h": (b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": len(fs)}
+    return {"t": b["t"], "win": win, "kp": kp, "bt": bt, "trade": (en_l / own_l) if own_l else (None if not en_l else float("inf")),
+            "h": list(b.get("h") or [0, 0]), "enemy": enemy, "pvp": pvp, "lvl": lvl, "id": b["id"], "n": sum(1 for f in fs if not (len(f) > 20 and f[20] == "sum")),
+            "parts": (b.get("nrep", 1), b.get("cmax", 0)), "dead_march": own_rem <= 0, "ol": own_l, "el": en_l, "acc": sum(f[19] for f in fs if len(f) > 19), "kills": sum(f[6] + f[7] for f in fs)}
+
+
+STREAK_GAP = {"v": 1800}     # s: Berichte desselben Marsches dichter als das = eine Battle Streak (nur wenn die Mail keine Hauptbericht-ID hat)
+
+
+def streak_ids(battles):
+    """Battle Streak zuordnen – auch WAEHREND des Kampfes. Das Spiel schreibt die Runden zuerst OHNE Streak-Nummer
+    (parentId/childNo kommen erst spaeter). Jede Runde hat aber schon die Marsch-ID (STs): ein Marsch = eine Streak.
+    Neuer Marsch losgeschickt -> neue ID -> neue Streak (faengt bei 0 an). Rumstehen aendert nichts.
+    Sobald die echte Streak-Nummer da ist, bekommen alle Runden dieses Marsches diese Nummer."""
+    res, mo_par, rest = {}, {}, []
+    for b in battles:
+        real = b.get("par") if b.get("par") and b["par"] != b["id"] else None
+        if real and b.get("mo") and any(f[0] for f in b["fights"]):
+            mo_par.setdefault((b["pid"], b["mo"]), real)
+    for b in battles:
+        real = b.get("par") if b.get("par") and b["par"] != b["id"] else None
+        if real:
+            res[b["id"]] = real
+        elif b.get("mo") and any(f[0] for f in b["fights"]):     # nur PvP: Barbaren-Angriffe bleiben einzelne Berichte (= Kette je Angriff)
+            res[b["id"]] = mo_par.get((b["pid"], b["mo"])) or "m%s_%s" % (b["pid"], b["mo"])
+        elif not any(f[0] for f in b["fights"]):
+            res[b["id"]] = b["id"]                                # PvE ohne Streak-Nr.: jeder Bericht = ein Angriff
+        else:
+            rest.append(b)
+    if rest:
+        res.update(_streak_ids_old(rest))
+    return res
+
+
+def _streak_ids_old(battles):
+    """Nur fuer alte Daten ohne Marsch-ID. Das Spiel schreibt die Runden zuerst OHNE Streak-Nummer
+    und traegt parentId/childNo erst spaeter nach. Darum ueber die TRUPPEN:
+    jede Runde einer Streak beginnt mit dem Rest der vorigen Runde (408.158 -> 408.158; mit Heil-Kommandant ca. +0,7 %).
+    Hat der Marsch am Anfang MEHR Truppen als zuletzt uebrig (wieder voll / geheilt / neu losgeschickt) -> neue Streak.
+    Rumstehen ohne Kampf trennt also nicht; nur eine sehr lange Pause (STREAK_GAP, Standard 30 Min) trennt immer.
+    Sobald eine Runde die echte Streak-Nummer hat, bekommt die ganze Gruppe diese Nummer."""
+    gap = max(60, STREAK_GAP["v"] or 1800)
+    per = {}
+    for b in battles:
+        if b.get("h") and b["h"][0]:
+            per.setdefault((b["pid"], b["h"][0], b["h"][1]), []).append(b)
+    res = {}
+    for lst in per.values():
+        lst.sort(key=lambda b: (b["t"], b.get("cno") or 0))
+        groups = []
+        for b in lst:
+            real = b.get("par") if b.get("par") and b["par"] != b["id"] else None
+            cur = groups[-1] if groups else None
+            cont = False
+            if cur is not None and b["t"] - cur["last"] <= gap:
+                st, en = b.get("st") or 0, cur.get("en") or 0
+                if st and en:
+                    cont = st <= en * 1.02 + 500             # beginnt mit dem Rest der letzten Runde (+ etwas Heilung) -> gleiche Streak
+                else:
+                    cont = b["t"] - cur["last"] <= 300       # alte Daten ohne Truppenzahl: nur Zeit
+            if real:
+                if cur and cur["key"] == real:
+                    pass
+                elif cur and cont and not cur["real"]:
+                    cur["key"], cur["real"] = real, True      # Runden ohne Nummer davor gehoeren zu dieser Streak
+                else:
+                    cur = {"key": real, "real": True, "ids": [], "last": b["t"]}; groups.append(cur)
+            elif not cont:
+                cur = {"key": b["id"], "real": False, "ids": [], "last": b["t"]}; groups.append(cur)
+            cur["ids"].append(b["id"])
+            if b["t"] >= cur["last"]:
+                cur["last"] = b["t"]
+                if b.get("en"):
+                    cur["en"] = b["en"]
+        for g in groups:
+            for i in g["ids"]:
+                res[i] = g["key"]
+    return res
 
 
 def reports(battles, ids, pvp_only):
     """Ein Bericht wie im Spiel: Hauptbericht + alle Teil-Berichte (Battle Streak, gleiche parentId) zusammengerechnet.
     Waechst, solange der Kampf weiterlaeuft; ein neuer Hauptbericht = neuer Bericht (faengt bei 0 an)."""
     per = {}
+    sid = streak_ids(battles)
     for b in battles:
         if (ids is not None and b["pid"] not in ids) or b.get("arch"):
             continue
-        k = (b["pid"], b.get("par") or b["id"])
+        k = (b["pid"], sid.get(b["id"]) or b.get("par") or b["id"])     # Streak (echte Nummer oder Zeit-Zuordnung)
         g = per.get(k)
         if g is None:
             g = per[k] = {"id": k[1], "pid": b["pid"], "h": list(b.get("h") or (0, 0)), "t0": b["t"], "t": b["t"], "mt": b.get("mt", 0),
-                          "fights": [], "nrep": 0}
-        g["fights"] = g["fights"] + b["fights"]
+                          "fights": [], "nrep": 0, "cmax": 0}
+        g["fights"].extend(b["fights"])          # (vorher jedes Mal neue Liste -> im grossen Kampf sehr langsam)
+        g["cmax"] = max(g["cmax"], b.get("cno") or 0)          # hoechste Teil-Nr. = so viele Teile hat die Streak mindestens
         g["nrep"] += 1
+        if "rem" in b and (b["t"], b.get("mt", 0)) >= (g.get("_rt", 0), 0):
+            g["rem"], g["_rt"] = b["rem"], b["t"]          # Resttruppen aus dem neuesten Teil
         g["t0"] = min(g["t0"], b["t"]); g["t"] = max(g["t"], b["t"]); g["mt"] = max(g["mt"], b.get("mt", 0))
-        if b["id"] == k[1] and b.get("h") and b["h"][0]:
+        if b["id"] == k[1] and b.get("h") and b["h"][0]:                # (bei Notfall-Gruppe = erster Bericht)
             g["h"] = list(b["h"])                       # Kommandanten vom Hauptbericht
     out = list(per.values())
     if pvp_only:
@@ -1093,16 +1754,96 @@ def reports(battles, ids, pvp_only):
     return out
 
 
-def recent_cards(battles, ids, n, pvp_only):
-    bs = sorted(reports(battles, ids, False), key=lambda b: (-b["t0"], -b["mt"]))      # ein Eintrag je Bericht wie im Spiel
-    out = []
+def pvp_last(battles, ids):
+    """Wann hat jeder Marsch zuletzt gegen SPIELER gekaempft? (ein Durchlauf fuer alle)"""
+    res = {}
+    for b in battles:
+        h = b.get("h")
+        if h and (ids is None or b["pid"] in ids) and b["t"] > res.get((h[0], h[1]), 0) and any(f[0] for f in b["fights"]):
+            res[(h[0], h[1])] = b["t"]
+    return res
+
+
+def acc_since(battles, ids, since_ts):
+    return sum(f[19] for b in battles if b["t"] >= since_ts and not b.get("arch") and (ids is None or b["pid"] in ids)
+               for f in b["fights"] if len(f) > 19 and f[0])
+
+
+def pve_stats(battles, ids, gap=0, day_ts=0):
+    """Barbaren-Kette wie im Spiel: Kette = Barbaren in EINEM Angriff (ein Bericht bzw. ein Teil der Battle Streak),
+    z. B. Lvl 49 + Lvl 51 in einem Angriff = 2er-Kette. Jeder Teil der Streak ist eine eigene Kette.
+    Liefert ({marsch: {lvl, chain (letzte), avg (Ø heute), today, last}}, Ø Kette aller Maersche heute).
+    pve_stats.chain_of[bericht_id / streak_id] = (Kette, Level) des neuesten Angriffs – fuer den Feed."""
+    rows = []
+    for b in battles:
+        if (ids is not None and b["pid"] not in ids) or b.get("arch") or not b.get("h") or not b["h"][0]:
+            continue
+        bb = [f for f in b["fights"] if len(f) > 16 and not f[0] and f[14] == NPC_BARB]
+        if bb:
+            rows.append((b["t"], b, bb))
+    rows.sort(key=lambda r: (r[0], r[1].get("cno") or 0))
+    per, chain_of, today_chains = {}, {}, []
+    for t, b, bb in rows:
+        n = sum(1 for f in bb if _npc_dead(f)) or len(bb)          # Kette = Barbaren in diesem Angriff
+        lv = [f[15] for f in bb if f[15]]
+        chain_of[b["id"]] = chain_of[b.get("par") or b["id"]] = (n, max(lv) if lv else 0)
+        k = tuple(b["h"])
+        p = per.setdefault(k, {"chains": [], "today": 0, "last": 0, "lv": [], "chain": 0})
+        p["chains"].append((t, n)); p["last"], p["chain"], p["lv"] = t, n, lv
+        if t >= day_ts:
+            p["today"] += sum(1 for f in bb if _npc_dead(f)); today_chains.append(n)
+    res = {}
+    for k, p in per.items():
+        td = [n for t, n in p["chains"] if t >= day_ts]
+        base = td or [n for t, n in p["chains"]]
+        lv = p["lv"]
+        res[k] = {"lvl": max(lv) if lv else 0, "chain": p["chain"], "avg": sum(base) / len(base) if base else 0,
+                  "hits": p["chain"], "today": p["today"], "last": p["last"]}
+    pve_stats.chain_of = chain_of
+    avg = (sum(today_chains) / len(today_chains)) if today_chains else 0
+    return res, avg
+
+
+pve_stats.chain_of = {}
+
+
+def recent_cards(battles, ids, n, pvp_only, settle=0, merge=True, now=None, per_march=False, max_age=0):
+    """Feed/Pop-up: ein Eintrag je Bericht wie im Spiel. settle: Bericht erst zeigen, wenn er X s nicht mehr waechst (= End-Bericht).
+    merge: Berichte gegen denselben Gegner innerhalb von 3 Min = EINE Schlacht (z. B. 4 Maersche auf denselben Gegner)."""
+    now = now or time.time()
+    bs = sorted(reports(battles, ids, False), key=lambda b: (-b["t0"], -b["mt"]))
+    cards = []
+    recent_cards.pending = False
     for b in bs:
+        if settle and b.get("mt") and now - b["mt"] < settle:
+            recent_cards.pending = True
+            continue                                   # Kampf laeuft noch -> erst den fertigen Bericht zeigen
+        if max_age and now - max(b["t"], b.get("t0") or 0) > max_age:
+            continue                                   # Marsch laenger nicht benutzt -> faellt aus dem Feed
         c = battle_card(b)
         if c and (c["pvp"] or not pvp_only):
+            if per_march and c.get("h") and any(o.get("h") == c["h"] for o in cards):
+                continue                               # nur der neueste Bericht je Marsch
+            cards.append(c)
+        if len(cards) >= n * 6:
+            break
+    out = []
+    for c in cards:
+        g = None
+        if merge and c["pvp"] and c["enemy"]:
+            g = next((o for o in out if o["pvp"] and o["enemy"] == c["enemy"] and abs(o["t"] - c["t"]) <= 180), None)
+        if g:
+            g["kp"] += c["kp"]; g["ol"] += c["ol"]; g["el"] += c["el"]; g["acc"] += c["acc"]; g["kills"] += c["kills"]
+            g["marches"] += 1; g["win"] = g["win"] or c["win"]
+            g["trade"] = (g["el"] / g["ol"]) if g["ol"] else (None if not g["el"] else float("inf"))
+            if c["h"] not in g["hs"]:
+                g["hs"].append(c["h"])
+        else:
+            c = dict(c, marches=1, hs=[c["h"]])
             out.append(c)
-            if len(out) >= n:
-                break
-    return out
+        if len(out) > n:
+            break
+    return out[:n]
 
 
 def march_stats(battles, ids, since_ts, last_only=False, pvp_only=True):
@@ -1144,10 +1885,17 @@ def kp_since(battles, ids, since_ts):
                for f in b["fights"] if f[0])
 
 
-def fmt_trade(tr):
+TRADE_FMT = {"v": "pct"}          # "pct" = 184 %  ·  "ratio" = 1,84:1 (von der App gesetzt)
+
+
+def fmt_trade(tr, mode=None):
     if tr is None:
         return "–"
-    return "∞" if tr == float("inf") else "%d %%" % round(tr * 100)
+    if tr == float("inf"):
+        return "∞"
+    if (mode or TRADE_FMT["v"]) == "ratio":
+        return ("%.2f:1" % tr).replace(".", ",") if TRADE_FMT.get("lang") == "de" else "%.2f:1" % tr
+    return "%d %%" % round(tr * 100)
 
 
 def enemy_marches(battles, ids, last_b, lang):
@@ -1155,7 +1903,7 @@ def enemy_marches(battles, ids, last_b, lang):
     res = {"m_enemy_marches": "–", "m_last_marches": "–", "_marches": [], "_enemy": ""}
     if not last_b:
         return res
-    pf = [f for f in last_b["fights"] if f[0] and len(f) > 13]
+    pf = [f for f in last_b["fights"] if f[0] and len(f) > 13 and f[11]]
     if not pf:
         return res
     res["m_last_marches"] = str(len({(f[11], f[12], f[13]) for f in pf}))       # Gegner-Maersche im letzten Kampf
@@ -1262,7 +2010,7 @@ def web_vals(st, local, lang):
     tot = {k: float(st.get(k) or 0) for k in ("kp", "ekp", "dead", "sev", "wnd", "edead", "esev", "pw", "epw", "pvp", "pve", "kp_all")}
     v = fmt_totals(tot, st.get("first"), st.get("last"), None, "", lang)
     for k in ("m_kp_last", "m_last_enemy", "m_enemy_marches", "m_last_marches", "_marches", "_enemy",
-              "m_barb", "m_barb_hits", "m_barb_lvl", "m_forts", "m_acclaim"):
+              "m_barb", "m_barb_hits", "m_barb_lvl", "m_forts", "m_acclaim", "m_acc_all", "m_ap_used", "m_ap_waste", "m_chain_avg", "m_gems", "m_gems_all", "m_rss"):
         v[k] = local.get(k, "–")
     v["_n"] = local.get("_n", 0)
     v["_src"] = "web"
@@ -1386,6 +2134,117 @@ class Chip(tk.Canvas):
         self.create_text(w / 2, h / 2, text=self.text, fill=C["gold"] if a else C["muted"], font=self.font)
 
 
+class DropDown(Chip):
+    """Aufklappfeld (Pille mit ▾). Die Liste ist scrollbar – auch mit vielen Accounts (Piloten)."""
+
+    def __init__(self, parent, text, items, cur, on_pick, rows=8):
+        self.items, self.cur, self.on_pick, self.rows = items, cur, on_pick, rows
+        super().__init__(parent, text + "  ▾", True, self.open)
+
+    def open(self):
+        top = tk.Toplevel(self); top.overrideredirect(True); top.attributes("-topmost", True)
+        top.configure(bg=C["line2"])
+        fr = tk.Frame(top, bg=C["card"]); fr.pack(fill="both", expand=True, padx=1, pady=1)
+        n = len(self.items)
+        lb = tk.Listbox(fr, height=min(self.rows, max(1, n)), bg=C["card"], fg=C["text"], selectbackground=C["gold_dim"], selectforeground=C["gold"],
+                        activestyle="none", highlightthickness=0, bd=0, font=(FONT, 10), width=max(18, max((len(t) for _v, t in self.items), default=10) + 2))
+        sb = tk.Scrollbar(fr, orient="vertical", command=lb.yview)
+        lb.configure(yscrollcommand=sb.set)
+        lb.pack(side="left", fill="both", expand=True, padx=(px(4), 0), pady=px(4))
+        if n > self.rows:
+            sb.pack(side="right", fill="y")
+        for i, (v, t) in enumerate(self.items):
+            lb.insert("end", "  " + t)
+            if str(v) == str(self.cur):
+                lb.selection_set(i); lb.see(i)
+        x, y = self.winfo_rootx(), self.winfo_rooty() + self.winfo_height() + px(2)
+        top.geometry("+%d+%d" % (x, y))
+
+        def pick(_e=None):
+            sel = lb.curselection()
+            top.destroy()
+            if sel:
+                self.on_pick(self.items[sel[0]][0])
+        lb.bind("<ButtonRelease-1>", pick); lb.bind("<Return>", pick)
+        lb.bind("<MouseWheel>", lambda e: (lb.yview_scroll(-1 if e.delta > 0 else 1, "units"), "break")[1])
+        top.bind("<Escape>", lambda e: top.destroy())
+        top.bind("<FocusOut>", lambda e: top.after(150, lambda: top.winfo_exists() and top.destroy()))
+        top.focus_force(); lb.focus_set()
+
+
+POP_COLORS = [("", None), ("rot", "#f87171"), ("orange", "#fb923c"), ("gold", "#f5c542"), ("gruen", "#4ade80"), ("blau", "#38bdf8"),
+              ("lila", "#c084fc"), ("weiss", "#e5e7eb")]
+
+
+MCOL_DEFAULT = {"m_acclaim": "#c084fc", "m_acc_all": "#c084fc"}      # Acclaim = lila (wie Acclaim-Ziel)
+
+
+def mcol(cfg, k, dflt=None):
+    """Eigene Farbe eines Wertes (Overlay-Werte → Farbe). "" = Standard."""
+    mc = cfg["overlay"].get("metric_cols")
+    if mc is None:
+        mc = MCOL_DEFAULT
+    return mc.get(k) or dflt
+
+
+class ColorDots(tk.Canvas):
+    """Kleine Farbpunkte zum Anklicken (erster = Standard)."""
+    def __init__(self, parent, cur, on_pick):
+        n = len(POP_COLORS)
+        super().__init__(parent, width=px(20) * n + px(4), height=px(22), bg=parent["bg"], highlightthickness=0, bd=0, cursor="hand2")
+        self.cur, self.on_pick = cur or "", on_pick
+        self.bind("<Button-1>", self._click)
+        self.draw()
+
+    def draw(self):
+        self.delete("all")
+        for i, (name, col) in enumerate(POP_COLORS):
+            x, y, r = px(11) + i * px(20), px(11), px(7)
+            if col:
+                self.create_oval(x - r, y - r, x + r, y + r, fill=col, outline="")
+            else:                                          # Standard
+                self.create_oval(x - r, y - r, x + r, y + r, fill="", outline=C["dim"], width=1)
+                self.create_text(x, y, text="A", fill=C["dim"], font=(FONT, 7, "bold"))
+            if (col or "") == self.cur:
+                self.create_oval(x - r - px(3), y - r - px(3), x + r + px(3), y + r + px(3), outline=C["text"], width=2)
+
+    def _click(self, e):
+        i = int((e.x - px(1)) // px(20))
+        if 0 <= i < len(POP_COLORS):
+            self.cur = POP_COLORS[i][1] or ""
+            self.draw(); self.on_pick(self.cur)
+
+
+class Slider(tk.Canvas):
+    """Schieberegler (gold) – zum Ziehen oder Klicken. on_move: live, on_done: beim Loslassen."""
+    def __init__(self, parent, value, lo, hi, on_move=None, on_done=None, width=220, fmt=lambda v: "%d %%" % round(v * 100)):
+        bg = parent["bg"]
+        super().__init__(parent, width=px(width), height=px(26), bg=bg, highlightthickness=0, bd=0, cursor="hand2")
+        self.v, self.lo, self.hi, self.on_move, self.on_done, self.fmt = float(value), lo, hi, on_move, on_done, fmt
+        self.W = px(width) - px(56)
+        self.bind("<ButtonPress-1>", self._set); self.bind("<B1-Motion>", self._set)
+        self.bind("<ButtonRelease-1>", lambda e: self.on_done and self.on_done(self.v))
+        self.draw()
+
+    def _set(self, e):
+        f = max(0.0, min(1.0, (e.x - px(8)) / max(1, self.W)))
+        v = round(self.lo + f * (self.hi - self.lo), 2)
+        if v != self.v:
+            self.v = v; self.draw()
+            if self.on_move:
+                self.on_move(v)
+
+    def draw(self):
+        self.delete("all")
+        y, x0 = px(13), px(8)
+        f = (self.v - self.lo) / ((self.hi - self.lo) or 1)
+        rrect(self, x0, y - px(3), x0 + self.W, y + px(3), px(3), fill="#1a2234", outline="")
+        rrect(self, x0, y - px(3), x0 + self.W * f, y + px(3), px(3), fill=C["gold"], outline="")
+        kx = x0 + self.W * f
+        self.create_oval(kx - px(8), y - px(8), kx + px(8), y + px(8), fill=C["gold"], outline="#7a5a10", width=2)
+        self.create_text(x0 + self.W + px(10), y, text=self.fmt(self.v), anchor="w", fill=C["text"], font=(FONT, 9, "bold"))
+
+
 class Toggle(tk.Frame):
     """Schalter (Pill) mit Text."""
 
@@ -1460,8 +2319,21 @@ class Card(tk.Canvas):
         self.body = tk.Frame(self.inner, bg=self.fill)
         self.body.pack(fill="both", expand=True)
         self.win = self.create_window(self.pad, self.pad, window=self.inner, anchor="nw")
-        self.bind("<Configure>", lambda e: self.redraw())
+        self._job = None
+        self.bind("<Configure>", lambda e: self._later())             # beim Fenster-Ziehen nur 1x pro Moment neu zeichnen (kein Ruckeln)
         self.inner.bind("<Configure>", lambda e: self.fit())
+
+    def _later(self):
+        if self._job:
+            try:
+                self.after_cancel(self._job)
+            except tk.TclError:
+                pass
+        self._job = self.after(40, self._do)
+
+    def _do(self):
+        self._job = None
+        self.redraw()
 
     def fit(self):
         h = self.inner.winfo_reqheight() + 2 * self.pad
@@ -1473,8 +2345,9 @@ class Card(tk.Canvas):
 
     def redraw(self):
         w, h = self.winfo_width(), self.winfo_height()
-        if w < 4:
+        if w < 4 or (w, h, self.border) == getattr(self, "_last", None):
             return
+        self._last = (w, h, self.border)
         self.delete("bgr")
         rrect(self, 1, 1, w - 1, h - 1, self.rad, fill=self.fill, outline=self.border, tags="bgr")
         self.tag_lower("bgr")
@@ -1522,7 +2395,13 @@ class Scroll(tk.Frame):
         self.cv.pack(fill="both", expand=True)
         self.cv.configure(yscrollcommand=self._bar)
         self.inner.bind("<Configure>", lambda e: self.cv.configure(scrollregion=self.cv.bbox("all")))
-        self.cv.bind("<Configure>", lambda e: self.cv.itemconfigure(self.win, width=e.width))
+        self._wj = None
+
+        def wfit(e):
+            if self._wj:
+                self.cv.after_cancel(self._wj)
+            self._wj = self.cv.after(30, lambda w=e.width: (setattr(self, "_wj", None), self.cv.itemconfigure(self.win, width=w)))
+        self.cv.bind("<Configure>", wfit)
         Scroll._live.append(self)
         if not Scroll._bound:
             self.cv.bind_all("<MouseWheel>", Scroll._wheel_all, add="+")
@@ -1812,7 +2691,7 @@ class MarkerList(tk.Canvas):
 ICONS = {"m_kp": "⚔", "m_kp_all": "Σ", "m_kp_last": "⚡", "m_kp_trade": "⚖", "m_loss_trade": "🩸", "m_power_trade": "💪",
          "m_dead": "💀", "m_severe": "✚", "m_wounded": "🩹", "m_enemy_out": "☠", "m_enemy_dead": "✝", "m_pvp": "🗡",
          "m_pve": "🐗", "m_kph": "⏱", "m_last_enemy": "👤", "m_enemy_marches": "🛡", "m_last_marches": "⚑",
-         "m_barb": "🪓", "m_barb_hits": "🪓", "m_barb_lvl": "⭐", "m_forts": "🏯", "m_acclaim": "★"}
+         "m_barb": "🪓", "m_barb_hits": "🪓", "m_barb_lvl": "⭐", "m_forts": "👹", "m_acclaim": "★", "m_acc_all": "✪", "m_ap_used": "🧪", "m_ap_waste": "🗑", "m_chain_avg": "🔗", "m_gems": "💎", "m_gems_all": "💎", "m_rss": "🌾"}
 OV_STYLES = ["tiles", "list", "bar"]
 _ICON_ON = True
 
@@ -1847,7 +2726,7 @@ class Overlay:
         w = self.win = tk.Toplevel(self.app.root)
         w.overrideredirect(True)
         w.attributes("-topmost", True)
-        w.attributes("-alpha", float(ov.get("alpha", 0.85)))
+        w.attributes("-alpha", 0.0)                             # erst fertig zeichnen, dann einblenden (kein Aufblitzen)
         bg = C["key"] if IS_WIN else C["side"]
         w.configure(bg=bg)
         if IS_WIN:
@@ -1867,7 +2746,8 @@ class Overlay:
         self._drawn = None
         self.draw()
         if IS_WIN:
-            w.after(200, self._win_style)
+            w.update_idletasks(); self._win_style()
+        w.after(40, lambda: self.win is w and w.attributes("-alpha", float(ov.get("alpha", 0.85))))
 
     # ---------- immer sichtbar bleiben ----------
     def _on_screen(self, x, y):
@@ -1896,8 +2776,18 @@ class Overlay:
         try:
             if IS_WIN and self.hwnd:
                 import ctypes
+                u = ctypes.windll.user32
+                if not u.IsWindow(self.hwnd):                 # Fenster von Windows weggenommen -> neu bauen
+                    old, self.win = self.win, None
+                    try:
+                        old.destroy()
+                    except tk.TclError:
+                        pass
+                    self.show(True); return
+                if not u.IsWindowVisible(self.hwnd):
+                    u.ShowWindow(self.hwnd, 4)                 # SW_SHOWNOACTIVATE
                 # HWND_TOPMOST, ohne Verschieben/Groesse/Fokus -> kein Flackern
-                ctypes.windll.user32.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
+                u.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
             else:
                 self.win.attributes("-topmost", True); self.win.lift()
             if not self.win.winfo_viewable():           # verschwunden (z. B. nach Minimieren) -> wieder zeigen
@@ -1919,7 +2809,7 @@ class Overlay:
         a.setdefault("born", time.time())
         self.alerts = [x for x in self.alerts if x["until"] > time.time()][-4:] + [a]
         self._drawn = None
-        if not self.win and self.app.cfg["overlay"].get("show", True):
+        if not self.win and self.app.cfg["overlay"].get("show", True) and self.app.ov_on():
             self.show(True)
         self.draw()
 
@@ -1979,15 +2869,20 @@ class Overlay:
             if asn:
                 rng = "%s %s" % ("ab" if self.app.cfg["lang"] == "de" else "from", datetime.fromtimestamp(asn).strftime("%d.%m. %H:%M"))
             rng = "%s · %s" % (self.app.acc_name(fg), rng)
+        if ov.get("mode_badge", True):
+            rng = ("🪓 " if self.app.mode() == "off" else "⚔ ") + rng
         keys = ov.get("metrics", [])
         tone = self.vals.get("_tone", {})
         global _ICON_ON
         _ICON_ON = ov.get("icons", True)
         flashing = now < self.flash_until
         al = self.active()
-        balls = self.ball_list()
+        balls = self.ball_list() if self.app.mod_on("markers") else []
 
         def vcol(k):
+            own = mcol(self.app.cfg, k)
+            if own:
+                return own
             if tone.get(k) == "good":
                 return C["good"]
             if tone.get(k) == "bad":
@@ -2012,21 +2907,59 @@ class Overlay:
         r = px(4)
         cv.create_oval(x + w - 2 * r, y + lg / 2 - r, x + w, y + lg / 2 + r, fill=dot, outline="")
         cv.create_text(x + w - 2 * r - px(8), y + lg / 2, text=self.app.t("live").upper(), anchor="e", fill=C["dim"], font=F["tiny"])
+        if self.app.cfg["overlay"].get("show_clock", True):     # Datum + Uhrzeit vom PC unter dem Namen
+            lt = time.localtime()
+            wd = (["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"] if self.app.cfg["lang"] == "de" else ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])[lt.tm_wday]
+            cv.create_text(x + lg + px(8), y + lg + px(2), text="%s %s · %s" % (wd, time.strftime("%d.%m.%Y", lt), time.strftime("%H:%M", lt)),
+                           anchor="nw", fill=C["muted"], font=F["tiny"])
         return lg
+
+    @staticmethod
+    def _wrap(font, text, w, maxl=3):
+        """Text in Zeilen umbrechen, damit eine Meldung NIE breiter als das Overlay wird (Overlay verschiebt sich nicht)."""
+        out = []
+        for para in str(text or "").split("\n"):
+            cur = ""
+            for word in para.split(" "):
+                t = (cur + " " + word).strip()
+                if font.measure(t) <= w or not cur:
+                    cur = t
+                else:
+                    out.append(cur); cur = word
+            if cur:
+                out.append(cur)
+        out = out[:maxl] or [""]
+        while out[-1] and font.measure(out[-1]) > w:           # einzelnes ueberlanges Wort kuerzen
+            out[-1] = out[-1][:-2] + "…"
+        return out
+
+    def _alert_lines(self, M, a, w):
+        tl = self._wrap(M["val"], "%s  %s" % (a.get("icon", ""), a.get("title", "")), w - px(20), 2)
+        sl = self._wrap(M["lab"], a.get("sub") or "", w - px(20), 3) if a.get("sub") else []
+        return tl, sl
+
+    def _alert_h(self, M, a, w):
+        tl, sl = self._alert_lines(M, a, w)
+        return len(tl) * (M["val"].metrics("linespace") + px(2)) + len(sl) * (M["lab"].metrics("linespace") + px(2)) + px(14)
 
     def _alert_box(self, cv, F, M, x, y, w, a, now):
         fill, col, out = TONE.get(a.get("tone", "gold"), TONE["gold"])
-        lh = M["lab"].metrics("linespace") + px(4)
-        h = lh * 2 + px(14)
+        tl, sl = self._alert_lines(M, a, w)
+        h = self._alert_h(M, a, w)
         blink = a.get("blink") and int(now * 2) % 2 == 0
         rrect(cv, x, y, x + w, y + h, px(10), fill=col if blink else fill, outline=col)
-        cv.create_text(x + px(10), y + px(7), text="%s  %s" % (a.get("icon", ""), a.get("title", "")), anchor="nw",
-                       fill="#0b0e16" if blink else col, font=F["val"])
-        sub = (a.get("sub") or "")[:52]
-        cv.create_text(x + px(10), y + px(7) + lh, text=sub, anchor="nw", fill="#0b0e16" if blink else C["text"], font=F["lab"])
+        yy = y + px(7)
+        for t in tl:
+            cv.create_text(x + px(10), yy, text=t, anchor="nw", fill="#0b0e16" if blink else col, font=F["val"])
+            yy += M["val"].metrics("linespace") + px(2)
+        for t in sl:
+            cv.create_text(x + px(10), yy, text=t, anchor="nw", fill="#0b0e16" if blink else C["text"], font=F["lab"])
+            yy += M["lab"].metrics("linespace") + px(2)
         return h
 
     def _draw_card(self, cv, F, M, rng, keys, vcol, al, balls, now, style):
+        lab_on = self.app.cfg["overlay"].get("metric_lab_col", False)
+        lcol = lambda k: (mcol(self.app.cfg, k) or C["muted"]) if lab_on else C["muted"]
         T, P = self.app.t, px(self.PAD)
         lh = M["lab"].metrics("linespace") + px(int(self.app.cfg["overlay"].get("spacing", 7)))
         cols = 2 if len(keys) > 1 else 1
@@ -2038,6 +2971,7 @@ class Overlay:
             lw = max([M["lab"].measure((ico(k) + "  " if _ICON_ON else "") + T(k)) for k in keys] + [0])
             vw = max([M["val"].measure(self.vals.get(k, "–")) for k in keys] + [M["val"].measure("0.000")])
             inner = lw + px(24) + vw
+        inner = max(px(120), inner + px(int(self.app.cfg["overlay"].get("width_add", 0) or 0)))   # Breite per Regler
         rules = self.app.cfg["markers"].get("rules", [])
         coords = self.app.cfg["overlay"].get("mk_coords", True)
 
@@ -2057,19 +2991,25 @@ class Overlay:
         bl = [(mk_label(m), mk_right(m), m) for m in balls]
         inner = max(inner, max([M["val"].measure(a) + M["small"].measure(b) + px(46) for a, b, _ in bl] + [0]),
                     M["head"].measure(rng.upper()) + px(90), px(180))
-        for a in al:
-            inner = max(inner, M["val"].measure("%s  %s" % (a.get("icon", ""), a.get("title", ""))) + px(28),
-                        min(px(380), M["lab"].measure((a.get("sub") or "")[:52]) + px(28)))
-        W = inner + 2 * P
+        W = inner + 2 * P                                   # Meldungen werden umgebrochen -> Breite bleibt gleich
         # Hoehe vorab berechnen (zeichnen in zwei Durchgaengen waere teurer)
         y = P
-        hh = px(18) + px(12)
+        clock = self.app.cfg["overlay"].get("show_clock", True)
+        hh = px(18) + px(12) + ((M["tiny"].metrics("linespace") + px(2)) if clock else 0)
         tile_h = M["tiny"].metrics("linespace") + M["big"].metrics("linespace") + px(18)
         rows_h = (((len(keys) + cols - 1) // cols) * (tile_h + px(8))) if style == "tiles" else len(keys) * lh
-        al_h = len(al) * ((M["lab"].metrics("linespace") + px(4)) * 2 + px(14) + px(8))
+        al_h = sum(self._alert_h(M, a, inner) + px(8) for a in al)
         b_h = (M["tiny"].metrics("linespace") + px(8) + len(bl) * lh + px(6)) if bl else 0
         goal = int(self.app.cfg["overlay"].get("goal_kp", 0) or 0)
-        g_h = (M["tiny"].metrics("linespace") + px(16)) if goal else 0
+        goal_a = int(self.app.cfg["overlay"].get("goal_acc", 0) or 0)
+        goal_b = int(self.app.cfg["overlay"].get("goal_barb", 0) or 0)
+        goal_g = int(self.app.cfg["overlay"].get("goal_gems", 0) or 0)
+        g_h = (M["tiny"].metrics("linespace") * 2 + px(18)) * ((1 if goal else 0) + (1 if goal_a else 0) + (1 if goal_b else 0) + (1 if goal_g else 0))
+        exp_on = self.app.cfg["alerts"].get("exp_show", True) and self.app.mod_on("exp") and getattr(self.app, "_exp", None)
+        exp_h = M["tiny"].metrics("linespace") + px(8)
+        g_h += exp_h if exp_on else 0
+        kbs = self.app.kbuff_active()
+        g_h += exp_h * len(kbs)
         H = P + hh + g_h + al_h + b_h + rows_h + P - (px(8) if style == "tiles" and keys else 0)
         cv.configure(width=W + 1, height=H + 1)
         rrect(cv, 0, 0, W, H, px(18), fill="#090c13", outline="#4a3a10")
@@ -2078,18 +3018,33 @@ class Overlay:
         cv.create_line(P, P + hh - px(2), W - P, P + hh - px(2), fill=C["gold2"])
         self._head(cv, F, M, P, y, inner, rng, now)
         y = P + hh + px(6)
-        if goal:                                             # Tagesziel als goldener Balken
-            have = getattr(self.app, "_kp_today", 0)
-            frac = max(0.0, min(1.0, have / goal))
+        one_h = M["tiny"].metrics("linespace") * 2 + px(18)
+        if exp_on:                                           # 50 % Army Expansion: gruen aktiv / rot nicht aktiv
+            act, n_, _t = self.app._exp
+            col = C["good"] if act else C["bad"]
+            cv.create_text(P, y + px(2), text="🪖 " + (self.app.t("exp_on") if act else self.app.t("exp_off")).upper(), anchor="nw", fill=col, font=F["tiny"])
+            cv.create_text(W - P, y + px(2), text=fmt_num(n_, self.app.cfg["lang"]), anchor="ne", fill=col, font=F["tiny"])
+            y += exp_h
+        for kn, ku in kbs:                                   # Kingdom-Buff (z. B. Healing First) mit Restzeit
+            cv.create_text(P, y + px(2), text="💚 " + self.app.t("kb_heal").upper(), anchor="nw", fill=C["good"], font=F["tiny"])
+            cv.create_text(W - P, y + px(2), text=self.app.kb_left(ku), anchor="ne", fill=C["good"], font=F["tiny"])
+            y += exp_h
+        for gval, have, lab, bar in ((goal, getattr(self.app, "_kp_today", 0), "🏁 " + T("goal_today"), C["gold"]),
+                                     (goal_a, getattr(self.app, "_acc_today", 0), "★ " + T("goal_acc"), "#c084fc"),
+                                     (goal_b, getattr(self.app, "_barb_today", 0), "🪓 " + T("goal_barb"), "#7dd3fc"),
+                                     (goal_g, getattr(self.app, "_gems_today", 0), "💎 " + T("goal_gems"), "#f0abfc")):
+            if not gval:                                     # Tagesziel als Balken (KP gold, Acclaim lila)
+                continue
+            frac = max(0.0, min(1.0, have / gval))
             lang = self.app.cfg["lang"]
-            cv.create_text(P, y, text="🏁 " + T("goal_today").upper(), anchor="nw", fill=C["muted"], font=F["tiny"])
-            cv.create_text(W - P, y, text="%s / %s" % (fmt_num(have, lang), fmt_num(goal, lang)), anchor="ne",
-                           fill=C["good"] if frac >= 1 else C["gold"], font=F["tiny"])
-            by = y + M["tiny"].metrics("linespace") + px(4)
+            cv.create_text(P, y, text=lab.upper(), anchor="nw", fill=C["muted"], font=F["tiny"])
+            cv.create_text(P, y + M["tiny"].metrics("linespace") + px(2), text="%s / %s  ·  %d %%" % (fmt_num(have, lang), fmt_num(gval, lang), round(frac * 100)),
+                           anchor="nw", fill=C["good"] if frac >= 1 else bar, font=F["tiny"])
+            by = y + M["tiny"].metrics("linespace") * 2 + px(6)
             rrect(cv, P, by, W - P, by + px(7), px(3), fill="#1a2234", outline="")
             if frac > 0.01:
-                rrect(cv, P, by, P + max(px(8), (W - 2 * P) * frac), by + px(7), px(3), fill=C["good"] if frac >= 1 else C["gold"], outline="")
-            y += g_h
+                rrect(cv, P, by, P + max(px(8), (W - 2 * P) * frac), by + px(7), px(3), fill=C["good"] if frac >= 1 else bar, outline="")
+            y += one_h
         for a in al:
             y += self._alert_box(cv, F, M, P, y, inner, a, now) + px(8)
         if bl:
@@ -2118,13 +3073,13 @@ class Overlay:
                 c, r = i % cols, i // cols
                 x0 = P + c * (tw + px(8)); y0 = y + r * (tile_h + px(8))
                 rrect(cv, x0, y0, x0 + tw, y0 + tile_h, px(10), fill="#111725", outline="#1c2436")
-                cv.create_text(x0 + px(10), y0 + px(8), text=(ico(k) + "  " if _ICON_ON else "") + T(k).upper(), anchor="nw", fill=C["muted"], font=F["tiny"])
+                cv.create_text(x0 + px(10), y0 + px(8), text=(ico(k) + "  " if _ICON_ON else "") + T(k).upper(), anchor="nw", fill=lcol(k), font=F["tiny"])
                 cv.create_text(x0 + px(10), y0 + tile_h - px(7), text=self.vals.get(k, "–"), anchor="sw", fill=vcol(k), font=F["big"])
         else:
             for i, k in enumerate(keys):
                 if i:
                     cv.create_line(P, y - px(3), W - P, y - px(3), fill="#151b29")
-                cv.create_text(P, y, text=(ico(k) + "  " if _ICON_ON else "") + T(k), anchor="nw", fill=C["muted"], font=F["lab"])
+                cv.create_text(P, y, text=(ico(k) + "  " if _ICON_ON else "") + T(k), anchor="nw", fill=lcol(k), font=F["lab"])
                 cv.create_text(W - P, y, text=self.vals.get(k, "–"), anchor="ne", fill=vcol(k), font=F["val"])
                 y += lh
 
@@ -2152,8 +3107,8 @@ class Overlay:
         r = px(4)
         cv.create_oval(P + px(4), h / 2 - r, P + px(4) + 2 * r, h / 2 + r, fill=C["good"] if ok else C["dim"], outline="")
         x = px(30)
-        for i, ((ico, val, col), w) in enumerate(zip(parts, widths)):
-            t1 = cv.create_text(x, h / 2, text=ico + " ", anchor="w", fill=C["muted"], font=F["lab"])
+        for i, ((icon_, val, col), w) in enumerate(zip(parts, widths)):
+            t1 = cv.create_text(x, h / 2, text=icon_ + " ", anchor="w", fill=C["muted"], font=F["lab"])
             cv.create_text(cv.bbox(t1)[2], h / 2, text=val, anchor="w", fill=col, font=F["val"])
             x += w + px(11)
             if i < len(parts) - 1:
@@ -2171,8 +3126,13 @@ class Overlay:
         bsig = (len(self.app.scanner.markers), int(now // 5) if self.app.cfg["overlay"].get("mk_mode", "ball") != "off" and self.app.scanner.markers else 0)
         # nur neu zeichnen, wenn sich etwas aendert (kein Dauer-Pulsieren mehr -> weniger Last)
         key = (id(vals), now < self.flash_until, tuple(a["id"] for a in al), int(now * 2) % 2 if blink else 0,
-               int(now // 60) if al else 0, bsig, self.app.focus_id(), self.app.cfg["overlay"].get("mk_mode"),
-               getattr(self.app, "_kp_today", 0) if self.app.cfg["overlay"].get("goal_kp") else 0)
+               int(now // 60) if (al or self.app.cfg["overlay"].get("show_clock", True)) else 0, bsig, self.app.focus_id(), self.app.cfg["overlay"].get("mk_mode"),
+               getattr(self.app, "_kp_today", 0) if self.app.cfg["overlay"].get("goal_kp") else 0,
+               getattr(self.app, "_acc_today", 0) if self.app.cfg["overlay"].get("goal_acc") else 0, self.app.cfg["overlay"].get("goal_acc"),
+               getattr(self.app, "_barb_today", 0) if self.app.cfg["overlay"].get("goal_barb") else 0, self.app.cfg["overlay"].get("goal_barb"),
+               getattr(self.app, "_gems_today", 0) if self.app.cfg["overlay"].get("goal_gems") else 0, self.app.cfg["overlay"].get("goal_gems"),
+               getattr(self.app, "_exp", None) if self.app.cfg["alerts"].get("exp_show", True) else None,
+               tuple((n, int((u - now) // 60)) for n, u in self.app.kbuff_active()))
         if key != self._drawn:                               # nur neu zeichnen, wenn sich etwas sichtbar aendert
             self._drawn = key
             self.vals = vals
@@ -2264,37 +3224,92 @@ class HeroIcons:
             stem = next((f for f in sorted(self.files, key=len, reverse=True) if not f.startswith("x_") and len(f) >= 3 and n.startswith(f)), None)
         return self.files.get(str(stem or "").lower())
 
-    def get(self, hid, small=False):
-        """PhotoImage (64 px bzw. 32 px) oder None."""
-        k = (hid, small)
+    def get(self, hid, small=False, size=None):
+        """PhotoImage in size px (Quelle 64 px) oder None."""
+        size = int(size or (32 if small else 64))
+        k = (hid, size)
         if k not in self.cache:
             f = self.file_for(hid)
             img = None
             if f:
                 try:
                     img = tk.PhotoImage(file=f)
-                    if small:
-                        img = img.subsample(2)
+                    if size != 64:
+                        from fractions import Fraction
+                        fr = Fraction(size, 64).limit_denominator(8)
+                        if fr.numerator > 1:
+                            img = img.zoom(fr.numerator)
+                        if fr.denominator > 1:
+                            img = img.subsample(fr.denominator)
                 except tk.TclError:
                     img = None
             self.cache[k] = img
         return self.cache[k]
 
 
-def hero_badge(cv, app, x, y, hid, small=True):
+def hero_badge(cv, app, x, y, hid, small=True, size=None):
     """Kommandanten-Bild (rund) oder – falls keins da ist – Kreis mit Anfangsbuchstaben."""
-    img = app.icons.get(hid, small)
-    d = px(32 if small else 48)
+    size = size or (32 if small else 48)
+    img = app.icons.get(hid, size=px(size))
+    d = px(size)
     if img:
         cv.create_image(x, y, image=img, anchor="nw")
         cv._imgs = getattr(cv, "_imgs", []) + [img]
         return
     nm = app.hero_name(hid) if hid else "?"
     cv.create_oval(x + 1, y + 1, x + d - 1, y + d - 1, fill="#1a2234", outline=C["gold2"], width=2)
-    cv.create_text(x + d / 2, y + d / 2, text=(nm[:1] if not nm.startswith("#") else "?").upper(), fill=C["gold"], font=(FONT, 10 if small else 13, "bold"))
+    cv.create_text(x + d / 2, y + d / 2, text=(nm[:1] if not nm.startswith("#") else "?").upper(), fill=C["gold"], font=(FONT, max(10, size // 3), "bold"))
+
+
+def hero_pair(cv, app, x, y, h, size, one=False):
+    """Haupt- (vorne) und Zweit-Kommandant (leicht versetzt dahinter). Gibt die Breite zurueck."""
+    d = px(size)
+    if h and len(h) > 1 and h[1] and not one:
+        hero_badge(cv, app, x + int(d * 0.75), y, h[1], size=size)
+        hero_badge(cv, app, x, y, h[0], size=size)
+        return d + int(d * 0.75)
+    hero_badge(cv, app, x, y, h[0] if h else 0, size=size)
+    return d
 
 
 # ---------------------------------------------------------------- Schwebende Fenster (Feed, Marsch-Leiste, Pop-up)
+_ROK_EXE = ("mass.exe", "rok.exe", "riseofkingdoms.exe", "rise of kingdoms.exe")
+
+
+def rok_running(folders):
+    """Laeuft Rise of Kingdoms (PC-Client)? Prueft nur Programmnamen/-pfade der laufenden Prozesse."""
+    if not IS_WIN:
+        return True
+    try:
+        import ctypes
+        from ctypes import wintypes
+        k32, ps = ctypes.windll.kernel32, ctypes.windll.psapi
+        arr = (wintypes.DWORD * 4096)(); got = wintypes.DWORD()
+        if not ps.EnumProcesses(arr, ctypes.sizeof(arr), ctypes.byref(got)):
+            return True
+        roots = []
+        for g in folders or []:
+            g = os.path.normcase(os.path.abspath(g))
+            roots.append(g)                                             # nur das Spiel selbst, nicht der Launcher (laeuft oft weiter)
+        buf = ctypes.create_unicode_buffer(1024)
+        for pid in arr[:got.value // ctypes.sizeof(wintypes.DWORD)]:
+            h = k32.OpenProcess(0x1000, False, pid)                    # PROCESS_QUERY_LIMITED_INFORMATION
+            if not h:
+                continue
+            try:
+                n = wintypes.DWORD(1024)
+                if k32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(n)):
+                    p = os.path.normcase(buf.value)
+                    if os.path.basename(p) in _ROK_EXE or any(r and p.startswith(r + os.sep) for r in roots):
+                        return True
+            finally:
+                k32.CloseHandle(h)
+        return False
+    except Exception as e:
+        log("rok_running: %s" % e)
+        return True
+
+
 def win_exstyle(win, click_through=False):
     """Werkzeugfenster ohne Taskleiste/Fokus, ganz oben; optional Durchklick (Maus geht ins Spiel)."""
     if not IS_WIN or not win:
@@ -2307,6 +3322,10 @@ def win_exstyle(win, click_through=False):
         st = (st | 0x80 | 0x08000000 | 0x8 | 0x80000) & ~0x40000          # TOOLWINDOW | NOACTIVATE | TOPMOST | LAYERED
         st = (st | 0x20) if click_through else (st & ~0x20)               # TRANSPARENT = Durchklick
         u.SetWindowLongW(hwnd, -20, st)
+        try:                                                              # kein "Besitzer" mehr: App minimieren nimmt das Overlay NICHT mit
+            (getattr(u, "SetWindowLongPtrW", None) or u.SetWindowLongW)(hwnd, -8, 0)
+        except Exception:
+            pass
         u.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
         return hwnd
     except Exception as e:
@@ -2327,7 +3346,9 @@ class Float:
         w = self.win = tk.Toplevel(self.app.root)
         w.overrideredirect(True)
         w.attributes("-topmost", True)
-        w.attributes("-alpha", float(self.app.cfg["overlay"].get("alpha", 0.9)))
+        ov = self.app.cfg["overlay"]
+        w.attributes("-alpha", 0.0)
+        w.after(60, lambda: self.win is w and w.attributes("-alpha", float(ov.get("alpha_" + self.key, ov.get("alpha", 0.9)))))
         bg = C["key"] if IS_WIN else C["side"]
         w.configure(bg=bg)
         if IS_WIN:
@@ -2362,7 +3383,17 @@ class Float:
         try:
             if IS_WIN and self.hwnd:
                 import ctypes
-                ctypes.windll.user32.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
+                u = ctypes.windll.user32
+                if not u.IsWindow(self.hwnd):
+                    old, self.win = self.win, None
+                    try:
+                        old.destroy()
+                    except tk.TclError:
+                        pass
+                    self.show(True); return
+                if not u.IsWindowVisible(self.hwnd):
+                    u.ShowWindow(self.hwnd, 4)
+                u.SetWindowPos(self.hwnd, -1, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0040)
             else:
                 self.win.lift()
         except tk.TclError:
@@ -2400,12 +3431,17 @@ class FeedWin(Float):
             return
         app, T = self.app, self.app.t
         cards = getattr(app, "_feed", [])
-        key = (tuple((c["id"], int(time.time() - c["t"]) // 60) for c in cards), app.cfg["lang"])
+        ov = app.cfg["overlay"]
+        isz, one = int(ov.get("feed_icon_px", ov.get("icon_px", 32))), ov.get("hero_one", False)
+        more = ov.get("feed_more", True)
+        key = (tuple((c["id"], c["kp"], c.get("marches", 1), int(time.time() - c["t"]) // 60, c.get("tkp"), c.get("tacc"), c.get("acc"), c.get("chain")) for c in cards),
+               app.cfg["lang"], isz, one, TRADE_FMT["v"], more, str(app.cfg["overlay"].get("metric_cols")), str(ov.get("feed_fields")), ov.get("feed_gap"))
         if key == self._drawn and not force:
             return
         self._drawn = key
-        P, ch, gap = px(8), px(52), px(6)
-        W = px(250)
+        P, ch, gap = px(8), px(max(70 if more else 52, isz + 14)), px(int(ov.get("feed_gap", 6)))
+        pic_w = isz + (0 if one else int(isz * 0.75))
+        W = px((246 if more else 190) + pic_w)
         H = P * 2 + max(1, len(cards)) * (ch + gap) - gap
         self.frame(W, H, 14)
         cv = self.cv
@@ -2414,28 +3450,58 @@ class FeedWin(Float):
             return
         y = P
         for c in cards:
-            col = C["good"] if c["win"] else C["bad"]
+            col = C["bad"] if c.get("dead_march") else C["good"]          # gruen – rot nur, wenn der Marsch keine Truppen mehr hat
             rrect(cv, P, y, W - P, y + ch, px(10), fill="#111725", outline="#1c2436")
             rrect(cv, P, y, P + px(4), y + ch, px(2), fill=col, outline="")
-            hero_badge(cv, app, P + px(10), y + (ch - px(32)) / 2, c["h"][0], True)
-            if c["h"][1]:
-                hero_badge(cv, app, P + px(30), y + (ch - px(32)) / 2 + px(4), c["h"][1], True)
-            x = P + px(70)
-            res = T("victory") if c["win"] else T("defeat")
+            hero_pair(cv, app, P + px(10), y + (ch - px(isz)) / 2, c["h"], isz, one)
+            x = P + px(pic_w + 18)
+            res = T("defeat") if c.get("dead_march") else T("victory")
+            if c.get("marches", 1) > 1:
+                res += "  ×%d" % c["marches"]                # mehrere Maersche gegen denselben Gegner = eine Schlacht
             cv.create_text(x, y + px(5), text=res, anchor="nw", fill=col, font=(FONT, 10, "bold"))
             cv.create_text(W - P - px(8), y + px(6), text=app.ago(c["t"]), anchor="ne", fill=C["dim"], font=(FONT, 8))
-            sub = "%s %s" % (T("kill_count"), "+" + fmt_num(c["kp"], app.cfg["lang"])) if c["pvp"] else \
-                  "%s%s" % (c["enemy"] or "NPC", (" Lv %d" % c["lvl"]) if c["lvl"] else "")
+            if not c["pvp"]:                                 # NPC: Name (Barbar / Kahar / Fort) + Level, bei Barbaren die Kette des letzten Angriffs
+                lv_ = c.get("clvl") or c["lvl"] or 0
+                sub = "%s %s%s" % (NPC_ICON.get(c.get("bt"), "🏯"), T("npc_" + str(c.get("bt"))) if T("npc_" + str(c.get("bt"))) != "npc_" + str(c.get("bt")) else c["enemy"],
+                                   (" Lv %d" % lv_) if lv_ else "")
+                if c.get("chain"):
+                    sub += "  ·  🔗 %d" % c["chain"]
+            else:
+                sub = "%s %s" % (T("kill_count"), "+" + fmt_num(c["kp"], app.cfg["lang"])) if c["pvp"] else \
+                      "%s%s" % (c["enemy"] or "NPC", (" Lv %d" % c["lvl"]) if c["lvl"] else "")
             cv.create_text(x, y + px(22), text=sub, anchor="nw", fill=C["text"], font=(FONT, 9, "bold"))
-            if c["pvp"]:
-                cv.create_text(x, y + px(37), text="%s %s · %s" % (T("trade"), fmt_trade(c["trade"]), c["enemy"][:14]), anchor="nw",
+            if c["pvp"] and not more:
+                have, need = c.get("parts", (1, 0))
+                miss = ("  · %d/%d" % (have, need)) if need and have < need else ""
+                cv.create_text(x, y + px(37), text="%s %s · %s%s" % (T("trade"), fmt_trade(c["trade"]), c["enemy"][:14], miss), anchor="nw",
                                fill=C["muted"], font=(FONT, 8))
+            elif c["pvp"]:
+                lang, R = app.cfg["lang"], W - P - px(8)
+                tcol = lambda tr: C["muted"] if tr is None else (C["good"] if tr >= 1 else C["bad"])
+                have, need = c.get("parts", (1, 0))
+                miss = ("  · %d/%d" % (have, need)) if need and have < need else ""
+                # Zeile 3: Trade dieses Berichts  |  Zeile 4: Acclaim + Gegner   –  rechts jeweils Σ = ganzer Marsch im Zeitraum
+                ff = set(ov.get("feed_fields") or ["trade", "sum_kp", "sum_trade"])
+                l3 = "%s %s" % (T("trade"), fmt_trade(c["trade"])) if "trade" in ff else ""
+                cv.create_text(x, y + px(37), text=l3 or (c["enemy"] or "")[:16], anchor="nw", fill=tcol(c["trade"]) if l3 else C["muted"], font=(FONT, 8, "bold" if l3 else "normal"))
+                l4 = ("★ +%s · " % fmt_num(c.get("acc", 0), lang) if "acc" in ff else "") + ((c["enemy"] or "")[:11] if l3 else "")
+                cv.create_text(x, y + px(52), text=l4, anchor="nw", fill=mcol(app.cfg, "m_acclaim", C["muted"]) if "acc" in ff else C["muted"], font=(FONT, 8))
+                if miss:
+                    cv.create_text(W - P - px(70), y + px(6), text=miss.strip(" ·"), anchor="ne", fill=C["dim"], font=(FONT, 8))
+                if c.get("tkp") is not None:
+                    if "sum_kp" in ff:
+                        cv.create_text(R, y + px(23), text="Σ " + fmt_num(c["tkp"], lang), anchor="ne", fill=mcol(app.cfg, "m_kp", C["gold"]), font=(FONT, 9, "bold"))
+                    if "sum_trade" in ff:
+                        cv.create_text(R, y + px(37), text="Σ " + fmt_trade(c.get("ttr")), anchor="ne", fill=tcol(c.get("ttr")), font=(FONT, 8, "bold"))
+                    if "sum_acc" in ff:
+                        cv.create_text(R, y + px(52), text="Σ ★ " + fmt_num(c.get("tacc", 0), lang), anchor="ne", fill=mcol(app.cfg, "m_acclaim", "#c4a7f0"), font=(FONT, 8, "bold"))
             y += ch + gap
 
 
 class MarchWin(Float):
     """Marsch-Leiste: Werte neben der Marsch-Liste im Spiel (wie in deinem Bild 2) – Werte frei waehlbar."""
     VALS = {"kp": ("⚔", "gold"), "kills": ("☠", "text"), "acc": ("★", "text"), "trade": ("⚖", None), "dead": ("💀", "text"), "n": ("#", "muted")}
+    PVE_VALS = ["lvl", "avg", "last", "today", "ap", "run", "waste"]     # Offseason: frei waehlbar (Overlay → Märsche)
 
     def draw(self, force=False):
         if not self.win:
@@ -2443,16 +3509,30 @@ class MarchWin(Float):
         app, T, ov = self.app, self.app.t, self.app.cfg["overlay"]
         rows = getattr(app, "_marches", [])
         vals = [v for v in (ov.get("march_vals") or ["kp", "trade"]) if v in self.VALS][:4]
+        pvals = [v for v in (ov.get("march_pve_vals") or ["lvl", "avg", "today", "waste"]) if v in self.PVE_VALS][:5]
         gapy = px(int(ov.get("march_gap", 96)))
-        key = (tuple((r["k"], r["kp"], r["own"], r["en"], r.get("acc"), r.get("kills"), r.get("dead"), r.get("n")) for r in rows), gapy, tuple(vals), app.cfg["lang"],
-               ov.get("march_icons", True), ov.get("icons", True))
+        isz, one = int(ov.get("march_icon_px", ov.get("icon_px", 32))), ov.get("hero_one", False)
+        key = (tuple((r["k"], r["kp"], r["own"], r["en"], r.get("acc"), r.get("kills"), r.get("dead"), r.get("n"), r.get("pve"), r.get("lvl"),
+                      r.get("chain"), r.get("today"), round(r.get("apw", 0)), round(r.get("avg", 0), 1), round(r.get("ap", 0)), r.get("t0")) for r in rows),
+               gapy, tuple(vals), tuple(pvals), app.cfg["lang"],
+               ov.get("march_icons", True), ov.get("icons", True), round(getattr(app, "_chain_avg", 0), 1), isz, one, TRADE_FMT["v"])
         if key == self._drawn and not force:
             return
         self._drawn = key
         lh = px(17)
-        rh = max(px(44), px(10) + lh * len(vals))
-        W = px(176) if ov.get("march_icons", True) else px(118)
-        H = (len(rows) - 1) * max(gapy, rh + px(4)) + rh if rows else rh
+        lang = app.cfg["lang"]
+        rh = max(px(isz + 12), px(10) + lh * max(len(vals), len(pvals) if any(r.get("pve") for r in rows) else 1))
+        pic_w = (isz + (0 if one else int(isz * 0.75))) if ov.get("march_icons", True) else 0
+        # Breite nach dem laengsten Text -> nichts wird abgeschnitten
+        fb = fnt(FONT, 10, "bold")
+        texts = [self.pve_line(r, v, lang)[1] for r in rows if r.get("pve") and r.get("k") for v in pvals]
+        texts += ["%s %s" % (self.VALS[v][0], fmt_num(r.get(v, 0), lang)) for r in rows if r.get("k") and not r.get("pve") for v in vals if v not in ("trade", "n")]
+        texts += ["⚖ " + fmt_trade(None), "🔗 %s 0,0" % T("chain_avg")]
+        tw = max([fb.measure(t_) for t_ in texts] + [px(90)])
+        W = px(pic_w + 12) + tw + px(30)
+        any_pve = any(r.get("pve") and r.get("k") for r in rows)
+        top = px(26) if any_pve else 0                         # Kopf: Durchschnitts-Kette (nur wenn ein Marsch Barbaren macht)
+        H = top + ((len(rows) - 1) * max(gapy, rh + px(4)) + rh if rows else rh)
         cv = self.cv
         cv.delete("all"); cv._imgs = []
         cv.configure(width=W + 1, height=H + 1)
@@ -2462,24 +3542,33 @@ class MarchWin(Float):
             rrect(cv, 0, 0, W, rh, px(12), fill="#090c13", outline="#4a3a10")
             cv.create_text(W / 2, rh / 2, text=T("march_empty"), fill=C["dim"], font=(FONT, 8))
             return
-        lang = app.cfg["lang"]
+        if any_pve:
+            rrect(cv, 0, 0, W, top - px(4), px(9), fill="#0d1320", outline="#1e3a52")
+            cv.create_text(W / 2, (top - px(4)) / 2, text="🔗 %s %s" % (T("chain_avg"), ("%.1f" % app._chain_avg).replace(".", ",") if lang == "de" else "%.1f" % app._chain_avg),
+                           fill="#7dd3fc", font=(FONT, 9, "bold"))
         for i, r in enumerate(rows):
-            y = i * max(gapy, rh + px(4))
+            y = top + i * max(gapy, rh + px(4))
             if not r["k"]:                                 # leerer Platz: nur dezenter Rahmen
                 rrect(cv, 0, y, W, y + rh, px(12), fill="#090c13", outline="#1c2436")
                 cv.create_text(W / 2, y + rh / 2, text="–", fill=C["dim"], font=(FONT, 10, "bold"))
                 cv.create_text(W - px(8), y + px(7), text=str(r["slot"]), anchor="ne", fill=C["dim"], font=(FONT, 8, "bold"))
                 continue
             rrect(cv, 0, y, W, y + rh, px(12), fill="#090c13", outline="#4a3a10")
-            tx0 = px(70)
+            tx0 = px(pic_w + 12)
             if ov.get("march_icons", True):                # beide Kommandanten: Haupt vorne, Zweit leicht dahinter
-                yb = y + (rh - px(32)) / 2
-                if r["k"][1]:
-                    hero_badge(cv, app, px(29), yb, r["k"][1], True)
-                hero_badge(cv, app, px(5), yb, r["k"][0], True)
+                hero_pair(cv, app, px(5), y + (rh - px(isz)) / 2, r["k"], isz, one)
             else:
                 tx0 = px(12)
             tr = (r["en"] / r["own"]) if r["own"] else (float("inf") if r["en"] else None)
+            if r.get("pve"):                                   # Barbaren-Marsch: Werte frei waehlbar (Overlay → Märsche)
+                yy = y + (rh - lh * len(pvals)) / 2
+                for j, v in enumerate(pvals):
+                    ico, txt, col = self.pve_line(r, v, lang)
+                    cv.create_text(tx0, yy, text=txt if ov.get("icons", True) else txt.split(" ", 1)[-1], anchor="nw", fill=col,
+                                   font=(FONT, 10 if j == 0 else 9, "bold"))
+                    yy += lh
+                cv.create_text(W - px(8), y + px(7), text=str(r["slot"]), anchor="ne", fill=C["dim"], font=(FONT, 8, "bold"))
+                continue
             yy = y + (rh - lh * len(vals)) / 2
             for v in vals:
                 ico, colk = self.VALS[v]
@@ -2488,17 +3577,38 @@ class MarchWin(Float):
                 elif v == "n":
                     txt, col = "%d %s" % (r.get("n", 0), T("mt_n")), C["muted"]
                 else:
-                    txt, col = fmt_num(r.get(v, 0), lang), C[colk]
+                    txt, col = fmt_num(r.get(v, 0), lang), mcol(app.cfg, {"kp": "m_kp", "acc": "m_acclaim", "dead": "m_dead"}.get(v, ""), C[colk])
                 cv.create_text(tx0, yy, text=("%s %s" % (ico, txt)) if ov.get("icons", True) else txt, anchor="nw", fill=col,
                                font=(FONT, 10 if v == vals[0] else 9, "bold"))
                 yy += lh
             cv.create_text(W - px(8), y + px(7), text=str(r["slot"]), anchor="ne", fill=C["dim"], font=(FONT, 8, "bold"))
 
+    def pve_line(self, r, v, lang):
+        T = self.app.t
+        if v == "lvl":
+            return "⭐", "⭐ " + ("Lv %d" % r["lvl"] if r.get("lvl") else "Lv –"), "#7dd3fc"
+        if v == "avg":
+            return "🔗", "🔗 Ø %s" % fmt_dec(r.get("avg", 0), lang), "#7dd3fc"
+        if v == "last":
+            return "🔗", "🔗 %s %d" % (T("pv_last_s"), r.get("chain", 0)), C["text"]
+        if v == "today":
+            return "🪓", "🪓 %s %s" % (fmt_num(r.get("today", 0), lang), T("today_s")), C["muted"]
+        if v == "ap":
+            return "🧪", "🧪 %s AP" % fmt_num(round(r.get("ap", 0)), lang), "#a5f3fc"
+        if v == "run":
+            t0 = r.get("t0")
+            return "🧪", "🧪 %s AP · %s" % (fmt_num(round(r.get("run_ap", 0)), lang), time.strftime("%H:%M", time.localtime(t0)) if t0 else "–"), C["muted"]
+        if v == "waste":
+            w = round(r.get("apw", 0))
+            return "🗑", "🗑 %s AP %s" % (fmt_num(w, lang), T("waste_s")), C["bad"] if w >= 1 else C["dim"]
+        return "", "", C["text"]
+
     def menu(self, e):
         """Rechtsklick auf eine Zeile: festlegen, welcher Marsch dort steht."""
         app, T = self.app, self.app.t
         gapy = px(int(app.cfg["overlay"].get("march_gap", 96)))
-        idx = max(0, int(e.y // max(gapy, px(44))))
+        top = px(26) if any(r.get("pve") and r.get("k") for r in getattr(app, "_marches", [])) else 0
+        idx = max(0, int((e.y - top) // max(gapy, px(44))))
         m = app.slot_menu(self.win, idx)
         m.add_separator()
         rows = getattr(app, "_marches", [])
@@ -2514,7 +3624,76 @@ class Toast:
         self.app, self.win = app, None
 
     def show(self, c):
+        T = self.app.t
+        col = C["bad"] if c.get("dead_march") else self.app.popup_col("battle", C["good"])
+        line1 = ("⚔ " + (T("defeat") if c.get("dead_march") else T("victory"))) if c["pvp"] else ("🪓 " + (c["enemy"] or "NPC") + ((" Lv %d" % c["lvl"]) if c["lvl"] else ""))
+        line2 = ("+%s KP  ·  %s %s" % (fmt_num(c["kp"], self.app.cfg["lang"]), T("trade"), fmt_trade(c["trade"]))) if c["pvp"] else \
+                (T("victory") if c["win"] else T("defeat"))
+        if c.get("marches", 1) > 1:
+            line2 += "  ·  %d %s" % (c["marches"], T("feed_marches"))
+        self.app.alert_sound("dead_march" if c.get("dead_march") else "battle")
+        self.pop(line1, line2, col, hero=c["h"][0])
+
+    def _next(self):
+        q = getattr(self, "queue", [])
+        if q and not (self.win and time.time() - getattr(self, "_shown", 0) < self.dur() + 0.6):
+            self.pop(*q.pop(0))
+
+    def dur(self):
+        return max(1.0, float(self.app.cfg["alerts"].get("pop_dur", 5) or 5))
+
+    def place_mode(self):
+        """Pop-up-Position einstellen: Beispiel-Pop-up erscheint, mit der Maus ziehen, mit „Fertig“ speichern."""
         app, T = self.app, self.app.t
+        if getattr(self, "_pw", None):
+            try:
+                self._pw.destroy()
+            except tk.TclError:
+                pass
+        w = self._pw = tk.Toplevel(app.root)
+        w.overrideredirect(True); w.attributes("-topmost", True); w.configure(bg="#0b0f19")
+        f = tk.Frame(w, bg="#0b0f19", highlightthickness=2, highlightbackground=C["gold"], padx=px(14), pady=px(8)); f.pack()
+        tk.Label(f, text="✥ " + T("toast_drag"), bg="#0b0f19", fg=C["gold"], font=(FONT, 13, "bold")).pack(anchor="w")
+        tk.Label(f, text=T("toast_drag2"), bg="#0b0f19", fg=C["text"], font=(FONT, 10)).pack(anchor="w")
+        Btn(f, "✔ " + T("done"), lambda: done(), small=True).pack(anchor="e", pady=(px(6), 0))
+        sw = app.root.winfo_screenwidth()
+        pos = app.cfg["overlay"].get("pos_toast") or [int((sw - px(320)) / 2), px(70)]
+        w.geometry("+%d+%d" % (int(pos[0]), int(pos[1])))
+        st = {}
+
+        def start(e):
+            st["d"] = (e.x_root - w.winfo_x(), e.y_root - w.winfo_y())
+
+        def move(e):
+            if "d" in st:
+                w.geometry("+%d+%d" % (e.x_root - st["d"][0], e.y_root - st["d"][1]))
+
+        def save(_e=None):
+            w.update_idletasks()
+            app.cfg["overlay"]["pos_toast"] = [w.winfo_rootx(), w.winfo_rooty()]; save_cfg(app.cfg)   # sofort gespeichert
+
+        def done():
+            save()
+            w.destroy(); self._pw = None
+            app.test_alert("battle")
+        for wid in (w, f) + tuple(f.winfo_children()[:2]):
+            wid.bind("<ButtonPress-1>", start); wid.bind("<B1-Motion>", move); wid.bind("<ButtonRelease-1>", save)
+
+    def show_msg(self, icon, title, sub, col):
+        """Gleiches Pop-up wie nach einem Kampf, fuer Nachrichten (z. B. Lost Kingdom S+)."""
+        self.pop(title, sub, col, icon=icon)
+
+    def pop(self, line1, line2, col, hero=None, icon=None):
+        app, T = self.app, self.app.t
+        if not app.ov_on():
+            return
+        if self.win and time.time() - getattr(self, "_shown", 0) < self.dur() + 0.6:      # laeuft noch eins -> danach zeigen
+            q = self.__dict__.setdefault("queue", [])
+            if len(q) < 4:
+                q.append((line1, line2, col, hero, icon))
+            app.root.after(int((self.dur() + 0.7 - (time.time() - self._shown)) * 1000), self._next)
+            return
+        self._shown = time.time()
         if self.win:
             try:
                 self.win.destroy()
@@ -2530,16 +3709,16 @@ class Toast:
             except tk.TclError:
                 pass
         cv = tk.Canvas(w, bg=bg, highlightthickness=0); cv.pack()
-        col = C["good"] if c["win"] else C["bad"]
-        line1 = ("⚔ " + (T("victory") if c["win"] else T("defeat"))) if c["pvp"] else ("🪓 " + (c["enemy"] or "NPC") + ((" Lv %d" % c["lvl"]) if c["lvl"] else ""))
-        line2 = ("+%s KP  ·  %s %s" % (fmt_num(c["kp"], app.cfg["lang"]), T("trade"), fmt_trade(c["trade"]))) if c["pvp"] else \
-                (T("victory") if c["win"] else T("defeat"))
         f1, f2 = fnt(FONT, 13, "bold"), fnt(FONT, 10, "bold")
         W = max(f1.measure(line1), f2.measure(line2)) + px(90)
         H = px(62)
         cv.configure(width=W + 1, height=H + 1)
         rrect(cv, 0, 0, W, H, px(18), fill="#0b0f19", outline=col, width=2)
-        hero_badge(cv, app, px(12), (H - px(32)) / 2, c["h"][0], True)
+        if hero:
+            hero_badge(cv, app, px(12), (H - px(32)) / 2, hero, size=32)
+        else:
+            cv.create_oval(px(12), (H - px(34)) / 2, px(46), (H + px(34)) / 2, fill="#141a28", outline=col, width=2)
+            cv.create_text(px(29), H / 2, text=icon or "!", fill=col, font=(FONT, 14, "bold"))
         cv.create_text(px(56), px(10), text=line1, anchor="nw", fill=col, font=f1)
         cv.create_text(px(56), px(34), text=line2, anchor="nw", fill=C["text"], font=f2)
         sw = app.root.winfo_screenwidth()
@@ -2550,7 +3729,7 @@ class Toast:
         w.geometry("+%d+%d" % (x, y1 - px(20)))
         if IS_WIN:
             w.after(50, lambda: win_exstyle(w, True))          # Pop-up ist immer durchklickbar
-        a = float(app.cfg["overlay"].get("alpha", 0.9))
+        a = float(app.cfg["overlay"].get("alpha_toast", app.cfg["overlay"].get("alpha", 0.9)))
         steps = 8
 
         def anim(i=0):
@@ -2559,7 +3738,7 @@ class Toast:
                     w.attributes("-alpha", a * i / steps); w.geometry("+%d+%d" % (x, y1 - px(20) + px(20) * i // steps))
                     w.after(25, lambda: anim(i + 1))
                 elif i == steps + 1:
-                    w.after(3000, lambda: anim(i + 1))
+                    w.after(int(self.dur() * 1000), lambda: anim(i + 1))      # so lange bleibt das Pop-up (Einstellung, Standard 5 s)
                 elif i <= steps * 2 + 2:                         # ausblenden
                     w.attributes("-alpha", a * (steps * 2 + 2 - i) / steps)
                     w.after(35, lambda: anim(i + 1))
@@ -2572,8 +3751,126 @@ class Toast:
         anim()
 
 
+class Banner:
+    """Warnung am oberen Bildschirmrand (z. B. Lazarett 85 %): breiter Balken, blinkt, verschwindet nach ein paar Sekunden."""
+    def __init__(self, app):
+        self.app, self.win = app, None
+
+    def show(self, text, col="#f97316", secs=12):
+        app = self.app
+        self.hide()
+        if not app.ov_on():
+            return
+        w = self.win = tk.Toplevel(app.root)
+        w.overrideredirect(True); w.attributes("-topmost", True)
+        sw = app.root.winfo_screenwidth()
+        W, H = min(px(900), sw - px(40)), px(46)
+        w.geometry("%dx%d+%d+%d" % (W, H, (sw - W) // 2, px(6)))
+        cv = tk.Canvas(w, width=W, height=H, bg="#120a04", highlightthickness=0); cv.pack()
+        cv.create_rectangle(1, 1, W - 2, H - 2, outline=col, width=3)
+        tid = cv.create_text(W / 2, H / 2, text=text, fill=col, font=(FONT, 15, "bold"))
+        if IS_WIN:
+            w.after(50, lambda: win_exstyle(w, True))
+        end = time.time() + secs
+
+        def blink(i=0):
+            try:
+                if time.time() > end or self.win is not w:
+                    if self.win is w:
+                        self.hide()
+                    return
+                cv.itemconfigure(tid, fill=col if i % 2 == 0 else "#ffffff")
+                w.attributes("-alpha", 0.95 if i % 2 == 0 else 0.75)
+                w.after(450, lambda: blink(i + 1))
+            except tk.TclError:
+                pass
+        blink()
+
+    def hide(self):
+        if self.win:
+            try:
+                self.win.destroy()
+            except tk.TclError:
+                pass
+            self.win = None
+
+
+class ScreenBorder:
+    """Farbiger, blinkender Rahmen um den ganzen Bildschirm (z. B. lila, wenn Truppen im Lazarett gestorben sind). Durchklickbar."""
+    def __init__(self, app):
+        self.app, self.wins = app, []
+
+    def show(self, col="#a855f7", secs=60, th=None):
+        app = self.app
+        self.hide()
+        if not app.ov_on():
+            return
+        sw, sh = app.root.winfo_screenwidth(), app.root.winfo_screenheight()
+        th = th or px(10)
+        for g in ((sw, th, 0, 0), (sw, th, 0, sh - th), (th, sh, 0, 0), (th, sh, sw - th, 0)):
+            w = tk.Toplevel(app.root)
+            w.overrideredirect(True); w.attributes("-topmost", True); w.configure(bg=col)
+            w.geometry("%dx%d+%d+%d" % g)
+            if IS_WIN:
+                w.after(50, lambda w=w: win_exstyle(w, True))
+            self.wins.append(w)
+        end = time.time() + secs
+
+        def blink(i=0):
+            if not self.wins:
+                return
+            if time.time() > end:
+                self.hide(); return
+            for w in self.wins:
+                try:
+                    w.attributes("-alpha", 0.9 if i % 2 == 0 else 0.35)
+                except tk.TclError:
+                    pass
+            app.root.after(500, lambda: blink(i + 1))
+        blink()
+
+    def hide(self):
+        for w in self.wins:
+            try:
+                w.destroy()
+            except tk.TclError:
+                pass
+        self.wins = []
+
+
 # ---------------------------------------------------------------- Tastenkuerzel (funktionieren auch im Spiel)
 HOTKEYS = [("O", "hk_overlay"), ("R", "hk_reset"), ("D", "hk_click")]
+
+
+_VK = {"F%d" % i: 0x6F + i for i in range(1, 13)}
+_VK.update({"SPACE": 0x20, "TAB": 0x09, "INSERT": 0x2D, "DELETE": 0x2E, "HOME": 0x24, "END": 0x23, "PAGEUP": 0x21, "PAGEDOWN": 0x22,
+            "NUM0": 0x60, "NUM1": 0x61, "NUM2": 0x62, "NUM3": 0x63, "NUM4": 0x64, "NUM5": 0x65, "NUM6": 0x66, "NUM7": 0x67, "NUM8": 0x68, "NUM9": 0x69})
+
+
+def parse_hotkey(txt):
+    """'Strg+Alt+O' / 'Ctrl+Shift+F5' -> (Modifier, Tastencode) oder None"""
+    mods, vk = 0, None
+    for p in [x.strip().upper() for x in str(txt).replace("-", "+").split("+") if x.strip()]:
+        if p in ("STRG", "CTRL", "CONTROL"):
+            mods |= 0x0002
+        elif p == "ALT":
+            mods |= 0x0001
+        elif p in ("SHIFT", "UMSCHALT"):
+            mods |= 0x0004
+        elif p in ("WIN", "SUPER"):
+            mods |= 0x0008
+        elif len(p) == 1 and (p.isalnum()):
+            vk = ord(p)
+        elif p in _VK:
+            vk = _VK[p]
+        else:
+            return None
+    return (mods, vk) if vk else None
+
+
+def hotkey_list(app):
+    hk = app.cfg.get("hotkeys") or {}
+    return [(hk.get(act) or "Strg+Alt+" + key, act) for key, act in HOTKEYS]
 
 
 def hotkey_thread(app):
@@ -2582,19 +3879,36 @@ def hotkey_thread(app):
     try:
         import ctypes
         from ctypes import wintypes
-        u = ctypes.windll.user32
+        u, k32 = ctypes.windll.user32, ctypes.windll.kernel32
+        app._hk_tid = k32.GetCurrentThreadId()
+        lst = hotkey_list(app)
         ok = []
-        for i, (key, _a) in enumerate(HOTKEYS, start=1):
-            if u.RegisterHotKey(None, i, 0x0001 | 0x0002 | 0x4000, ord(key)):    # Alt + Strg, ohne Wiederholung
-                ok.append(key)
+        for i, (combo, act) in enumerate(lst, start=1):
+            p = parse_hotkey(combo)
+            if p and u.RegisterHotKey(None, i, p[0] | 0x4000, p[1]):       # ohne Wiederholung
+                ok.append(act)
         app._hotkeys_ok = ok
         msg = wintypes.MSG()
-        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) != 0:
-            if msg.message == 0x0312 and 1 <= msg.wParam <= len(HOTKEYS):        # WM_HOTKEY
-                act = HOTKEYS[msg.wParam - 1][1]
+        while u.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            if msg.message == 0x0312 and 1 <= msg.wParam <= len(lst):        # WM_HOTKEY
+                act = lst[msg.wParam - 1][1]
                 app.root.after(0, lambda a=act: app.hotkey(a))
+        for i in range(1, len(lst) + 1):
+            u.UnregisterHotKey(None, i)
     except Exception as e:
         log("hotkeys: %s" % e)
+
+
+def restart_hotkeys(app):
+    """Neue Tasten aktiv machen: alten Thread beenden (WM_QUIT), neuen starten."""
+    if IS_WIN and getattr(app, "_hk_tid", None):
+        try:
+            import ctypes
+            ctypes.windll.user32.PostThreadMessageW(app._hk_tid, 0x0012, 0, 0)
+        except Exception:
+            pass
+        time.sleep(0.1)
+    threading.Thread(target=hotkey_thread, args=(app,), daemon=True).start()
 
 
 
@@ -2636,22 +3950,31 @@ class App:
         self.page = "home"
         self.started = time.time()
         self.scanner = Scanner(self)
+        self.mumu_st = {"msg": "", "ports": {}, "t": 0, "busy": False}
+        threading.Thread(target=self.mumu_loop, daemon=True).start()
         self.overlay = Overlay(self)
         self.icons = HeroIcons(self)
         self.feed = FeedWin(self, "feed")
         self.march = MarchWin(self, "march")
         self.toast = Toast(self)
+        self.banner = Banner(self)
+        self.border = ScreenBorder(self)
         self._feed, self._marches, self._march_all, self._kp_today = [], [], {}, 0
         self._flash = ("", 0)
         self.build_ui()
         threading.Thread(target=self.scanner.loop, daemon=True).start()
         if self.cfg.get("token"):
             threading.Thread(target=self.refresh_me, daemon=True).start()
-        self.overlay.show(self.cfg["overlay"].get("show", True))
-        self.feed.show(self.cfg["overlay"].get("feed", True))
-        self.march.show(self.cfg["overlay"].get("march", False))
+        self._rok_up = rok_running(self.cfg.get("game_folders", [])) if self.cfg.get("rok_only") else True
+        on = self.ov_on()
+        self.overlay.show(on and self.cfg["overlay"].get("show", True))
+        self.feed.show(on and self.cfg["overlay"].get("feed", True))
+        self.march.show(on and self.cfg["overlay"].get("march", False))
         threading.Thread(target=hotkey_thread, args=(self,), daemon=True).start()
-        if self.cfg.get("start_min") and not START_LINK:
+        if self.cfg.get("rok_only") and not self._rok_up and not START_LINK:
+            self.root.withdraw()                           # wartet unsichtbar, bis Rise of Kingdoms startet
+            self._hidden_for_rok = True
+        elif self.cfg.get("start_min") and not START_LINK:
             self.root.iconify()
         register_protocol()
         threading.Thread(target=self.ipc_server, daemon=True).start()
@@ -2891,6 +4214,15 @@ class App:
         r = tk.Frame(c.body, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
         Btn(r, "📊  " + T("open_site"), self.open_site).pack(side="left")
         Btn(r, "🔗 " + T("tab_conn"), lambda: self.go("conn"), "ghost", small=True).pack(side="left", padx=px(8))
+        # --- Modus (Fight / Offseason) + Charakter
+        c = Card(body, "🎮 " + T("mode_title")); c.pack(fill="x", pady=(px(12), 0))
+        r = tk.Frame(c.body, bg=C["card"]); r.pack(fill="x")
+        Seg(r, [("fight", "⚔ " + T("mode_fight")), ("off", "🪓 " + T("mode_off"))], self.mode(), self.set_mode).pack(side="left")
+        va = tk.BooleanVar(value=bool(self.cfg.get("mode_auto")))
+        Toggle(r, T("mode_auto"), va, lambda: (self.cfg.__setitem__("mode_auto", va.get()), save_cfg(self.cfg))).pack(side="left", padx=(px(18), 0))
+        tk.Label(c.body, text=T("mode_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
+        self.focus_bar(c.body, C["card"]).pack(anchor="w", pady=(px(10), 0))
+        self.sound_master(body)
         # --- 3 kurze Zahlen
         tiles = tk.Frame(body, bg=C["bg"]); tiles.pack(fill="x", pady=(px(12), 0)); tl = []
         self.home = {}
@@ -2903,12 +4235,16 @@ class App:
         # --- Overlay schnell schalten
         c = Card(body, "🪟 " + T("h_quick")); c.pack(fill="x", pady=(px(12), 0))
         g = tk.Frame(c.body, bg=C["card"]); g.pack(fill="x")
-        for i, (key, lab) in enumerate((("show", "ov_show"), ("feed", "mod_feed"), ("toast", "mod_toast"), ("march", "mod_march"), ("clickthrough", "mod_click"))):
-            v = tk.BooleanVar(value=ov.get(key, key in ("show", "feed", "toast")))
-            cmd = (lambda v=v: self.set_clickthrough(v.get())) if key == "clickthrough" else \
-                  (lambda key=key, v=v: self.set_opt(key, v.get())) if key in ("show", "toast") else (lambda key=key, v=v: self.set_module(key, v.get()))
-            Toggle(g, T(lab), v, cmd).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(24)), pady=px(3))
-        tk.Label(c.body, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
+        on = ov.get("all_on", True)
+        vm = tk.BooleanVar(value=on)
+        Toggle(g, T("all_on"), vm, lambda: self.set_master(vm.get())).grid(row=0, column=0, sticky="w", padx=(0, px(24)), pady=px(3))
+        vc = tk.BooleanVar(value=ov.get("clickthrough", False))
+        Toggle(g, T("mod_click"), vc, lambda: self.set_clickthrough(vc.get())).grid(row=0, column=1, sticky="w", pady=px(3))
+        tk.Label(c.body, text=T("all_on_info") if on else T("all_off_info"), bg=C["card"], fg=C["good"] if on else C["bad"],
+                 font=(FONT, 9, "bold"), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
+        Btn(c.body, "🪟 " + T("ov_settings"), lambda: self.go("ov"), "ghost", small=True).pack(anchor="w", pady=(px(6), 0))
+        tk.Label(c.body, text="⌨ " + "  ·  ".join("%s %s" % (cmb, T(a + "_l")) for cmb, a in hotkey_list(self)), bg=C["card"], fg=C["dim"],
+                 font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
         self.update_home()
 
     def update_home(self):
@@ -3087,16 +4423,23 @@ class App:
 
     # ---------- Overlay-Module ----------
     def update_modules(self, ids, since, changed):
-        with self.scanner.lock:
-            bs = list(self.scanner.battles.values())
+        bs = self.scanner.battle_list()
         ov = self.cfg["overlay"]
         mr = ov.get("march_reset", "last")
         gap = 0
-        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"))
+        cards = recent_cards(bs, ids, int(ov.get("feed_n", 4)), not ov.get("feed_pve"), int(ov.get("feed_settle", 0)), ov.get("feed_merge", False),
+                             per_march=ov.get("feed_per_march", True), max_age=int(ov.get("feed_age", 900) or 0))
+        if ov.get("feed_more", True) and cards:            # Summe des Marsches im Zeitraum (KP, Trade, Acclaim) fuer den Feed
+            tot = march_stats(bs, ids, since, False, True)
+            for c in cards:
+                r = tot.get(tuple(c.get("h") or ()))
+                if r:
+                    c["tkp"], c["tacc"] = r["kp"], r["acc"]
+                    c["ttr"] = (r["en"] / r["own"]) if r["own"] else (None if not r["en"] else float("inf"))
         newest = cards[0] if cards else None
         old = self._feed[0]["id"] if self._feed else None
         self._feed = cards
-        if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and ov.get("toast", True):
+        if newest and old and newest["id"] != old and newest["t"] >= self.started - 60 and self.popup_on("battle"):
             hk = tuple(newest.get("h") or ())                    # Pop-up nach jedem neuen Bericht (gleicher Marsch hoechstens 1x pro Minute)
             last = getattr(self, "_toast_last", {})
             if time.time() - last.get(hk, 0) > 60:
@@ -3104,12 +4447,38 @@ class App:
                 self.toast.show(newest)
         ms = march_stats(bs, ids, since, mr == "last", ov.get("pvp_only", True))
         if mr == "last":                       # "zuletzt benutzt" trotzdem aus allen Berichten (fuer die Auto-Reihenfolge)
-            for k, v in march_stats(bs, ids, 0).items():
+            for k, v in pvp_last(bs, ids).items():
                 if k in ms:
-                    ms[k]["last"] = v["last"]
+                    ms[k]["last"] = max(ms[k]["last"], v)
         self._march_all = ms
-        auto = [k for k, _v in sorted(ms.items(), key=lambda kv: -kv[1]["last"])]
-        slots = (ov.get("march_slots") or [None] * 5)
+        day = datetime.combine(date.today(), datetime.min.time()).timestamp()
+        pve, self._chain_avg = pve_stats(bs, ids, 0, day)
+        for c in self._feed:                                 # Feed: Barbaren-Karte zeigt die Kette dieses Ausflugs
+            if not c["pvp"]:
+                c["chain"], c["clvl"] = pve_stats.chain_of.get(c["id"], (0, 0))
+        apd = pve_ap(bs, ids, day)                           # AP heute (gesamt + je Marsch) fuer AP-Waste und Barbaren-Ziel
+        with self.scanner.lock:
+            GATHER_REF["d"] = dict(self.scanner.gather)
+        self._gems_today = gather_sum(GATHER_REF["d"], ids, day).get("gems", 0)
+        self._barb_today = apd["kills"]
+        pl = pvp_last(bs, ids)
+        self._pve = pve
+        kind = ov.get("march_kind", "auto")
+        if kind == "pve":
+            auto = [k for k, _v in sorted(pve.items(), key=lambda kv: -kv[1]["last"])]
+        elif kind == "auto":
+            lastp = dict(pl)
+            for k, v in pve.items():
+                lastp[k] = max(lastp.get(k, 0), v["last"])
+            auto = [k for k, _v in sorted(lastp.items(), key=lambda kv: -kv[1])]
+        else:
+            auto = [k for k, _v in sorted(ms.items(), key=lambda kv: -kv[1]["last"])]
+        idle = int(ov.get("march_idle", 600) or 0)            # automatisch: Marsch ohne Kampf seit X Min. verschwindet, kommt beim naechsten Kampf wieder
+        if idle:
+            now_ = time.time()
+            act = lambda k: max(pl.get(tuple(k), 0), (pve.get(tuple(k)) or {}).get("last", 0), (ms.get(tuple(k)) or {}).get("last", 0))
+            auto = [k for k in auto if now_ - act(k) <= idle]
+        slots = (ov.get("march_slots") or [None] * 7)
         rows, used = [], set()
         n = int(ov.get("march_n", 4))
         for i in range(n):
@@ -3121,19 +4490,42 @@ class App:
                 continue                                   # leerer Platz bleibt stehen -> nichts rutscht hoch
             used.add(k)
             st = ms.get(tuple(k), {})
+            pv = pve.get(tuple(k))
+            is_pve = kind == "pve" or (kind == "auto" and pv and pv["last"] > pl.get(tuple(k), 0))
             rows.append({"k": tuple(k), "kp": st.get("kp", 0), "own": st.get("own", 0), "en": st.get("en", 0), "kills": st.get("kills", 0),
-                         "acc": st.get("acc", 0), "dead": st.get("dead", 0), "n": st.get("n", 0), "slot": n - i})
+                         "acc": st.get("acc", 0), "dead": st.get("dead", 0), "n": st.get("n", 0), "slot": n - i,
+                         "pve": bool(is_pve), "lvl": pv["lvl"] if pv else 0, "chain": pv["chain"] if pv else 0, "today": pv["today"] if pv else 0,
+                         "avg": pv["avg"] if pv else 0,
+                         "apw": (apd["per"].get(tuple(k)) or {}).get("waste", 0), "ap": (apd["per"].get(tuple(k)) or {}).get("ap", 0),
+                         "run_ap": (apd["per"].get(tuple(k)) or {}).get("run_ap", 0), "t0": (apd["per"].get(tuple(k)) or {}).get("t0", 0)})
         self._marches = rows
-        day = datetime.combine(date.today(), datetime.min.time()).timestamp()
+        self.update_exp(bs, ids)
         self._kp_today = kp_since(bs, ids, day)
+        self._acc_today = acc_since(bs, ids, day)
+        if changed:
+            self.root.after(50, lambda: self.auto_mode(bs, ids))
+
+    def update_exp(self, bs, ids):
+        """50 % Army Expansion erkennen: Truppen beim Start des neuesten Berichts (letzte 3 Std.) >= Grenze."""
+        ac = self.cfg["alerts"]
+        lim = int(ac.get("exp_limit", 400000))
+        last = max((b for b in bs if b.get("init") and (ids is None or b["pid"] in ids) and time.time() - b["t"] < 3 * 3600),
+                   key=lambda b: (b["t"], b.get("mt", 0)), default=None)
+        old = getattr(self, "_exp", None)
+        self._exp = (last["init"] >= lim, last["init"], last["t"]) if last else None
+        if old and self._exp and old[0] and not self._exp[0] and ac.get("exp_alert", True) and self._exp[2] >= self.started and self.mod_on("exp"):
+            self.overlay.add_alert({"icon": "🪖", "title": self.t("exp_gone").upper(), "sub": self.t("exp_troops", n=fmt_num(self._exp[1], self.cfg["lang"])),
+                                    "tone": "bad", "blink": True, "until": time.time() + 60 * float(ac.get("dur_army", ac.get("show_min", 10)))})
+            self.alert_sound("exp")
+            self.popup("exp", "🪖", self.t("exp_gone"), self.t("exp_troops", n=fmt_num(self._exp[1], self.cfg["lang"])))
 
     def set_module(self, key, on):
         self.cfg["overlay"][key] = on; save_cfg(self.cfg)
-        {"feed": self.feed, "march": self.march}.get(key, self.overlay).show(on)
+        {"feed": self.feed, "march": self.march}.get(key, self.overlay).show(on and self.ov_on())
 
     def set_march_slot(self, idx, k):
-        sl = self.cfg["overlay"].setdefault("march_slots", [None] * 5)
-        while len(sl) < 5:
+        sl = self.cfg["overlay"].setdefault("march_slots", [None] * 7)
+        while len(sl) < 7:
             sl.append(None)
         if k:                                           # gleicher Marsch nicht auf zwei Plaetzen
             for j in range(len(sl)):
@@ -3143,7 +4535,7 @@ class App:
         save_cfg(self.cfg); self._sig = None
         self.update_modules(getattr(self, "_ids_cur", None), getattr(self, "_since_cur", 0), True)
         self.march.draw(True)
-        if self.page == "ov" and getattr(self, "ov_sub", "") == "mods":
+        if self.page == "ov" and getattr(self, "ov_sub", "") == "march":
             self.render()
 
     def march_details(self, k):
@@ -3156,11 +4548,13 @@ class App:
         bs.sort(key=lambda b: (b["t"], b.get("mt", 0)))
         day = datetime.combine(date.today(), datetime.min.time()).timestamp()
         order = {}                                       # Hauptbericht -> Bericht-Nr. (wie im Spiel: Teil-Berichte gehoeren dazu)
+        sid = streak_ids(bs)
+        gk = lambda b: sid.get(b["id"]) or b.get("par") or b["id"]
         for b in bs:
-            order.setdefault(b.get("par") or b["id"], len(order) + 1)
+            order.setdefault(gk(b), len(order) + 1)
         rows = []
         for b in bs:
-            g = order[b.get("par") or b["id"]]
+            g = order[gk(b)]
             kp_all = sum(f[1] for f in b["fights"]); kp_pvp = sum(f[1] for f in b["fights"] if f[0])
             en = next((f[10] for f in b["fights"] if f[10]), "") or ("NPC" if b["fights"] else "–")
             rows.append((b, g, kp_all, kp_pvp, en))
@@ -3177,6 +4571,12 @@ class App:
         kr = tk.Frame(w, bg=C["bg"]); kr.pack(fill="x", padx=px(18))
         for lab, v, col in ((T("md_fight"), tot_g, C["gold"]), (T("md_today"), tot_day, None), (T("md_all"), tot_all, None), (T("md_reports"), len(rows), None)):
             kpi(kr, lab, fmt_num(v, lang) if lab != T("md_reports") else str(v), value_col=col).pack(side="left", padx=(0, px(8)))
+        cur_parts = [r for r in rows if r[1] == last_g]
+        cmax = max((r[0].get("cno") or 0 for r in cur_parts), default=0)
+        if cmax:
+            ok_ = len(cur_parts) >= cmax
+            tk.Label(w, text=T("md_parts", h=len(cur_parts), n=cmax) + ("" if ok_ else "  " + T("md_parts_miss")), bg=C["bg"],
+                     fg=C["good"] if ok_ else "#fb923c", font=(FONT, 9, "bold"), wraplength=px(680), justify="left").pack(anchor="w", padx=px(18), pady=(px(6), 0))
         tk.Label(w, text=T("md_info"), bg=C["bg"], fg=C["dim"], font=(FONT, 9), wraplength=px(680), justify="left").pack(anchor="w", padx=px(18), pady=(px(8), px(4)))
         sc = Scroll(w, C["bg"]); sc.pack(fill="both", expand=True, padx=(px(18), px(6)), pady=(0, px(6)))
         lines = ["%s | %s" % (self.pair_name(k), APP_VERSION), "Zeit | Gefecht | KP gesamt | KP PvP | Kaempfe | Gegner | ID"]
@@ -3193,6 +4593,26 @@ class App:
             lines.append("%s | %d | %d | %d | %d | %s | %s" % (datetime.fromtimestamp(b["t"]).strftime("%d.%m. %H:%M:%S"), gi, ka, kpv, len(b["fights"]), en, b["id"]))
         bt = tk.Frame(w, bg=C["bg"]); bt.pack(fill="x", padx=px(18), pady=(0, px(12)))
         Btn(bt, "📋 " + T("md_copy"), lambda: self.copy_text("\n".join(lines)), small=True).pack(side="left")
+        Btn(bt, "📤 " + T("md_export"), lambda: self.export_reports(bs[-15:]), "ghost", small=True).pack(side="left", padx=(px(8), 0))
+
+    def export_reports(self, bs):
+        """Die neuesten Berichte dieses Marsches komplett (entschluesselt) als Datei – damit Claude die echten Felder sieht."""
+        out = {"app": APP_VERSION, "mails": []}
+        for b in bs:
+            try:
+                m = read_mail(b["file"])
+                out["mails"].append({"file": os.path.basename(b["file"]), "summary": {k: b.get(k) for k in ("id", "par", "t", "mt", "h", "init", "rem")}, "mail": m})
+            except Exception as e:
+                out["mails"].append({"file": b.get("file"), "error": str(e)})
+        fn = os.path.join(DATA, "bericht_export.json")
+        with open(fn, "w", encoding="utf-8") as f:
+            json.dump(out, f, ensure_ascii=False, indent=1, default=str)
+        self.flash("📤 " + fn)
+        try:
+            if IS_WIN:
+                os.startfile(DATA)
+        except Exception:
+            pass
 
     def pair_name(self, k):
         return "%s + %s" % (self.hero_name(k[0]), self.hero_name(k[1])) if k else "⚡ " + self.t("march_auto")
@@ -3218,10 +4638,7 @@ class App:
     def hotkey(self, act):
         ov = self.cfg["overlay"]
         if act == "hk_overlay":
-            on = not ov.get("show", True)
-            ov["show"] = on; save_cfg(self.cfg)
-            self.overlay.show(on)
-            self.feed.show(on and ov.get("feed", True)); self.march.show(on and ov.get("march", False))
+            self.set_master(not ov.get("all_on", True))
         elif act == "hk_reset":
             self.reset_session(); self.flash(self.t("ov_reset"))
         elif act == "hk_click":
@@ -3254,23 +4671,40 @@ class App:
         if self.page in ("ov", "home"):
             self.render()
 
-    def focus_bar(self, parent, bg):
-        """Chips: Automatisch (aktiver Account) · Alle · einzelne Accounts."""
-        T, f = self.t, str(self.cfg["overlay"].get("focus", "auto"))
-        bar = tk.Frame(parent, bg=bg)
-        tk.Label(bar, text=T("acc_focus"), bg=bg, fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
+    def main_gid(self):
+        ln = next((x for x in self.cfg.get("links", []) if x.get("kind") == "main"), None)
+        return str(ln["governor_id"]) if ln else (str(self.cfg.get("profile_gov")) if self.cfg.get("profile_gov") else None)
+
+    def acc_items(self):
+        """Auswahl fuer das Aufklappfeld: Main, Automatisch, Alle, dann alle Accounts (gebunden + gesehen)."""
+        T = self.t
         act = self.scanner.active[0]
-        Chip(bar, "⚡ " + T("f_auto") + (" · " + self.acc_name(act) if act else ""), f == "auto", lambda: self.set_focus("auto")).pack(side="left", padx=(0, px(5)))
-        Chip(bar, T("f_all"), f == "all", lambda: self.set_focus("all")).pack(side="left", padx=(0, px(5)))
+        items = [("auto", "⚡ " + T("f_auto") + (" · " + self.acc_name(act) if act else "")), ("all", "👥 " + T("f_all"))]
         ids = []
+        mg = self.main_gid()
+        if mg:
+            ids.append(mg)
         for x in self.cfg.get("links", []):
             if str(x["governor_id"]) not in ids:
                 ids.append(str(x["governor_id"]))
         for pid in sorted(self.scanner.owners, key=lambda p: -self.scanner.owners[p].get("last", 0)):
             if str(pid) not in ids:
                 ids.append(str(pid))
-        for gid in ids[:8]:
-            Chip(bar, self.acc_name(gid), f == gid, lambda gid=gid: self.set_focus(gid)).pack(side="left", padx=(0, px(5)))
+        kinds = {str(x["governor_id"]): x.get("kind") for x in self.cfg.get("links", [])}
+        ico = {"main": "⭐", "alt": "🌾", "pilot": "🎮"}
+        items[:0] = []
+        for gid in ids:
+            items.append((gid, "%s %s" % (ico.get(kinds.get(gid) or ("main" if gid == mg else ""), "👤"), self.acc_name(gid))))
+        return items
+
+    def focus_bar(self, parent, bg):
+        """Aufklappfeld: welcher Charakter wird gezaehlt (Standard: Main)."""
+        T, f = self.t, str(self.cfg["overlay"].get("focus", "auto"))
+        bar = tk.Frame(parent, bg=bg)
+        tk.Label(bar, text=T("acc_focus"), bg=bg, fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
+        items = self.acc_items()
+        cur = next((t for v, t in items if str(v) == f), f)
+        DropDown(bar, cur, items, f, self.set_focus).pack(side="left")
         return bar
 
     def hero_name(self, hid):
@@ -3304,8 +4738,12 @@ class App:
         T, mc = self.t, self.cfg["markers"]
         sub = getattr(self, "mk_sub", "list")
         tabs = tk.Frame(body, bg=C["bg"]); tabs.pack(fill="x", pady=(0, px(10)))
-        Seg(tabs, [("list", T("al_tab_list")), ("runes", T("al_tab_runes")), ("set", T("al_tab_set")), ("lead", T("al_tab_lead"))], sub,
+        Seg(tabs, [("list", T("al_tab_list")), ("runes", T("al_tab_runes")), ("set", T("al_tab_set")), ("snd", "🔊 " + T("al_tab_snd")), ("lead", T("al_tab_lead"))], sub,
             lambda v: (setattr(self, "mk_sub", v), self.render())).pack(side="left")
+        if sub == "snd":
+            sc = Scroll(body, C["bg"]); sc.pack(fill="both", expand=True)
+            self.page_sounds(sc.inner)
+            return
         if sub == "set":
             sc = Scroll(body, C["bg"]); sc.pack(fill="both", expand=True)
             self.page_alarm_settings(sc.inner)
@@ -3331,121 +4769,328 @@ class App:
         self._mk_sig = None
         self.refresh_markers(True)
 
-    def sound_chips(self, parent, cur, cb):
-        """Ton-Auswahl als Chips + ▶ zum Anhoeren."""
-        row = tk.Frame(parent, bg=C["card"])
+    def sound_chips(self, parent, cur, cb, vol=None, per_row=7, dur=None):
+        """Ton-Auswahl: eingebaute Toene als Knoepfe + eigene Toene im Aufklappfeld (scrollbar) + „📁 Neu …“.
+        Klick = auswaehlen + anhoeren. Eigene Toene bleiben fest in der Liste."""
+        bg = bg_of(parent)
+        box = tk.Frame(parent, bg=bg)
         chips = {}
+        own = sound_lib()
+        curb = os.path.basename(str(cur)[5:]).lower() if str(cur).startswith("file:") else None
+        V = lambda: vol() if vol else self.cfg["alerts"].get("volume", 80)
 
         def pick(n):
             for k, ch in chips.items():
                 ch.set(k == n)
-            cb(n); play_sound(n, self.cfg["alerts"].get("volume", 80))
+            dd.set(str(n).startswith("file:"))
+            dd.text = ("🎵 " + os.path.splitext(n[5:])[0][:22] + "  ▾") if str(n).startswith("file:") else ("🎵 " + self.t("snd_ownlist", n=len(own)) + "  ▾")
+            dd._st = None; dd.draw()
+            cb(n); play_sound(n, V(), dur() if dur else 0)
+        r1 = tk.Frame(box, bg=bg); r1.pack(anchor="w")
         for n in SOUNDS:
-            ch = Chip(row, self.t("snd_" + n), n == cur, lambda n=n: pick(n)); ch.pack(side="left", padx=(0, px(4)), pady=px(2))
+            ch = Chip(r1, self.t("snd_" + n), n == cur, lambda n=n: pick(n)); ch.pack(side="left", padx=(0, px(4)), pady=px(2))
             chips[n] = ch
-        return row
+        r2 = tk.Frame(box, bg=bg); r2.pack(anchor="w")
+        items = [("file:" + f, "🎵 " + os.path.splitext(f)[0]) for f, _p in own]
+        cur_own = next((v for v, _t in items if curb and v[5:].lower() == curb), None)
+        dd = DropDown(r2, ("🎵 " + os.path.splitext(cur_own[5:])[0][:22]) if cur_own else ("🎵 " + self.t("snd_ownlist", n=len(own))), items, cur_own or "", pick)
+        dd.configure(width=px(250)); dd.set(bool(cur_own)); dd.pack(side="left", padx=(0, px(4)), pady=px(2))
+        if not items:
+            dd.unbind("<Button-1>")
 
-    def page_alarm_settings(self, body):
-        T, mc, ac = self.t, self.cfg["markers"], self.cfg["alerts"]
-        rules = mc.setdefault("rules", [])
-        # --- Marker-Regeln
-        o, c = card(body, "📍 " + T("al_rules")); o.pack(fill="x")
-        tk.Label(c, text=T("al_rules_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
-        self.rule_vars = []
-        ri = rune_idx(rules)
-        for i, r in enumerate(rules[:4]):
-            box = tk.Frame(c, bg=C["card2"], padx=px(10), pady=px(8)); box.pack(fill="x", pady=px(4))
-            top = tk.Frame(box, bg=C["card2"]); top.pack(fill="x")
-            tk.Label(top, text="🎯" if i == 0 else ("🔷" if i == ri else "📍"), bg=C["card2"], fg=C["text"], font=(FONT, 12)).pack(side="left")
-            vn, vw = tk.StringVar(value=r.get("name", "")), tk.StringVar(value=r.get("words", ""))
-            en = entry(top, vn, 10); en.pack(side="left", padx=px(6))
-            tk.Label(top, text=T("al_words"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(px(6), px(4)))
-            ew = entry(top, vw, 30); ew.pack(side="left", fill="x", expand=True)
-            for e_ in (en, ew):
-                e_.bind("<FocusOut>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
-                e_.bind("<Return>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
-            sr = tk.Frame(box, bg=C["card2"]); sr.pack(fill="x", pady=(px(6), 0))
-            tk.Label(sr, text="🔊", bg=C["card2"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-            sc_ = self.sound_chips(sr, r.get("sound", "ding"), lambda n, i=i: self.set_rule(i, sound=n)); sc_.configure(bg=C["card2"]); sc_.pack(side="left")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text="📍 " + T("al_other"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, mc.get("other_sound", "ding"), lambda n: self.set_mk("other_sound", n)).pack(side="left")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        for i, (key, lab) in enumerate((("sound", "mk_sound"), ("overlay", "mk_overlay"), ("alarm_all", "mk_all_alarm"))):
-            v = tk.BooleanVar(value=mc.get(key, False))
-            Toggle(r, T(lab), v, lambda key=key, v=v: self.set_mk(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text=T("mk_keep"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        kl = tk.Label(r, text=str(mc.get("keep_ball", 5)), bg=C["card"], fg=C["text"], font=(FONT, 10, "bold"), width=3)
-        def kstep(d):
-            n = max(1, min(20, int(self.cfg["markers"].get("keep_ball", 5)) + d)); kl.configure(text=str(n))
-            self.set_mk("keep_ball", n); self.scanner.prune_markers()
-        Btn(r, "−", lambda: kstep(-1), "ghost", small=True).pack(side="left"); kl.pack(side="left"); Btn(r, "+", lambda: kstep(1), "ghost", small=True).pack(side="left")
-        tk.Label(r, text="  ·  " + T("mk_ttl"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
+        def new():
+            p = filedialog.askopenfilename(title=self.t("snd_own"), filetypes=[(self.t("snd_files"), "*.wav *.mp3"), ("*", "*.*")])
+            if not p:
+                return
+            try:                                                 # Kopie in den App-Ordner -> bleibt fest in der Liste
+                d = os.path.join(DATA, "sounds"); os.makedirs(d, exist_ok=True)
+                dst = os.path.join(d, os.path.basename(p))
+                if os.path.abspath(p) != os.path.abspath(dst):
+                    shutil.copyfile(p, dst)
+            except Exception as e:
+                log("sound copy: %s" % e)
+            cb("file:" + os.path.basename(p)); play_sound("file:" + os.path.basename(p), V())
+            self.render()
+        Chip(r2, "📁 " + self.t("snd_new"), False, new).pack(side="left", padx=(0, px(4)), pady=px(2))
+        return box
 
-        # --- Dein Name im Marker
-        o, c = card(body, "📣 " + T("al_names")); o.pack(fill="x", pady=(px(12), 0))
-        tk.Label(c, text=T("al_names_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+    def sound_master(self, parent):
+        """Haupt-Schalter (Ton an/aus) + Haupt-Lautstaerke fuer ALLE Toene."""
+        T, ac = self.t, self.cfg["alerts"]
+        o, c = card(parent, "🔊 " + T("snd_master")); o.pack(fill="x", pady=(px(12), 0))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        vn = tk.StringVar(value=mc.get("my_names", ""))
-        en_ = entry(r, vn, 30); en_.pack(side="left")
-        en_.bind("<FocusOut>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
-        en_.bind("<Return>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
-        tk.Label(c, text=T("al_names_auto", n=", ".join(self.my_names()) or "–"), bg=C["card"], fg=C["muted"], font=(FONT, 8),
-                 wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, mc.get("mention_sound", "sirene"), lambda n: self.set_mk("mention_sound", n)).pack(side="left")
+        vs = tk.BooleanVar(value=ac.get("sound_on", True))
 
-        # --- Buffs
-        o, c = card(body, "⏳ " + T("al_buffs")); o.pack(fill="x", pady=(px(12), 0))
-        tk.Label(c, text=T("al_buffs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
-        for i, (key, lab) in enumerate((("buff_army", "bf_army"), ("buff_attack", "bf_attack"), ("buff_def", "bf_def"), ("buff_shield", "bf_shield"))):
-            v = tk.BooleanVar(value=ac.get(key, False))
-            Toggle(r, T(lab), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+        def onoff():
+            ac["sound_on"] = vs.get(); SOUND_MASTER["on"] = vs.get(); save_cfg(self.cfg)
+        Toggle(r, T("snd_on"), vs, onoff).pack(side="left")
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
-        tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, ac.get("buff_sound", "sirene"), lambda n: self.set_al("buff_sound", n)).pack(side="left")
+        tk.Label(r, text="🔉 " + T("snd_mvol"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
 
-        # --- Gebaeude / Flaggen
-        o, c = card(body, "🏰 " + T("al_bld")); o.pack(fill="x", pady=(px(12), 0))
-        v = tk.BooleanVar(value=ac.get("bld", True))
-        Toggle(c, T("al_bld_on"), v, lambda: self.set_al("bld", v.get())).pack(anchor="w")
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text=T("al_bld_filter"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        vf = tk.StringVar(value=ac.get("bld_filter", ""))
-        ef = entry(r, vf, 22); ef.pack(side="left")
-        ef.bind("<FocusOut>", lambda _e: self.set_al("bld_filter", vf.get())); ef.bind("<Return>", lambda _e: self.set_al("bld_filter", vf.get()))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        for lab, val in ((T("bld_all"), ""), ("Pass 7", "7 Pass"), ("Pass 7 + Altar", "7 Pass, Altar"), ("Kingsland", "Kingsland, Ziggurat")):
-            Chip(r, lab, ac.get("bld_filter", "") == val, lambda val=val: (self.set_al("bld_filter", val), self.render())).pack(side="left", padx=(0, px(4)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
-        tk.Label(r, text="🔊", bg=C["card"], fg=C["muted"], font=(FONT, 10)).pack(side="left", padx=(0, px(6)))
-        self.sound_chips(r, ac.get("bld_sound", "glocke"), lambda n: self.set_al("bld_sound", n)).pack(side="left")
+        def mv(v, save):
+            ac["master_vol"] = int(v); SOUND_MASTER["vol"] = int(v)
+            if save:
+                save_cfg(self.cfg); play_sound("ding", 80)
+        Slider(r, float(ac.get("master_vol", 100)), 0, 100, lambda v: mv(v, False), lambda v: mv(v, True), width=300,
+               fmt=lambda v: "%d %%" % v).pack(side="left")
 
-        # --- Allgemein + Test
-        o, c = card(body, "🧪 " + T("al_test")); o.pack(fill="x", pady=(px(12), 0))
+    def snd_hint(self, c):
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        Btn(r, "🔊 " + self.t("snd_goto"), lambda: (setattr(self, "mk_sub", "snd"), self.render()), "ghost", small=True).pack(side="left")
+
+    # ---------- Sounds: ein Ton je Alarm ----------
+    def snd_get(self, key):
+        """(Ton, Lautstaerke, Dauer) fuer einen Alarm – neu je Alarm, sonst alter gemeinsamer Ton."""
+        sc = self.cfg.setdefault("sounds", {}).get(key) or {}
+        ac, mc = self.cfg["alerts"], self.cfg["markers"]
+        meta = next((it for _g, its in SND_GROUPS for it in its if it[0] == key), None)
+        dflt = meta[3] if meta else "ding"
+        if "s" not in sc and meta and meta[4]:
+            w, k2 = meta[4]
+            dflt = (mc if w == "m" else ac).get(k2, dflt)
+        if "s" not in sc and key in ("army", "attack", "def", "shield", "exp"):   # Standard bei „Buff abgelaufen“
+            hit = next((f for f, _p in sound_lib() if f.lower().startswith("ah-shit-here-we-go-again")), None)
+            if hit:
+                dflt = "file:" + hit
+        return sc.get("s", dflt), int(sc.get("v", ac.get("volume", 80))), float(sc.get("d", 0) or 0)
+
+    def snd_set(self, key, **kw):
+        self.cfg.setdefault("sounds", {}).setdefault(key, {}).update(kw); save_cfg(self.cfg)
+
+    def alert_sound(self, key):
+        n, v, d = self.snd_get(key)
+        play_sound(n, v, d)
+
+    def page_sounds(self, body):
+        """Eigener Reiter: fuer JEDEN Alarm Ton, Lautstaerke und Dauer – sortiert nach Marker, Buffs, Nachrichten, Gebaeude, Kampf."""
+        T, ac, mc = self.t, self.cfg["alerts"], self.cfg["markers"]
+        self.sound_master(body)
+        o, c = card(body, "🔊 " + T("snd_title")); o.pack(fill="x", pady=(px(12), 0))
+        tk.Label(c, text=T("snd_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(660), justify="left").pack(anchor="w", pady=(0, px(6)))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
         tk.Label(r, text=T("al_volume"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
         self.vol_chips = {}
         for vv in (30, 60, 80, 100):
             ch = Chip(r, "%d%%" % vv, int(ac.get("volume", 80)) == vv, lambda vv=vv: self.set_volume(vv)); ch.pack(side="left", padx=(0, px(4)))
             self.vol_chips[vv] = ch
-        tk.Label(r, text="   " + T("al_show"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
-        self.show_chips = {}
-        for mm in (1, 5, 10, 30):
-            ch = Chip(r, "%d min" % mm, int(ac.get("show_min", 10)) == mm, lambda mm=mm: self.set_show_min(mm)); ch.pack(side="left", padx=(0, px(4)))
-            self.show_chips[mm] = ch
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
-        Btn(r, "🎯 " + T("t_ball"), lambda: self.test_alert("ball"), small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "📍 " + T("t_marker"), lambda: self.test_alert("marker"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "⏳ " + T("t_buff"), lambda: self.test_alert("buff"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "🏰 " + T("t_bld"), lambda: self.test_alert("bld"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        Btn(r, "📣 " + T("t_name"), lambda: self.test_alert("name"), "ghost", small=True).pack(side="left", padx=(0, px(6)))
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
-        Btn(r, "💾 " + T("mk_export"), self.export_samples, "ghost", small=True).pack(side="left")
-        tk.Label(r, text="  " + T("mk_export_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
+        tk.Label(c, text="📁 " + T("snd_folder", p=os.path.join(DATA, "sounds")), bg=C["card"], fg=C["dim"], font=(FONT, 8),
+                 wraplength=px(660), justify="left").pack(anchor="w", pady=(px(6), 0))
+
+        def row(parent, icon, label, cur, vol, dur, on_s, on_v, on_d, test):
+            box = tk.Frame(parent, bg=C["card2"], padx=px(10), pady=px(8)); box.pack(fill="x", pady=px(3))
+            top = tk.Frame(box, bg=C["card2"]); top.pack(fill="x")
+            tk.Label(top, text="%s  %s" % (icon, label), bg=C["card2"], fg=C["text"], font=(FONT, 10, "bold")).pack(side="left")
+            Btn(top, "▶ " + T("snd_play"), test, "ghost", small=True).pack(side="right")
+            self.sound_chips(box, cur, on_s, vol=lambda: int(vol()), dur=lambda: float(dur() or 0)).pack(anchor="w", pady=(px(6), 0))
+            vr = tk.Frame(box, bg=C["card2"]); vr.pack(fill="x", pady=(px(4), 0))
+            tk.Label(vr, text="🔈 " + T("mk_vol"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            Slider(vr, float(vol()), 0, 100, lambda v: None, on_v, width=170, fmt=lambda v: "%d %%" % v).pack(side="left", padx=(0, px(16)))
+            tk.Label(vr, text="⏱ " + T("mk_dur"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            Slider(vr, float(dur()), 0, 30, lambda v: None, on_d, width=150, fmt=lambda v: T("mk_once") if v < 1 else "%d s" % v).pack(side="left")
+
+        # Marker-Regeln (Ball, Runen …) – Ton steht in der Regel selbst
+        rules = mc.setdefault("rules", [])
+        for gk, items in SND_GROUPS:
+            o, c = card(body, T(gk)); o.pack(fill="x", pady=(px(12), 0))
+            if gk == "snd_g_marker":
+                ri = rune_idx(rules)
+                for i, rr in enumerate(rules[:4]):
+                    rule = lambda i=i: self.cfg["markers"]["rules"][i]
+                    row(c, "🎯" if i == 0 else ("🔷" if i == ri else "📍"), rr.get("name") or "Marker %d" % (i + 1), rr.get("sound", "ding"),
+                        lambda i=i: rule(i).get("vol", ac.get("volume", 80)), lambda i=i: rule(i).get("dur", 0),
+                        lambda n, i=i: self.set_rule(i, sound=n), lambda v, i=i: self.set_rule(i, vol=int(v)), lambda v, i=i: self.set_rule(i, dur=int(v)),
+                        lambda i=i: play_sound(rule(i).get("sound", "ding"), int(rule(i).get("vol", ac.get("volume", 80))), float(rule(i).get("dur", 0) or 0)))
+            for key, icon, lab, _d, _alt in items:
+                row(c, icon, T(lab), self.snd_get(key)[0], lambda key=key: self.snd_get(key)[1], lambda key=key: self.snd_get(key)[2],
+                    lambda n, key=key: self.snd_set(key, s=n), lambda v, key=key: self.snd_set(key, v=int(v)), lambda v, key=key: self.snd_set(key, d=int(v)),
+                    lambda key=key: self.alert_sound(key))
+
+    def page_alarm_settings(self, body):
+        T, mc, ac = self.t, self.cfg["markers"], self.cfg["alerts"]
+        rules = mc.setdefault("rules", [])
+        sec = getattr(self, "al_sec", "marker")
+        tabs = tk.Frame(body, bg=C["bg"]); tabs.pack(anchor="w", pady=(0, px(10)))      # 2 Zeilen -> nichts abgeschnitten
+        for grp in ((("marker", "📍 " + T("as_marker")), ("buffs", "⏳ " + T("as_buffs")), ("msgs", "✉ " + T("as_msgs"))),
+                    (("bld", "🏰 " + T("as_bld")), ("popups", "💬 " + T("as_popups")), ("test", "🔊 " + T("as_test")))):
+            Seg(tabs, list(grp), sec, lambda v: (setattr(self, "al_sec", v), self.render())).pack(anchor="w", pady=(0, px(6)))
+        if sec == "marker":
+            # --- Marker-Regeln
+            o, c = card(body, "📍 " + T("al_rules")); o.pack(fill="x")
+            tk.Label(c, text=T("al_rules_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
+            self.rule_vars = []
+            ri = rune_idx(rules)
+            for i, r in enumerate(rules[:4]):
+                box = tk.Frame(c, bg=C["card2"], padx=px(10), pady=px(8)); box.pack(fill="x", pady=px(4))
+                top = tk.Frame(box, bg=C["card2"]); top.pack(fill="x")
+                tk.Label(top, text="🎯" if i == 0 else ("🔷" if i == ri else "📍"), bg=C["card2"], fg=C["text"], font=(FONT, 12)).pack(side="left")
+                vn, vw = tk.StringVar(value=r.get("name", "")), tk.StringVar(value=r.get("words", ""))
+                en = entry(top, vn, 10); en.pack(side="left", padx=px(6))
+                tk.Label(top, text=T("al_words"), bg=C["card2"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(px(6), px(4)))
+                ew = entry(top, vw, 30); ew.pack(side="left", fill="x", expand=True)
+                for e_ in (en, ew):
+                    e_.bind("<FocusOut>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
+                    e_.bind("<Return>", lambda _e, i=i, vn=vn, vw=vw: self.set_rule(i, name=vn.get(), words=vw.get()))
+            self.snd_hint(c)
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            for i, (key, lab) in enumerate((("sound", "mk_sound"), ("overlay", "mk_overlay"), ("alarm_all", "mk_all_alarm"))):
+                v = tk.BooleanVar(value=mc.get(key, False))
+                Toggle(r, T(lab), v, lambda key=key, v=v: self.set_mk(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            tk.Label(r, text=T("mk_keep"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            kl = tk.Label(r, text=str(mc.get("keep_ball", 5)), bg=C["card"], fg=C["text"], font=(FONT, 10, "bold"), width=3)
+            def kstep(d):
+                n = max(1, min(20, int(self.cfg["markers"].get("keep_ball", 5)) + d)); kl.configure(text=str(n))
+                self.set_mk("keep_ball", n); self.scanner.prune_markers()
+            Btn(r, "−", lambda: kstep(-1), "ghost", small=True).pack(side="left"); kl.pack(side="left"); Btn(r, "+", lambda: kstep(1), "ghost", small=True).pack(side="left")
+            tk.Label(r, text="  ·  " + T("mk_ttl"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
+
+        if sec == "marker":
+            # --- Dein Name im Marker
+            o, c = card(body, "📣 " + T("al_names")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("al_names_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            vn = tk.StringVar(value=mc.get("my_names", ""))
+            en_ = entry(r, vn, 30); en_.pack(side="left")
+            en_.bind("<FocusOut>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
+            en_.bind("<Return>", lambda _e: (self.set_mk("my_names", vn.get()), self.render()))
+            tk.Label(c, text=T("al_names_auto", n=", ".join(self.my_names()) or "–"), bg=C["card"], fg=C["muted"], font=(FONT, 8),
+                     wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
+            self.snd_hint(c)
+
+        if sec == "buffs":
+            # --- Buffs
+            o, c = card(body, "⏳ " + T("al_buffs")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("al_buffs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            for i, (key, lab) in enumerate((("buff_army", "bf_army"), ("buff_attack", "bf_attack"), ("buff_def", "bf_def"), ("buff_shield", "bf_shield"))):
+                v = tk.BooleanVar(value=ac.get(key, False))
+                Toggle(r, T(lab), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+            self.snd_hint(c)
+
+            # 50 % Expansion aus den Kampfberichten
+            tk.Label(c, text="🪖 " + T("exp_title"), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold")).pack(anchor="w", pady=(px(12), px(2)))
+            tk.Label(c, text=T("exp_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(4), 0))
+            for i, (key, lab) in enumerate((("exp_show", "exp_show"), ("exp_alert", "exp_alert"))):
+                v = tk.BooleanVar(value=ac.get(key, True))
+                Toggle(r, T(lab), v, lambda key=key, v=v: (self.set_al(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw())
+                       ).grid(row=0, column=i, sticky="w", padx=(0, px(18)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            tk.Label(r, text=T("exp_limit"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            ve = tk.StringVar(value=str(int(ac.get("exp_limit", 400000)) // 1000))
+            ee = entry(r, ve, 6, center=True); ee.pack(side="left")
+            tk.Label(r, text="K", bg=C["card"], fg=C["dim"], font=(FONT, 9)).pack(side="left", padx=(px(4), px(12)))
+
+            def set_lim(_e=None):
+                try:
+                    self.set_al("exp_limit", int(float(ve.get().replace(",", ".")) * 1000))
+                    self._sig = None
+                except ValueError:
+                    pass
+            ee.bind("<Return>", set_lim); ee.bind("<FocusOut>", set_lim)
+            ex = getattr(self, "_exp", None)
+            tk.Label(r, text=(T("exp_now_on") if ex[0] else T("exp_now_off")) % fmt_num(ex[1], self.cfg["lang"]) if ex else T("exp_none"),
+                     bg=C["card"], fg=(C["good"] if ex and ex[0] else C["bad"]) if ex else C["dim"], font=(FONT, 9, "bold")).pack(side="left")
+            # Kingdom-Buff (z. B. Healing First) – Timer im Overlay unter "50 % aktiv"
+            tk.Label(c, text="💚 " + T("kb_title"), bg=C["card"], fg=C["gold"], font=(FONT, 10, "bold")).pack(anchor="w", pady=(px(14), px(2)))
+            tk.Label(c, text=T("kb_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(4), 0))
+            vk = tk.BooleanVar(value=ac.get("kbuff_show", True))
+            Toggle(r, T("kb_show"), vk, lambda: (self.set_al("kbuff_show", vk.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw())).pack(side="left")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            tk.Label(r, text=T("kb_manual"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+
+            def kb_start(h):
+                man = ac.setdefault("kbuff_manual", {})
+                man.clear()
+                if h:
+                    man["Healing First"] = time.time() + h * 3600
+                save_cfg(self.cfg); self.overlay._drawn = None; self.overlay.draw(); self.render()
+            Btn(r, "▶ 4 h", lambda: kb_start(4), "ghost", small=True).pack(side="left", padx=(0, px(4)))
+            Btn(r, "■ " + T("kb_stop"), lambda: kb_start(0), "ghost", small=True).pack(side="left", padx=(0, px(10)))
+            act = self.kbuff_active()
+            tk.Label(r, text=" · ".join("%s %s" % (n, self.kb_left(u)) for n, u in act) if act else T("kb_none"),
+                     bg=C["card"], fg=C["good"] if act else C["dim"], font=(FONT, 9, "bold")).pack(side="left")
+
+        if sec == "popups":
+            # --- Pop-ups: was soll als Pop-up kommen?
+            o, c = card(body, "💬 " + T("pp_title")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("pp_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
+            tk.Label(g, text=T("pp_color"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).grid(row=0, column=1, sticky="w")
+            pc = self.cfg.get("popups_col") or {}
+            for i, (k, icon, _d) in enumerate(self.POPUPS):
+                v = tk.BooleanVar(value=self.popup_on(k))
+                Toggle(g, "%s  %s" % (icon, T("pp_" + k)), v, lambda k=k, v=v: self.set_popup(k, v.get())).grid(row=i + 1, column=0, sticky="w", padx=(0, px(18)), pady=px(2))
+                ColorDots(g, pc.get(k, ""), lambda col, k=k: self.set_popup_col(k, col)).grid(row=i + 1, column=1, sticky="w")
+                Btn(g, "▶", lambda k=k: self.test_popups(only=k), "ghost", small=True).grid(row=i + 1, column=2, sticky="w", padx=(px(8), 0))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+            Btn(r, "✥ " + T("toast_place"), self.toast.place_mode, "ghost", small=True).pack(side="left")
+            Btn(r, "▶ " + T("pp_test"), self.test_popups, "ghost", small=True).pack(side="left", padx=(px(8), 0))
+
+        if sec == "msgs":
+            # --- Nachrichten: gespaeht, Lost Kingdom, Lazarett
+            o, c = card(body, "✉ " + T("al_msgs")); o.pack(fill="x", pady=(px(12), 0))
+            tk.Label(c, text=T("al_msgs_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            for i, key in enumerate(("msg_scout", "msg_rank", "msg_hosp70", "msg_hosp85", "msg_hospdead")):
+                v = tk.BooleanVar(value=ac.get(key, True))
+                Toggle(r, T(key), v, lambda key=key, v=v: self.set_al(key, v.get())).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(18)), pady=px(2))
+            self.snd_hint(c)
+
+        if sec == "bld":
+            # --- Gebaeude / Flaggen
+            o, c = card(body, "🏰 " + T("al_bld")); o.pack(fill="x", pady=(px(12), 0))
+            v = tk.BooleanVar(value=ac.get("bld", True))
+            Toggle(c, T("al_bld_on"), v, lambda: self.set_al("bld", v.get())).pack(anchor="w")
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            tk.Label(r, text=T("al_bld_filter"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            vf = tk.StringVar(value=ac.get("bld_filter", ""))
+            ef = entry(r, vf, 22); ef.pack(side="left")
+            ef.bind("<FocusOut>", lambda _e: self.set_al("bld_filter", vf.get())); ef.bind("<Return>", lambda _e: self.set_al("bld_filter", vf.get()))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+            for lab, val in ((T("bld_all"), ""), ("Pass 7", "7 Pass"), ("Pass 7 + Altar", "7 Pass, Altar"), ("Kingsland", "Kingsland, Ziggurat")):
+                Chip(r, lab, ac.get("bld_filter", "") == val, lambda val=val: (self.set_al("bld_filter", val), self.render())).pack(side="left", padx=(0, px(4)))
+            self.snd_hint(c)
+
+        if sec == "test":
+            # --- Allgemein + Test
+            o, c = card(body, "🧪 " + T("al_test")); o.pack(fill="x", pady=(px(12), 0))
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x")
+            tk.Label(r, text=T("al_volume"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+            self.vol_chips = {}
+            for vv in (30, 60, 80, 100):
+                ch = Chip(r, "%d%%" % vv, int(ac.get("volume", 80)) == vv, lambda vv=vv: self.set_volume(vv)); ch.pack(side="left", padx=(0, px(4)))
+                self.vol_chips[vv] = ch
+            self.show_chips = {}
+            for key, lab in (("dur_army", "al_dur_army"), ("show_min", "al_dur_other")):
+                r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+                tk.Label(r, text="⏱ " + T(lab), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=22, anchor="w").pack(side="left", padx=(0, px(6)))
+                cur = int(ac.get(key, ac.get("show_min", 10)))
+                chs = {}
+                for mm in (1, 2, 3, 5, 10, 30):
+                    ch = Chip(r, "%d min" % mm, cur == mm, lambda mm=mm, key=key, chs=chs: (self.set_al(key, mm), [x.set(k2 == mm) for k2, x in chs.items()]))
+                    ch.pack(side="left", padx=(0, px(4))); chs[mm] = ch
+            # Pop-up-Dauer (Standard 5 s)
+            self.al_slider(c, "💬 " + T("pop_dur"), "pop_dur", 1, 20, 5, "s")
+            # Test-Knoepfe: der zuletzt geklickte wird orange, Ton kommt immer
+            tk.Label(c, text=T("t_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w", pady=(px(10), 0))
+            tchips = {}
+
+            def run_t(k):
+                for k2, ch in tchips.items():
+                    ch.set(k2 == k)
+                self.test_alert(k)
+            for grp in ((("🎯", "ball"), ("📍", "marker"), ("⏳", "buff"), ("🏰", "bld"), ("📣", "name")),
+                        (("🪖", "army"), ("🔭", "scout"), ("⚔", "battle"), ("🏆", "rank"), ("💚", "kbuff")),
+                        (("🏥", "hosp70"), ("⚠", "hosp85"), ("💀", "hospdead"), ("▶", "all"))):
+                r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+                for ico, k in grp:
+                    ch = Chip(r, ico + " " + T("t_" + k), False, lambda k=k: run_t(k)); ch.pack(side="left", padx=(0, px(6)))
+                    tchips[k] = ch
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(10), 0))
+            Btn(r, "💾 " + T("mk_export"), self.export_samples, "ghost", small=True).pack(side="left")
+            tk.Label(r, text="  " + T("mk_export_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(side="left")
 
     def rune_markers(self):
         rules = self.cfg["markers"].get("rules", [])
@@ -3533,6 +5178,31 @@ class App:
         if 0 <= i < len(rules):
             rules[i].update(kw); save_cfg(self.cfg)
             self.overlay._drawn = None
+
+    def set_popup(self, k, on):
+        if k == "battle":
+            self.cfg["overlay"]["toast"] = on
+        else:
+            self.cfg.setdefault("popups", {})[k] = on
+        save_cfg(self.cfg)
+
+    def set_popup_col(self, k, col):
+        self.cfg.setdefault("popups_col", {})[k] = col; save_cfg(self.cfg)
+
+    def test_popups(self, only=None):
+        T = self.t
+        demo = {"battle": None, "ball": ("🎯", "BALL 2  ·  X 612 · Y 845", "Pass 7", C["bad"]), "marker": ("📍", "RALLY  ·  X 540 · Y 700", "TEST", C["gold"]),
+                "mention": ("📣", T("mention_title"), "Mirox Rally Pass 7", "#fb923c"), "army": ("🪖", T("bf_ended", b=T("bf_army")).upper(), "TEST", C["bad"]),
+                "buff": ("⏳", T("bf_ended", b=T("bf_attack")).upper(), "TEST", C["bad"]), "exp": ("🪖", T("exp_gone"), T("exp_troops", n="276K"), C["bad"]),
+                "scout": ("🔭", T("ms_scout"), "TEST [ABC]Spion", C["bad"]), "hosp": ("🏥", T("ms_hosp", p=85), "TEST", C["bad"]),
+                "rank": ("🏆", T("ms_rank", t="S+"), "TEST", C["gold"]), "bld": ("🏰", T("bld_lost", n="Lvl 7 Pass"), "X 616 · Y 879", C["bad"])}
+        for k, _i, _d in self.POPUPS:
+            if (only == k) or (only is None and self.popup_on(k)):
+                if k == "battle":
+                    self.test_alert("battle")
+                else:
+                    ic, ti, su, co = demo[k]
+                    self.toast.show_msg(ic, ti, su, self.popup_col(k, co))
 
     def set_al(self, key, val):
         self.cfg["alerts"][key] = val; save_cfg(self.cfg)
@@ -3631,7 +5301,8 @@ class App:
         ac = self.cfg["alerts"]
         self.overlay.add_alert({"icon": "📣", "title": self.t("mention_title").upper(), "sub": (mk.get("text") or "")[:52],
                                 "tone": "orange", "blink": True, "xy": (mk["x"], mk["y"]) if mk.get("x") else None, "key": mk.get("key")})
-        play_sound(self.cfg["markers"].get("mention_sound", "sirene"), ac.get("volume", 80))
+        self.alert_sound("mention")
+        self.popup("mention", "📣", self.t("mention_title"), (mk.get("text") or "")[:50], "#fb923c")
         self._mention_until = time.time() + 120
         self._mention_text = mk.get("text") or ""
         if IS_WIN:                                       # Taskleisten-Knopf der App blinkt
@@ -3647,6 +5318,9 @@ class App:
 
     def alarm(self, mk, rule=None):
         mc = self.cfg["markers"]
+        if not self.mod_on("markers"):                  # in diesem Modus (z. B. PvE) keine Marker-Alarme
+            self.refresh_markers(True)
+            return
         rules = mc.get("rules", [])
         if rule is None:
             rule = marker_rule(mk, rules)
@@ -3669,22 +5343,75 @@ class App:
             self.overlay.add_alert({"icon": "🎯" if ball else "📍", "title": "%s  X %d · Y %d" % ((name or "Marker").upper(), mk["x"], mk["y"]),
                                     "sub": ((mk.get("text") or "") + "  · " + self.ago(mk["t"])).strip(" ·"), "tone": "bad" if ball else "gold",
                                     "blink": ball, "xy": (mk["x"], mk["y"]), "key": mk.get("key")})
-        if mc.get("sound", True):
-            play_sound(rules[rule].get("sound", "ding") if rule >= 0 else mc.get("other_sound", "ding"), self.cfg["alerts"].get("volume", 80))
+        if mc.get("sound", True):                            # je Marker eigene Lautstaerke + Dauer
+            if rule >= 0:
+                rr = rules[rule]
+                play_sound(rr.get("sound", "ding"), int(rr.get("vol", self.cfg["alerts"].get("volume", 80))), float(rr.get("dur", 0) or 0))
+            else:
+                self.alert_sound("other")
+        self.popup("ball" if ball else "marker", "🎯" if ball else "📍",
+                   "%s%s  ·  X %d · Y %d" % ((name or "Marker").upper(), (" %d" % mk["num"]) if mk.get("num") else "", mk["x"], mk["y"]),
+                   (mk.get("text") or "")[:50], C["bad"] if ball else C["gold"])
         self.refresh_markers(True)
 
     def event_alarm(self, ev):
         ac = self.cfg["alerts"]
         who = self.acc_name(ev.get("pid")) if ev.get("pid") else ""
+        if ev["ev"] == "msg":
+            k, T, vol = ev["kind"], self.t, ac.get("volume", 80)
+            if not ac.get("msg_" + k, True):
+                return
+            sub = "%s%s" % ((who + " · ") if who else "", self.ago(ev["t"]))
+            if not self.mod_on({"kbuff": "kbuff", "scout": "scout"}.get(k, "hosp" if k.startswith("hosp") else "x")):
+                return                                       # in diesem Modus (PvP/PvE) ausgeschaltet
+            if k == "kbuff":                                 # Kingdom-Buff: nur Anzeige mit Timer unter "50 % aktiv"
+                if ac.get("kbuff_show", True):
+                    self.alert_sound("kbuff")
+                    self.overlay._drawn = None
+                    self.popup("kbuff", "💚", T("kb_heal"), T("kb_until", t=self.kb_left(ev.get("until", 0))), C["good"])
+                return
+            if k == "scout":                                 # wie Army-Buff: rot blinkend im Overlay – Name des Spaehers darunter
+                nm = ev.get("by") or scout_name(ev.get("text"))
+                self.overlay.add_alert({"icon": "🔭", "title": T("ms_scout").upper(), "sub": ("👤 " + nm) if nm else sub, "tone": "bad", "blink": True})
+                self.popup("scout", "🔭", T("ms_scout"), ("👤 " + nm) if nm else sub)
+                self.alert_sound("scout")
+            elif k == "rank":                                # Pop-up wie nach einem Kampf
+                tier = ev.get("tier") or "?"
+                self.popup("rank", "🏆", T("ms_rank", t=tier), sub, C["gold"])
+                self.alert_sound("rank")
+            if k.startswith("hosp"):
+                self.popup("hosp", "💀" if k == "hospdead" else "🏥", T("ms_dead") if k == "hospdead" else T("ms_hosp", p=ev.get("pct") or 70), sub)
+            if k == "hosp70":                              # wie Army-Buff
+                self.overlay.add_alert({"icon": "🏥", "title": T("ms_hosp", p=ev.get("pct") or 70).upper(), "sub": sub, "tone": "bad", "blink": True})
+                self.alert_sound("hosp70")
+            elif k == "hosp85":                              # + Warnung oben am Bildschirmrand
+                self.overlay.add_alert({"icon": "🏥", "title": T("ms_hosp", p=ev.get("pct") or 85).upper(), "sub": sub, "tone": "bad", "blink": True})
+                self.banner.show("⚠  " + T("ms_banner85", p=ev.get("pct") or 85).upper())
+                self.alert_sound("hosp85")
+            elif k == "hospdead":                            # alles: Meldung + Warnung oben + lila Rahmen
+                n = ev.get("n") or 0
+                self.overlay.add_alert({"icon": "💀", "title": T("ms_dead").upper(), "sub": (fmt_num(n, self.cfg["lang"]) + " " + T("ms_died")) if n else sub,
+                                        "tone": "bad", "blink": True})
+                self.banner.show("☠  " + T("ms_banner_dead", n=fmt_num(n, self.cfg["lang"]) if n else "?").upper(), "#c084fc", 20)
+                self.border.show("#a855f7", 60)
+                self.alert_sound("hospdead")
+            return
         if ev["ev"] == "buff":
+            if not self.mod_on("exp" if ev["kind"] == "army" else "buffs"):
+                return
             if not ac.get({"army": "buff_army", "attack": "buff_attack", "def": "buff_def", "shield": "buff_shield"}[ev["kind"]]):
                 return
             icon = {"army": "🪖", "attack": "⚔", "def": "🛡", "shield": "🕊"}[ev["kind"]]
-            self.overlay.add_alert({"icon": icon, "title": self.t("bf_ended", b=self.t("bf_" + ev["kind"])).upper(),
-                                    "sub": "%s%s" % ((who + " · ") if who else "", self.ago(ev["t"])), "tone": "bad", "blink": True})
-            play_sound(ac.get("buff_sound", "sirene"), ac.get("volume", 80))
+            title = self.t("bf_ended", b=self.t("bf_" + ev["kind"])).upper()
+            sub = "%s%s" % ((who + " · ") if who else "", self.ago(ev["t"]))
+            a = {"icon": icon, "title": title, "sub": sub, "tone": "bad", "blink": True}
+            if ev["kind"] == "army":
+                a["until"] = time.time() + 60 * float(ac.get("dur_army", ac.get("show_min", 10)))
+            self.overlay.add_alert(a)
+            self.popup("army" if ev["kind"] == "army" else "buff", icon, title, sub)
+            self.alert_sound(ev["kind"])
         elif ev["ev"] == "bld":
-            if not ac.get("bld", True):
+            if not ac.get("bld", True) or not self.mod_on("bld"):
                 return
             flt = [x.strip().lower() for x in str(ac.get("bld_filter", "")).split(",") if x.strip()]
             if flt and not any(x in (ev.get("text", "") + " " + ev.get("name", "")).lower() for x in flt):
@@ -3697,11 +5424,40 @@ class App:
                 icon, title, tone = "🏰", ev["name"], "blue"
             self.overlay.add_alert({"icon": icon, "title": title.upper(), "sub": "X %d · Y %d%s" % (ev["x"], ev["y"], ("  · [%s]" % ev["ally"]) if ev.get("ally") else ""),
                                     "tone": tone, "blink": ev["lost"], "xy": (ev["x"], ev["y"])})
-            play_sound(ac.get("bld_sound", "glocke"), ac.get("volume", 80))
+            self.alert_sound("bld_won" if ev["ours"] else ("bld_lost" if ev["lost"] else "bld_other"))
+            self.popup("bld", icon, title, "X %d · Y %d" % (ev["x"], ev["y"]), C["bad"] if ev["lost"] else (C["good"] if ev["ours"] else C["gold"]))
+
+    def al_slider(self, c, label, key, lo, hi, dflt, unit=""):
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text=label, bg=C["card"], fg=C["muted"], font=(FONT, 9), width=22, anchor="w").pack(side="left", padx=(0, px(6)))
+        Slider(r, float(self.cfg["alerts"].get(key, dflt) or dflt), lo, hi, lambda v: None, lambda v: self.set_al(key, int(round(v))),
+               width=240, fmt=lambda v: ("%d %s" % (round(v), unit)).strip()).pack(side="left")
 
     def test_alert(self, kind):
+        """Test: Ton kommt IMMER (Schalter werden fuer den Test kurz eingeschaltet)."""
+        mc, ac = self.cfg["markers"], self.cfg["alerts"]
+        saved = {("m", k): mc.get(k) for k in ("sound", "overlay")}
+        saved.update({("a", k): ac.get(k) for k in ("buff_attack", "buff_army", "msg_bld", "bld_sound_on")})
+        mc["sound"] = mc["overlay"] = True
+        ac["buff_attack"] = ac["buff_army"] = True
+        try:
+            self._test_alert(kind)
+        finally:
+            for (w, k), v in saved.items():
+                d = mc if w == "m" else ac
+                if v is None:
+                    d.pop(k, None)
+                else:
+                    d[k] = v
+        if kind == "battle":
+            self.alert_sound("battle")
+
+    def _test_alert(self, kind):
         now = int(time.time())
         rules = self.cfg["markers"].get("rules", [])
+        if kind == "kbuff":
+            self.popup("kbuff", "💚", self.t("kb_heal"), self.t("kb_until", t="4:00 h"), C["good"])
+            return
         if kind == "ball":
             w = (self.ball_words() or ["ball"])[0]
             self.alarm({"x": 612, "y": 845, "t": now, "text": "TEST %s Pass 7" % w, "key": None, "num": 2}, 0)
@@ -3712,6 +5468,19 @@ class App:
             self.mention_alarm({"x": 600, "y": 800, "t": now, "text": "%s Rally Pass 7 (TEST)" % nm.capitalize(), "key": None})
         elif kind == "buff":
             self.event_alarm({"ev": "buff", "kind": "attack", "t": now, "pid": self.scanner.active[0], "text": "TEST"})
+        elif kind == "army":
+            self.event_alarm({"ev": "buff", "kind": "army", "t": now, "pid": self.scanner.active[0], "text": "TEST"})
+        elif kind in ("scout", "rank", "hosp70", "hosp85", "hospdead"):
+            ac = self.cfg["alerts"]; was = ac.get("msg_" + kind, True); ac["msg_" + kind] = True
+            self.event_alarm({"ev": "msg", "kind": kind, "t": now, "pid": self.scanner.active[0], "text": "TEST [ABC]Spion" if kind == "scout" else "TEST",
+                              "tier": "S+", "pct": 85 if kind == "hosp85" else 70, "n": 1374555})
+            ac["msg_" + kind] = was
+        elif kind == "battle":
+            h = next(iter(getattr(self, "_march_all", {}) or {}), (0, 0))
+            self.toast.show({"win": True, "pvp": True, "kp": 1181930, "trade": 2.4, "h": list(h), "enemy": "TEST", "lvl": 0, "marches": 4})
+        elif kind == "all":
+            for i, k in enumerate(("ball", "name", "buff", "bld", "scout", "battle", "rank", "hosp70", "hosp85", "hospdead")):
+                self.root.after(i * int((self.toast.dur() + 0.8) * 1000), lambda k=k: self.test_alert(k))
         else:
             self.event_alarm({"ev": "bld", "t": now, "name": "Lvl 7 Pass", "ours": False, "lost": True, "ally": "TEST", "x": 616, "y": 879, "text": "Fall of Lvl 7 Pass"})
 
@@ -3813,34 +5582,96 @@ class App:
         for w_ in (ex, ey):
             w_.bind("<Return>", go_exact)
         Btn(xr, T("pos_set"), go_exact, small=True).pack(side="left")
+        # --- Groesse + Durchsichtigkeit dieses Fensters
+        ov = self.cfg["overlay"]
+        o, c = card(body, "📏 " + T("size_title", w=T({"ov": "pos_ov", "march": "pos_march", "feed": "pos_feed"}[sub]))); o.pack(fill="x", pady=(px(14), 0))
+        redr = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
+        if sub == "ov":
+            self.slider_row(c, "🔠 " + T("ov_size"), "size", 8, 22, 11, "", redr)
+            self.slider_row(c, "↔ " + T("ov_width"), "width_add", -60, 200, 0, "px", redr)
+            self.slider_row(c, "↕ " + T("opt_spacing"), "spacing", 0, 40, 5, "px", redr)
+        elif sub == "march":
+            self.slider_row(c, "🖼 " + T("icon_px"), "march_icon_px", 20, 80, int(ov.get("icon_px", 40)), "px", lambda: self.march.draw(True), live=False)
+            self.slider_row(c, "↕ " + T("march_gap"), "march_gap", 40, 250, 96, "px", lambda: self.march.draw(True))
+        else:
+            self.slider_row(c, "🖼 " + T("icon_px"), "feed_icon_px", 20, 80, int(ov.get("icon_px", 40)), "px", lambda: self.feed.draw(True), live=False)
+            self.slider_row(c, "↕ " + T("feed_gap"), "feed_gap", 0, 30, 6, "px", lambda: self.feed.draw(True))
+        ak = {"ov": "alpha", "march": "alpha_march", "feed": "alpha_feed"}[sub]
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text="◐ " + T("ov_alpha"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+        Slider(r, float(ov.get(ak, ov.get("alpha", 0.85))), 0.2, 1.0, lambda v: self.set_alpha_of(ak, v, False), lambda v: self.set_alpha_of(ak, v, True),
+               width=260, fmt=lambda v: "%d %%" % round(v * 100)).pack(side="left")
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text="💬 " + T("al_toast"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+        Slider(r, float(ov.get("alpha_toast", ov.get("alpha", 0.9))), 0.2, 1.0, lambda v: self.set_alpha_of("alpha_toast", v, False),
+               lambda v: self.set_alpha_of("alpha_toast", v, True), width=260, fmt=lambda v: "%d %%" % round(v * 100)).pack(side="left")
+        vc = tk.BooleanVar(value=ov.get("clickthrough", False))
+        Toggle(c, T("mod_click"), vc, lambda: self.set_clickthrough(vc.get())).pack(anchor="w", pady=(px(10), 0))
 
     def page_ov(self, body):
         T = self.t
+        mr = tk.Frame(body, bg=C["bg"]); mr.pack(fill="x", pady=(0, px(8)))
+        tk.Label(mr, text=T("mode_edit"), bg=C["bg"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(8)))
+        Seg(mr, [("fight", "⚔ " + T("mode_fight")), ("off", "🪓 " + T("mode_off"))], self.mode(), self.set_mode, small=True).pack(side="left")
         self.focus_bar(body, C["bg"]).pack(fill="x", pady=(0, px(10)))
         sub = getattr(self, "ov_sub", "view")
-        Seg(body, [("view", "👁 " + T("ovt_view")), ("mods", "✨ " + T("ovt_mods")), ("pos", "📐 " + T("ovt_pos")), ("vals", "📊 " + T("ovt_vals"))],
+        if sub == "mods":
+            sub = self.ov_sub = "march"
+        Seg(body, [("view", "👁 " + T("ovt_view")), ("vals", "📊 " + T("ovt_vals")), ("march", "⚔ " + T("ovt_march")),
+                   ("feed", "📰 " + T("ovt_feed")), ("pos", "📐 " + T("ovt_pos"))],
             sub, lambda v: (setattr(self, "ov_sub", v), self.render())).pack(anchor="w", pady=(0, px(4)))
-        {"view": self._ov_view, "mods": self._ov_mods, "pos": self.pos_card, "vals": self._ov_vals}.get(sub, self._ov_view)(body)
+        {"view": self._ov_view, "march": self._ov_march, "feed": self._ov_modules, "pos": self.pos_card, "vals": self._ov_vals}.get(sub, self._ov_view)(body)
+
+    def _ov_view_extra(self, body):
+        T, ov = self.t, self.cfg["overlay"]
+        o, c = card(body, ("⚔ " if self.mode() == "fight" else "🪓 ") + T("mods_title", m=T("mode_" + self.mode()))); o.pack(fill="x", pady=(px(14), 0))
+        tk.Label(c, text=T("mods_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        mchips, r = {}, tk.Frame(c, bg=C["card"]); r.pack(anchor="w")
+
+        def mt(k):
+            off = list(self.cfg["overlay"].get("mod_off") or [])
+            off.remove(k) if k in off else off.append(k)
+            self.cfg["overlay"]["mod_off"] = off; save_cfg(self.cfg)
+            for k2, ch in mchips.items():
+                ch.set(k2 not in off)
+            self.overlay._drawn = None; self.overlay.draw()
+        icons = {"markers": "🎯", "exp": "🪖", "buffs": "⏳", "kbuff": "💚", "hosp": "🏥", "scout": "🔭", "bld": "🏰"}
+        for i, k in enumerate(self.MODS):
+            ch = Chip(r, icons[k] + " " + T("mod_" + k + "_s"), self.mod_on(k), lambda k=k: mt(k))
+            ch.grid(row=i // 4, column=i % 4, sticky="w", padx=(0, px(4)), pady=px(2)); mchips[k] = ch
+        vcl = tk.BooleanVar(value=ov.get("show_clock", True))
+        Toggle(c, T("show_clock"), vcl, lambda: (self.set_opt("show_clock", vcl.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw())).pack(anchor="w", pady=(px(8), 0))
+        o, c = card(body, "🎨 " + T("look_title")); o.pack(fill="x", pady=(px(14), 0))
+        g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
+        for i, (key, lab) in enumerate((("icons", "opt_icons"), ("mk_coords", "opt_coords"))):
+            v = tk.BooleanVar(value=ov.get(key, True))
+            Toggle(g, T(lab), v, lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw(),
+                                                       self.march.draw(True))).grid(row=0, column=i, sticky="w", padx=(0, px(24)))
+        redr = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
+        self.slider_row(c, "↕ " + T("opt_spacing"), "spacing", 0, 40, 5, "px", redr)
+        self.slider_row(c, "🔠 " + T("ov_size"), "size", 8, 22, 11, "", redr)
+        self.slider_row(c, "↔ " + T("ov_width"), "width_add", -60, 200, 0, "px", redr)
+        vb = tk.BooleanVar(value=self.cfg["overlay"].get("mode_badge", True))
+        Toggle(c, T("mode_badge"), vb, lambda: (self.set_opt("mode_badge", vb.get()), redr())).pack(anchor="w", pady=(px(8), 0))
 
     def _ov_view(self, body):
+        self._ov_view_main(body)
+        self._ov_view_extra(body)
+
+    def _ov_view_main(self, body):
         T, ov = self.t, self.cfg["overlay"]
         top = tk.Frame(body, bg=C["bg"]); top.pack(fill="x", pady=(px(10), 0))
         o, c = card(top, T("card_view")); ov_cards = [o]
         for key, lab in (("show", "ov_show"), ("locked", "ov_lock"), ("pvp_only", "ov_pvp_only"), ("count_pilot", "ov_pilot")):
             v = tk.BooleanVar(value=ov.get(key, key in ("show", "pvp_only")))
             Toggle(c, T(lab), v, lambda k=key, v=v: self.set_opt(k, v.get())).pack(anchor="w", pady=3)
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(8, 0))
-        tk.Label(r, text=T("ov_alpha"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, 6))
-        self.alpha_chips = {}
-        for a in (0.5, 0.7, 0.85, 1.0):
-            ch = Chip(r, "%d%%" % round(a * 100), abs(float(ov.get("alpha", 0.85)) - a) < 0.01, lambda a=a: self.set_alpha(a))
-            ch.pack(side="left", padx=(0, 4)); self.alpha_chips[a] = ch
-        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(8, 0))
-        tk.Label(r, text=T("ov_size"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(8, 4))
-        sz = tk.Label(r, text=str(ov.get("size", 11)), bg=C["card"], fg=C["text"], font=(FONT, 10, "bold"), width=3)
-        def step(d):
-            n = max(8, min(22, int(self.cfg["overlay"].get("size", 11)) + d)); sz.configure(text=str(n)); self.set_opt("size", n)
-        Btn(r, "−", lambda: step(-1), "ghost", small=True).pack(side="left"); sz.pack(side="left"); Btn(r, "+", lambda: step(1), "ghost", small=True).pack(side="left")
+        tk.Label(c, text=T("ov_alpha"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(anchor="w", pady=(8, 0))
+        for key, lab in (("alpha", "al_main"), ("alpha_march", "pos_march"), ("alpha_feed", "pos_feed"), ("alpha_toast", "al_toast")):
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(2), 0))
+            tk.Label(r, text=T(lab), bg=C["card"], fg=C["text"], font=(FONT, 9), width=14, anchor="w").pack(side="left")
+            cur = float(ov.get(key, ov.get("alpha", 0.85)))
+            Slider(r, cur, 0.2, 1.0, lambda v, key=key: self.set_alpha_of(key, v, False),
+                   lambda v, key=key: self.set_alpha_of(key, v, True)).pack(side="left")
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
         tk.Label(r, text=T("ov_source"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
         self.src_chips = {}
@@ -3873,7 +5704,7 @@ class App:
         self.range_chips = {}
         for i, rk in enumerate(RANGES):
             ch = Chip(chips, T(rk).split(" (")[0], ov.get("range") == rk, lambda rk=rk: self.set_range(rk))
-            ch.grid(row=i // 2, column=i % 2, padx=(0, 6), pady=3, sticky="we"); self.range_chips[rk] = ch
+            ch.grid(row=i // 3, column=i % 3, padx=(0, 6), pady=3, sticky="we"); self.range_chips[rk] = ch
         r = tk.Frame(c, bg=C["card"]); r.pack(anchor="w", pady=(8, 0))
         tk.Label(r, text=T("ov_since"), bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left")
         self.v_since = tk.StringVar(value=ov.get("since", ""))
@@ -3915,6 +5746,37 @@ class App:
             e.bind("<Return>", done); e.bind("<FocusOut>", done)
         return r
 
+    def chips_row_cfg(self, c, label, d, key, vals, fmt, dflt):
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+        tk.Label(r, text=label, bg=C["card"], fg=C["muted"], font=(FONT, 9)).pack(side="left", padx=(0, px(6)))
+        chips = {}
+
+        def pick(v):
+            d[key] = v; save_cfg(self.cfg)
+            for k2, ch in chips.items():
+                ch.set(k2 == v)
+        for v in vals:
+            ch = Chip(r, fmt(v), d.get(key, dflt) == v, lambda v=v: pick(v)); ch.pack(side="left", padx=(0, px(4))); chips[v] = ch
+
+    def slider_row(self, c, label, key, lo, hi, dflt, unit="px", after=None, live=True):
+        """Groessen immer als Schieberegler: ziehen = live, loslassen = speichern."""
+        ov = self.cfg["overlay"]
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text=label, bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+
+        def setv(v, save):
+            v = int(round(v))
+            if self.cfg["overlay"].get(key) == v and not save:
+                return
+            self.cfg["overlay"][key] = v; self._sig = None
+            if save:
+                save_cfg(self.cfg)
+            if after and (live or save):
+                after()
+        Slider(r, float(ov.get(key, dflt) or dflt), lo, hi, lambda v: setv(v, False), lambda v: setv(v, True), width=260,
+               fmt=lambda v: ("%d %s" % (round(v), unit)).strip()).pack(side="left")
+        return r
+
     @staticmethod
     def _fmt_custom(v, custom):
         x = (v or 0) / custom[1]
@@ -3927,10 +5789,9 @@ class App:
     def _ov_modules(self, body):
         T, ov = self.t, self.cfg["overlay"]
         # --- Module
-        o, c = card(body, "✨ " + T("card_modules")); o.pack(fill="x", pady=(px(14), 0))
+        o, c = card(body, "📰 " + T("ovt_feed")); o.pack(fill="x", pady=(px(14), 0))
         g = tk.Frame(c, bg=C["card"]); g.pack(fill="x")
-        items = (("feed", "mod_feed"), ("toast", "mod_toast"), ("march", "mod_march"), ("clickthrough", "mod_click"), ("feed_pve", "mod_feed_pve"),
-                 ("icons", "opt_icons"), ("mk_coords", "opt_coords"), ("march_icons", "opt_march_icons"))
+        items = (("feed", "mod_feed"), ("feed_pve", "mod_feed_pve"), ("toast", "mod_toast"), ("clickthrough", "mod_click"))
         for i, (key, lab) in enumerate(items):
             v = tk.BooleanVar(value=ov.get(key, key in ("feed", "toast", "icons", "mk_coords", "march_icons")))
             if key == "clickthrough":
@@ -3942,19 +5803,53 @@ class App:
             else:
                 cmd = lambda key=key, v=v: (self.set_opt(key, v.get()), setattr(self, "_sig", None))
             Toggle(g, T(lab), v, cmd).grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(24)), pady=px(3))
-        redraw = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
-        self.chips_row(c, T("opt_spacing"), "spacing", [3, 5, 7, 10, 14], lambda v: "%d px" % v, redraw, ("px", 1, 0, 40))
-        self.chips_row(c, T("feed_n"), "feed_n", [3, 4, 5, 6], str, lambda: self.feed.draw(True))
-        self.chips_row(c, "🏁 " + T("goal_today"), "goal_kp", [0, 5000000, 10000000, 25000000, 50000000],
-                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Mio.", 1000000, 0, 5000))
-        tk.Label(c, text=T("hk_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), justify="left").pack(anchor="w", pady=(px(8), 0))
+        self.chips_row(c, T("feed_n"), "feed_n", [1, 2, 3, 4, 5, 6, 7], str, lambda: self.feed.draw(True))
+        self.slider_row(c, "↕ " + T("feed_gap"), "feed_gap", 0, 30, 6, "px", lambda: self.feed.draw(True))
+        self.slider_row(c, "🖼 " + T("icon_px"), "feed_icon_px", 20, 80, int(self.cfg["overlay"].get("icon_px", 40)), "px", lambda: self.feed.draw(True), live=False)
+        self.chips_row(c, "⏱ " + T("feed_settle"), "feed_settle", [0, 10, 15, 30, 60], lambda v: T("live") if not v else "%d s" % v,
+                       lambda: (self._sig_reset(), self.feed.draw(True)), ("s", 1, 0, 600))
+        self.chips_row(c, "💤 " + T("feed_age"), "feed_age", [0, 300, 900, 1800, 3600], lambda v: T("off") if not v else "%d min" % (v // 60),
+                       lambda: (self._sig_reset(), self.feed.draw(True)), ("min", 60, 0, 600))
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        vpm = tk.BooleanVar(value=ov.get("feed_per_march", True))
+        Toggle(r, T("feed_per_march"), vpm, lambda: (self.set_opt("feed_per_march", vpm.get()), self._sig_reset(), self.feed.draw(True))).pack(anchor="w")
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        vfm = tk.BooleanVar(value=ov.get("feed_more", True))
+        Toggle(r, T("feed_more"), vfm, lambda: (self.set_opt("feed_more", vfm.get()), self._sig_reset(), self.feed.draw(True))).pack(anchor="w")
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(6), 0))
+        tk.Label(r, text=T("feed_fields"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+        ff_chips = {}
+
+        def ff_toggle(v):
+            cur_ = list(self.cfg["overlay"].get("feed_fields") or ["trade", "sum_kp", "sum_trade"])
+            cur_.remove(v) if v in cur_ else cur_.append(v)
+            self.cfg["overlay"]["feed_fields"] = cur_; save_cfg(self.cfg)
+            for k2, ch in ff_chips.items():
+                ch.set(k2 in cur_)
+            self.feed.draw(True)
+        for v in ("trade", "sum_kp", "sum_trade", "acc", "sum_acc"):
+            ch = Chip(r, T("ff_" + v), v in (ov.get("feed_fields") or ["trade", "sum_kp", "sum_trade"]), lambda v=v: ff_toggle(v))
+            ch.pack(side="left", padx=(0, px(4))); ff_chips[v] = ch
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        vm = tk.BooleanVar(value=ov.get("feed_merge", False))
+        Toggle(r, T("feed_merge"), vm, lambda: (self.set_opt("feed_merge", vm.get()), self._sig_reset(), self.feed.draw(True))).pack(anchor="w")
+        # Leistung
+        o, c = card(body, "⚙ " + T("perf_title")); o.pack(fill="x", pady=(px(14), 0))
+        self.chips_row(c, T("calc_every"), "calc_every", [2, 5, 10], lambda v: "%d s" % v, None, ("s", 1, 1, 60))
+        tk.Label(c, text=T("calc_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(4), 0))
+        tk.Label(c, text=T("perf_tips"), bg=C["card"], fg=C["muted"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
 
     def _ov_march(self, body):
         T, ov = self.t, self.cfg["overlay"]
         o, c = card(body, "⚔ " + T("mod_march")); o.pack(fill="x", pady=(px(14), 0))
+        g = tk.Frame(c, bg=C["card"]); g.pack(fill="x", pady=(0, px(8)))
+        vm_ = tk.BooleanVar(value=ov.get("march", False))
+        Toggle(g, T("march_show"), vm_, lambda: self.set_module("march", vm_.get())).grid(row=0, column=0, sticky="w", padx=(0, px(24)))
+        vi_ = tk.BooleanVar(value=ov.get("march_icons", True))
+        Toggle(g, T("opt_march_icons"), vi_, lambda: (self.set_opt("march_icons", vi_.get()), self.march.draw(True))).grid(row=0, column=1, sticky="w")
         tk.Label(c, text=T("slot_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(8)))
         n = int(ov.get("march_n", 4))
-        sl = list(ov.get("march_slots") or []) + [None] * 5
+        sl = list(ov.get("march_slots") or []) + [None] * 7
         cur = {r["slot"]: r for r in getattr(self, "_marches", [])}
         grid = tk.Frame(c, bg=C["card"]); grid.pack(fill="x")
         for i in range(n):
@@ -3973,12 +5868,20 @@ class App:
             if shown:
                 Btn(r, "🔍", lambda k=shown: self.march_details(k), "ghost", small=True).pack(side="right", padx=(0, px(6)))
             b._cmd = lambda i=i, b=b: self.slot_menu(self.root, i).tk_popup(b.winfo_rootx(), b.winfo_rooty() + b.winfo_height())
-            if k:
-                Btn(r, "✕", lambda i=i: self.set_march_slot(i, None), "ghost", small=True).pack(side="right", padx=(0, px(6)))
+            Btn(r, "✕", lambda i=i: self.remove_slot(i), "ghost", small=True).pack(side="right", padx=(0, px(6)))   # Zeile weg, Anzahl −1
         rb = tk.Frame(c, bg=C["card"]); rb.pack(fill="x", pady=(px(6), 0))
         Btn(rb, "⚡ " + T("slot_all_auto"), self.slots_auto, "ghost", small=True).pack(side="left")
         Btn(rb, "📌 " + T("slot_fix_now"), self.slots_fix, "ghost", small=True).pack(side="left", padx=(px(6), 0))
-        self.chips_row(c, T("march_n"), "march_n", [1, 2, 3, 4, 5], str, lambda: (self.march.draw(True), self._sig_reset(), self.render()))
+        redraw_all = lambda: (TRADE_FMT.update(v=self.cfg["overlay"].get("trade_fmt", "pct")), self.march.draw(True), self.feed.draw(True))
+        self.slider_row(c, "🖼 " + T("icon_px"), "march_icon_px", 20, 80, int(ov.get("icon_px", 40)), "px", lambda: self.march.draw(True), live=False)
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        vo = tk.BooleanVar(value=ov.get("hero_one", False))
+        Toggle(r, T("hero_one"), vo, lambda: (self.set_opt("hero_one", vo.get()), redraw_all())).pack(anchor="w")
+        self.chips_row(c, "⚖ " + T("trade_fmt"), "trade_fmt", ["pct", "ratio"], lambda v: T("tf_" + v), redraw_all)
+        tk.Label(c, text=T("streak_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(2), 0))
+        self.chips_row(c, T("march_kind"), "march_kind", ["auto", "pvp", "pve"], lambda v: T("mk_" + v),
+                       lambda: (self._sig_reset(), self.march.draw(True)))
+        self.chips_row(c, T("march_n"), "march_n", [1, 2, 3, 4, 5, 6, 7], str, lambda: (self.march.draw(True), self._sig_reset(), self.render()))
         r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
         tk.Label(r, text=T("march_vals"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
         mv_chips = {}
@@ -3996,9 +5899,29 @@ class App:
         for v in MarchWin.VALS:
             ch = Chip(r, MarchWin.VALS[v][0] + " " + T("mv_" + v), v in (ov.get("march_vals") or ["kp", "trade"]), lambda v=v: mv_toggle(v))
             ch.pack(side="left", padx=(0, px(4))); mv_chips[v] = ch
+        # Offseason (Barbaren-Maersche): Werte frei waehlbar
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        tk.Label(r, text="🪓 " + T("march_pve_vals"), bg=C["card"], fg=C["muted"], font=(FONT, 9), width=16, anchor="w").pack(side="left", padx=(0, px(6)))
+        pv_chips, pr = {}, tk.Frame(r, bg=C["card"]); pr.pack(side="left")
+
+        def pv_toggle(v):
+            cur_ = list(self.cfg["overlay"].get("march_pve_vals") or ["lvl", "avg", "today", "waste"])
+            if v in cur_ and len(cur_) > 1:
+                cur_.remove(v)
+            elif v not in cur_ and len(cur_) < 5:
+                cur_.append(v)
+            self.cfg["overlay"]["march_pve_vals"] = [x for x in MarchWin.PVE_VALS if x in cur_]; save_cfg(self.cfg)
+            for k2, ch in pv_chips.items():
+                ch.set(k2 in cur_)
+            self.march.draw(True)
+        for j, v in enumerate(MarchWin.PVE_VALS):
+            ch = Chip(pr, T("pv_" + v), v in (ov.get("march_pve_vals") or ["lvl", "avg", "today", "waste"]), lambda v=v: pv_toggle(v))
+            ch.grid(row=j // 4, column=j % 4, sticky="w", padx=(0, px(4)), pady=px(2)); pv_chips[v] = ch
+        self.chips_row(c, "💤 " + T("march_idle"), "march_idle", [0, 300, 600, 900, 1800], lambda v: T("off") if not v else "%d min" % (v // 60),
+                       lambda: (self._sig_reset(), self.march.draw(True)), ("min", 60, 0, 240))
         self.chips_row(c, T("march_reset"), "march_reset", ["last", "sum"], lambda v: T("mr_" + v),
                        lambda: (self._sig_reset(), self.march.draw(True)))
-        self.chips_row(c, T("march_gap"), "march_gap", [70, 84, 96, 110, 124], lambda v: "%d px" % v, lambda: self.march.draw(True), ("px", 1, 40, 250))
+        self.slider_row(c, "↕ " + T("march_gap"), "march_gap", 40, 250, 96, "px", lambda: self.march.draw(True))
         tk.Label(c, text=T("last_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(8), 0))
         tk.Label(c, text=T("march_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(4), 0))
 
@@ -4007,27 +5930,114 @@ class App:
         self.update_modules(getattr(self, "_ids_cur", None), getattr(self, "_since_cur", 0), True)
         self.march.draw(True)
 
+    def remove_slot(self, i):
+        """✕ in der Marsch-Liste: diese Zeile weg, die anderen ruecken nach, Anzahl −1."""
+        ov = self.cfg["overlay"]
+        sl = (list(ov.get("march_slots") or []) + [None] * 7)[:7]
+        sl.pop(i); sl.append(None)
+        ov["march_slots"] = sl
+        ov["march_n"] = max(1, int(ov.get("march_n", 4)) - 1)
+        save_cfg(self.cfg); self._sig_reset(); self.render()
+
     def slots_auto(self):
-        self.cfg["overlay"]["march_slots"] = [None] * 5; save_cfg(self.cfg)
+        self.cfg["overlay"]["march_slots"] = [None] * 7; save_cfg(self.cfg)
         self._sig_reset(); self.render()
 
     def slots_fix(self):
         """Die gerade automatisch gezeigten Maersche fest auf ihre Plaetze legen."""
-        sl = [None] * 5
-        for i, r in enumerate(getattr(self, "_marches", [])[:5]):
+        sl = [None] * 7
+        for i, r in enumerate(getattr(self, "_marches", [])[:7]):
             sl[i] = list(r["k"]) if r.get("k") else None
         self.cfg["overlay"]["march_slots"] = sl; save_cfg(self.cfg)
         self._sig_reset(); self.render(); self.flash("📌 " + self.t("slot_fixed"))
 
     def _ov_vals(self, body):
+        self._ov_vals_main(body)
+        T, ov = self.t, self.cfg["overlay"]
+        redraw = lambda: (setattr(self.overlay, "_drawn", None), self.overlay.draw())
+        o, c = card(body, "🏁 " + T("goals_title")); o.pack(fill="x", pady=(px(14), 0))
+        self.chips_row(c, "🏁 " + T("goal_today"), "goal_kp", [0, 5000000, 10000000, 25000000, 50000000],
+                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Mio.", 1000000, 0, 5000))
+        self.chips_row(c, "★ " + T("goal_acc"), "goal_acc", [0, 50000, 100000, 250000, 500000],
+                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("Tsd.", 1000, 0, 100000))
+        self.chips_row(c, "🪓 " + T("goal_barb"), "goal_barb", [0, 50, 100, 150, 200, 300],
+                       lambda v: T("off") if not v else str(v), redraw, ("", 1, 0, 5000))
+        self.chips_row(c, "💎 " + T("goal_gems"), "goal_gems", [0, 1000, 2000, 5000, 10000],
+                       lambda v: T("off") if not v else fmt_num(v, self.cfg["lang"]), redraw, ("", 1, 0, 1000000))
+        # --- Offseason: AP-Kosten (fuer AP verbraucht / AP-Waste)
+        o, c = card(body, "🧪 " + T("ap_title")); o.pack(fill="x", pady=(px(14), 0))
+        tk.Label(c, text=T("ap_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        apc = self.cfg.setdefault("ap_cost", dict(AP_COST))
+        g = tk.Frame(c, bg=C["card"]); g.pack(anchor="w")
+        for i, (k, lab) in enumerate((("barb", "ap_barb"), ("step", "ap_step"), ("min", "ap_min"), ("kahar", "ap_kahar"))):
+            tk.Label(g, text=T(lab), bg=C["card"], fg=C["muted"], font=(FONT, 9)).grid(row=i // 2, column=(i % 2) * 2, sticky="w", padx=(0, px(6)), pady=px(3))
+            vv = tk.StringVar(value=str(apc.get(k, AP_COST[k])))
+            e = entry(g, vv, 6, center=True); e.grid(row=i // 2, column=(i % 2) * 2 + 1, sticky="w", padx=(0, px(20)))
+            def done(_e=None, k=k, vv=vv):
+                try:
+                    apc[k] = max(0, int(float(vv.get().replace(",", "."))))
+                except ValueError:
+                    return
+                AP_COST.update(apc); save_cfg(self.cfg); self._sig = None
+            e.bind("<Return>", done); e.bind("<FocusOut>", done)
+        vw = tk.BooleanVar(value=ov.get("show_waste", True))
+        Toggle(c, T("show_waste"), vw, lambda: (self.set_opt("show_waste", vw.get()), self.march.draw(True))).pack(anchor="w", pady=(px(8), 0))
+
+    def _ov_vals_main(self, body):
         T, ov = self.t, self.cfg["overlay"]
         o, c = card(body, T("card_values")); o.pack(fill="both", expand=True, pady=(14, 0))
-        grid = tk.Frame(c, bg=C["card"]); grid.pack(anchor="w")
+        grid = tk.Frame(c, bg=C["card"]); grid.pack(anchor="w", fill="x")
         self.metric_chips = {}
-        for i, k in enumerate(METRICS):
-            ch = Chip(grid, T(k), k in ov["metrics"], lambda k=k: self.toggle_metric(k))
-            ch.grid(row=i // 3, column=i % 3, padx=(0, 6), pady=3, sticky="we"); self.metric_chips[k] = ch
+        for col, (title, keys) in enumerate((("⚔ " + T("mode_fight"), M_FIGHT), ("🪓 " + T("mode_off"), M_OFF))):   # 2 Spalten, Wichtigstes oben
+            f = tk.Frame(grid, bg=C["card"]); f.grid(row=0, column=col, sticky="nw", padx=(0, px(16)))
+            tk.Label(f, text=title, bg=C["card"], fg=C["gold"] if (col == 0) == (self.mode() == "fight") else C["muted"],
+                     font=(FONT, 10, "bold")).pack(anchor="w", pady=(0, px(4)))
+            for k in keys:
+                ch = Chip(f, "%s  %s" % (ICONS.get(k, ""), T(k)), k in ov["metrics"], lambda k=k: self.toggle_metric(k))
+                ch.configure(width=px(250)); ch.pack(anchor="w", pady=px(2)); self.metric_chips[k] = ch
         tk.Label(c, text=T("ov_hint"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=600, justify="left").pack(anchor="w", pady=(10, 0))
+        # Reihenfolge
+        o, c = card(body, "↕ " + T("order_title")); o.pack(fill="x", pady=(14, 0))
+        tk.Label(c, text=T("order_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        ms = list(ov["metrics"])
+        for i, k in enumerate(ms):
+            r = tk.Frame(c, bg=C["card2"], padx=px(10), pady=px(4)); r.pack(fill="x", pady=px(2))
+            tk.Label(r, text="%d" % (i + 1), bg=C["card2"], fg=C["gold"], font=(FONT, 11, "bold"), width=2).pack(side="left")
+            tk.Label(r, text="%s  %s" % (ICONS.get(k, ""), T(k)), bg=C["card2"], fg=C["text"], font=(FONT, 10), anchor="w").pack(side="left", fill="x", expand=True)
+            Btn(r, "✕", lambda k=k: self.toggle_metric(k), "ghost", small=True).pack(side="right")
+            DropDown(r, "%s %d" % (T("pos_s"), i + 1), [(j, "%s %d" % (T("pos_s"), j + 1)) for j in range(len(ms))], i,
+                     lambda j, i=i: self.move_metric_to(i, j)).pack(side="right", padx=(0, px(6)))
+            Btn(r, "▼", lambda i=i: self.move_metric(i, 1), "ghost", small=True).pack(side="right", padx=(0, px(4)))
+            Btn(r, "▲", lambda i=i: self.move_metric(i, -1), "ghost", small=True).pack(side="right", padx=(0, px(4)))
+            ColorDots(r, mcol(self.cfg, k, ""), lambda col, k=k: self.set_metric_col(k, col)).pack(side="right", padx=(0, px(10)))
+        r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=(px(8), 0))
+        vl = tk.BooleanVar(value=ov.get("metric_lab_col", False))
+        Toggle(r, T("metric_lab_col"), vl, lambda: (self.set_opt("metric_lab_col", vl.get()), setattr(self.overlay, "_drawn", None), self.overlay.draw())).pack(anchor="w")
+        tk.Label(c, text=T("metric_col_info"), bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(4), 0))
+
+    def move_metric_to(self, i, j):
+        ms = list(self.cfg["overlay"]["metrics"])
+        if 0 <= i < len(ms) and 0 <= j < len(ms) and i != j:
+            ms.insert(j, ms.pop(i))
+            self.cfg["overlay"]["metrics"] = ms; save_cfg(self.cfg)
+            self.overlay._drawn = None; self.overlay.draw(); self.render()
+
+    def set_metric_col(self, k, col):
+        ov = self.cfg["overlay"]
+        mc = ov.get("metric_cols")
+        if mc is None:
+            mc = dict(MCOL_DEFAULT)
+        mc[k] = col or ""
+        ov["metric_cols"] = mc
+        save_cfg(self.cfg); self.overlay._drawn = None; self.overlay.draw()
+        self.feed.draw(True); self.march.draw(True)
+
+    def move_metric(self, i, d):
+        ms = self.cfg["overlay"]["metrics"]
+        j = i + d
+        if 0 <= j < len(ms):
+            ms[i], ms[j] = ms[j], ms[i]
+            save_cfg(self.cfg); self.overlay._drawn = None; self.overlay.draw(); self.render()
 
     def page_set(self, body):
         T = self.t
@@ -4041,6 +6051,27 @@ class App:
         r = tk.Frame(c, bg=C["card"]); r.pack(anchor="w", pady=(8, 0))
         Btn(r, "+ " + T("add"), self.add_folder, "ghost", small=True).pack(side="left")
         Btn(r, "🔍 " + T("detect"), self.detect, "ghost", small=True).pack(side="left", padx=6)
+
+        # --- MuMu-Farmen (Android-Emulator) per ADB
+        o, c = card(body, "📱 " + T("mumu_title")); o.pack(fill="x", pady=(px(14), 0))
+        tk.Label(c, text=T("mumu_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        mm = self.cfg.setdefault("mumu", {})
+        vm = tk.BooleanVar(value=bool(mm.get("on")))
+        Toggle(c, T("mumu_on"), vm, lambda: (mm.__setitem__("on", vm.get()), save_cfg(self.cfg), self.mumu_st.__setitem__("now", True), self.render())).pack(anchor="w")
+        self.chips_row_cfg(c, "⏱ " + T("mumu_every"), mm, "every", [2, 5, 10, 30], lambda v: "%d min" % v, 5)
+        st = self.mumu_st
+        if st.get("busy"):
+            txt, col = T("mumu_busy"), C["gold"]
+        elif st.get("msg") == "ok":
+            txt = T("mumu_ok", n=len(st.get("ports") or {}), m=sum(a for a, _b in (st.get("ports") or {}).values()), t=time.strftime("%H:%M", time.localtime(st["t"])))
+            col = C["good"]
+        else:
+            txt, col = T("mumu_" + (st.get("msg") or "idle")) if st.get("msg") else T("mumu_idle"), C["muted"]
+        tk.Label(c, text=txt, bg=C["card"], fg=col, font=(FONT, 9, "bold"), wraplength=px(640), justify="left").pack(anchor="w", pady=(px(6), 0))
+        r = tk.Frame(c, bg=C["card"]); r.pack(anchor="w", pady=(px(6), 0))
+        Btn(r, "⟳ " + T("mumu_now"), lambda: (mm.__setitem__("on", True), save_cfg(self.cfg), self.mumu_st.__setitem__("now", True), self.flash(T("mumu_busy"))), "ghost", small=True).pack(side="left")
+        if st.get("adb"):
+            tk.Label(c, text="adb: " + st["adb"], bg=C["card"], fg=C["dim"], font=(FONT, 8)).pack(anchor="w", pady=(px(4), 0))
 
         row = tk.Frame(body, bg=C["bg"]); row.pack(fill="x", pady=14)
         o, c = card(row, T("card_upload")); set_cards = [o]
@@ -4058,13 +6089,59 @@ class App:
             n = max(1, min(365, int(self.cfg.get("upload_days", 14)) + d)); dl.configure(text=str(n)); self.set_cfg("upload_days", n)
         Btn(r, "−", lambda: dstep(-7), "ghost", small=True).pack(side="left", padx=(6, 0)); dl.pack(side="left"); Btn(r, "+", lambda: dstep(7), "ghost", small=True).pack(side="left")
 
+        o, c = card(body, "⌨ " + T("hk_title")); o.pack(fill="x", pady=(0, px(14)))
+        tk.Label(c, text=T("hk_set_info"), bg=C["card"], fg=C["dim"], font=(FONT, 9), wraplength=px(640), justify="left").pack(anchor="w", pady=(0, px(6)))
+        for combo, act in hotkey_list(self):
+            r = tk.Frame(c, bg=C["card"]); r.pack(fill="x", pady=px(3))
+            tk.Label(r, text=T(act + "_l"), bg=C["card"], fg=C["text"], font=(FONT, 10), width=22, anchor="w").pack(side="left")
+            vv = tk.StringVar(value=combo)
+            e = entry(r, vv, 18, center=True); e.pack(side="left")
+            e.bind("<KeyPress>", lambda ev, vv=vv, act=act: self.capture_key(ev, vv, act))
+            ok = act in (getattr(self, "_hotkeys_ok", None) or [])
+            tk.Label(r, text=("✔" if ok else "✖ " + T("hk_busy")) if IS_WIN else "", bg=C["card"], fg=C["good"] if ok else C["bad"],
+                     font=(FONT, 9, "bold")).pack(side="left", padx=px(8))
+        Btn(c, "↺ " + T("hk_reset_all"), self.reset_hotkeys, "ghost", small=True).pack(anchor="w", pady=(px(6), 0))
+
         o, c = card(row, T("card_start")); set_cards.append(o); responsive(row, set_cards, 2, 720)
         Btn(c, "🪟  " + T("autostart"), self.autostart, "ghost", small=True).pack(anchor="w")
         v2 = tk.BooleanVar(value=self.cfg.get("start_min", False))
         Toggle(c, T("start_min"), v2, lambda: self.set_cfg("start_min", v2.get())).pack(anchor="w", pady=8)
+        v3 = tk.BooleanVar(value=self.cfg.get("rok_only", False))
+        Toggle(c, T("rok_only"), v3, lambda: (self.set_cfg("rok_only", v3.get()), self.check_rok(), self.render())).pack(anchor="w", pady=(0, 4))
+        tk.Label(c, text=T("rok_only_info") + "  " + (T("rok_now_on") if rok_running(self.cfg.get("game_folders", [])) else T("rok_now_off")),
+                 bg=C["card"], fg=C["dim"], font=(FONT, 8), wraplength=px(300), justify="left").pack(anchor="w", pady=(0, 8))
         r = tk.Frame(c, bg=C["card"]); r.pack(anchor="w")
         for code, lab in (("de", "Deutsch"), ("en", "English")):
             Chip(r, lab, self.cfg.get("lang", "de") == code, lambda code=code: self.set_lang(code)).pack(side="left", padx=(0, 6))
+
+    def capture_key(self, ev, vv, act):
+        """Ins Feld klicken und die gewuenschte Kombination druecken (z. B. Strg+Umschalt+F2)."""
+        k = ev.keysym
+        if k in ("Control_L", "Control_R", "Alt_L", "Alt_R", "Shift_L", "Shift_R", "Super_L", "Super_R", "Meta_L", "Meta_R"):
+            return "break"
+        if k in ("BackSpace", "Escape"):
+            vv.set(""); return "break"
+        parts = []
+        if ev.state & 0x4:
+            parts.append("Strg")
+        if ev.state & 0x20000 or ev.state & 0x8:
+            parts.append("Alt")
+        if ev.state & 0x1:
+            parts.append("Shift")
+        key = k.upper() if len(k) == 1 else {"space": "SPACE", "Prior": "PAGEUP", "Next": "PAGEDOWN"}.get(k, k.upper())
+        if key.startswith("KP_") and key[3:].isdigit():
+            key = "NUM" + key[3:]
+        combo = "+".join(parts + [key])
+        if not parts or not parse_hotkey(combo):
+            self.flash("⌨ " + self.t("hk_need_mod")); return "break"
+        vv.set(combo)
+        hk = self.cfg.setdefault("hotkeys", {}); hk[act] = combo; save_cfg(self.cfg)
+        restart_hotkeys(self)
+        self.root.after(400, self.render)
+        return "break"
+
+    def reset_hotkeys(self):
+        self.cfg["hotkeys"] = {}; save_cfg(self.cfg); restart_hotkeys(self); self.root.after(400, self.render)
 
     # ---------- Aktionen ----------
     def pair(self):
@@ -4155,18 +6232,189 @@ class App:
             self.cfg["links"] = d.get("links", []); save_cfg(self.cfg); self.render()
         self.run_bg(lambda: self.api("link" if on else "unlink", {"governor_id": str(pid), "gov_name": name, "kind": kind}), done)
 
+    POPUPS = [("battle", "⚔", True), ("ball", "🎯", False), ("marker", "📍", False), ("mention", "📣", True), ("army", "🪖", False),
+              ("buff", "⏳", False), ("exp", "🪖", False), ("scout", "🔭", False), ("hosp", "🏥", False), ("rank", "🏆", True), ("bld", "🏰", False), ("kbuff", "💚", False)]
+
+    def popup_on(self, kind):
+        p = self.cfg.get("popups") or {}
+        if kind == "battle":
+            return self.cfg["overlay"].get("toast", True)
+        if kind == "army" and "army" not in p and self.cfg["alerts"].get("buff_popup"):
+            return True
+        return p.get(kind, dict((k, d) for k, _i, d in self.POPUPS).get(kind, False))
+
+    def popup_col(self, kind, dflt=None):
+        return (self.cfg.get("popups_col") or {}).get(kind) or dflt
+
+    def popup(self, kind, icon, title, sub, col=None):
+        if self.popup_on(kind):
+            self.toast.show_msg(icon, title, sub, self.popup_col(kind, col or C["bad"]))
+
+    MODS = ["markers", "exp", "buffs", "kbuff", "hosp", "scout", "bld"]      # je Modus (PvP / PvE) ein-/ausschaltbar
+
+    def mod_on(self, k):
+        return k not in (self.cfg["overlay"].get("mod_off") or [])
+
+    def kbuff_active(self):
+        """Laufende Kingdom-Buffs (aus der Mail „Kingdom Buff Activated“) – [(Name, bis)]."""
+        if not self.cfg["alerts"].get("kbuff_show", True) or not self.mod_on("kbuff"):
+            return []
+        now, ids = time.time(), getattr(self, "_ids_cur", None)
+        with self.scanner.lock:
+            evs = list(self.scanner.events.values())
+        best = {}
+        for e in evs:
+            u = min(e.get("until", 0), e.get("t", 0) + 4 * 3600) if e.get("kind") == "kbuff" else 0     # hoechstens 4 Std.
+            if u > now and (ids is None or e.get("pid") in ids or not e.get("pid")):
+                n = e.get("name") or "Kingdom Buff"
+                best[n] = max(best.get(n, 0), u)
+        man = self.cfg["alerts"].get("kbuff_manual") or {}
+        for n, u in man.items():
+            if u > now:
+                best[n] = max(best.get(n, 0), u)
+        return sorted(best.items(), key=lambda x: x[1])
+
+    def kb_left(self, until):
+        s_ = max(0, int(until - time.time()))
+        return "%d:%02d h" % (s_ // 3600, (s_ % 3600) // 60)
+
+    def ov_on(self):
+        return self.cfg["overlay"].get("all_on", True) and (not self.cfg.get("rok_only") or getattr(self, "_rok_up", True))
+
+    def check_rok(self):
+        """Alle 5 s: laeuft Rise of Kingdoms? -> Overlay + App zeigen bzw. verstecken."""
+        if not self.cfg.get("rok_only"):
+            if not getattr(self, "_rok_up", True):
+                self._rok_up = True; self.apply_windows()
+            return
+        up = rok_running(self.cfg.get("game_folders", []))
+        if up == getattr(self, "_rok_up", None):
+            return
+        self._rok_up = up
+        self.apply_windows()
+        if up and getattr(self, "_hidden_for_rok", False):
+            self._hidden_for_rok = False
+            if self.cfg.get("start_min"):
+                self.root.deiconify(); self.root.iconify()
+            else:
+                self.root.deiconify()
+        elif not up and self.cfg.get("rok_hide_app", True):
+            self._hidden_for_rok = True; self.root.withdraw()
+
+    def apply_windows(self):
+        on, ov = self.ov_on(), self.cfg["overlay"]
+        self.overlay.show(on and ov.get("show", True))
+        self.feed.show(on and ov.get("feed", True)); self.march.show(on and ov.get("march", False))
+        if not on:
+            self.banner.hide(); self.border.hide()
+
+    # ---------- Modus: Fight (KvK) / Offseason – je Modus ein eigenes, festes Overlay ----------
+    SHARED_OV = ("focus", "all_on", "source", "calc_every", "clickthrough", "streak_gap", "trade_fmt", "count_pilot")
+
+    def mumu_loop(self):
+        """Hintergrund: alle X Minuten die MuMu-Farmen spiegeln (nur wenn eingeschaltet und MuMu laeuft)."""
+        time.sleep(20)
+        while True:
+            mc = self.cfg.get("mumu") or {}
+            if mc.get("on") and (time.time() - self.mumu_st.get("t", 0) >= 60 * int(mc.get("every", 5)) or self.mumu_st.pop("now", False)):
+                self.mumu_st["busy"] = True
+                try:
+                    mumu_sync(self.cfg, self.mumu_st)
+                except Exception as e:
+                    log("MuMu: %s" % e); self.mumu_st["msg"] = "err"
+                self.mumu_st["busy"] = False; self.mumu_st["t"] = time.time()
+            time.sleep(5)
+
+    def mode(self):
+        return self.cfg.get("mode", "fight")
+
+    def default_profile(self, m, ov):
+        p = copy.deepcopy(ov)
+        if m == "off":                                       # Offseason: Barbaren-Werte statt KP
+            p.update(metrics=["m_barb", "m_ap_used", "m_ap_waste", "m_chain_avg", "m_forts"], march_kind="pve", march_slots=[None] * 7,
+                     feed_pve=True, goal_kp=0, goal_acc=0, range="r_today", mod_off=["markers", "exp"])
+        return p
+
+    def set_mode(self, m, auto=False):
+        cur = self.mode()
+        if m == cur or m not in ("fight", "off"):
+            return
+        ov = self.cfg["overlay"]
+        profs = self.cfg.setdefault("profiles", {})
+        profs[cur] = copy.deepcopy({k: v for k, v in ov.items() if k not in self.SHARED_OV})
+        new = copy.deepcopy(profs.get(m) or self.default_profile(m, ov))
+        for k in self.SHARED_OV:
+            if k in ov:
+                new[k] = ov[k]
+        self.cfg["overlay"], self.cfg["mode"] = new, m
+        save_cfg(self.cfg)
+        self._sig = None; self._web_due = 0
+        for w, key, pos in ((self.overlay.win, "alpha", (new.get("x", 60), new.get("y", 60))),
+                            (self.feed.win, "alpha_feed", self.feed.pos()), (self.march.win, "alpha_march", self.march.pos())):
+            if w:
+                try:
+                    w.geometry("+%d+%d" % (int(pos[0]), int(pos[1])))
+                    w.attributes("-alpha", float(new.get(key, new.get("alpha", 0.85))))
+                except tk.TclError:
+                    pass
+        self.overlay._drawn = None
+        self.apply_windows()
+        self.overlay.draw(); self.feed.draw(True); self.march.draw(True)
+        if auto:
+            self.flash(self.t("mode_auto_sw", m=self.t("mode_" + m)))
+        if self.page in ("home", "ov"):
+            self.render()
+
+    def auto_mode(self, bs, ids):
+        """Automatisch umschalten: 5 Barbaren-Angriffe hintereinander -> Offseason · Kampf mit Kill Points -> Fight."""
+        if not self.cfg.get("mode_auto"):
+            return
+        own = [g for g in reports(bs, ids, False) if g["t"] >= time.time() - 6 * 3600]
+        own.sort(key=lambda g: (g["t"], g["mt"]), reverse=True)
+        if not own:
+            return
+        top = own[0]
+        if any(f[0] and f[1] > 0 for f in top["fights"]):
+            self.set_mode("fight", True)
+            return
+        last5 = own[:5]
+        if len(last5) == 5 and all(any(not f[0] and f[14] == NPC_BARB for f in g["fights"]) and not any(f[0] for f in g["fights"]) for g in last5):
+            self.set_mode("off", True)
+
+    def set_master(self, on):
+        """Hauptschalter: ALLE Overlay-Fenster + Pop-ups an/aus (die einzelnen Einstellungen bleiben gespeichert)."""
+        ov = self.cfg["overlay"]
+        ov["all_on"] = on; save_cfg(self.cfg)
+        self.apply_windows()
+        if self.page == "home":
+            self.render()
+
     def set_opt(self, key, val):
         self._sig = None
         self.cfg["overlay"][key] = val
         save_cfg(self.cfg)
         if key == "show":
-            self.overlay.show(val)
+            self.overlay.show(val and self.ov_on())
             if self.page == "ov":
                 self.render()
         elif key == "alpha" and self.overlay.win:
             self.overlay.win.attributes("-alpha", val)
         elif key == "size":
             self.overlay.draw()
+
+    def set_alpha_of(self, key, a, save):
+        """Deckkraft eines einzelnen Fensters (live beim Schieben, gespeichert beim Loslassen)."""
+        self.cfg["overlay"][key] = a
+        w = {"alpha": self.overlay.win, "alpha_march": self.march.win, "alpha_feed": self.feed.win}.get(key)
+        if w:
+            try:
+                w.attributes("-alpha", a)
+            except tk.TclError:
+                pass
+        if save:
+            save_cfg(self.cfg)
+            if key == "alpha_toast":
+                self.test_alert("battle")
 
     def set_alpha(self, a):
         self.set_opt("alpha", a)
@@ -4220,8 +6468,10 @@ class App:
             ms.remove(k)
         else:
             ms.append(k)
-        self.cfg["overlay"]["metrics"] = [m for m in METRICS if m in ms]
+        self.cfg["overlay"]["metrics"] = [m for m in ms if m in METRICS]     # eigene Reihenfolge bleibt, neue kommen ans Ende
         save_cfg(self.cfg)
+        if self.page == "ov" and getattr(self, "ov_sub", "") == "vals":
+            self.render()
         if getattr(self, "metric_chips", None) and self.page == "ov":
             try:
                 self.metric_chips[k].set(k in ms)
@@ -4308,10 +6558,8 @@ class App:
                 since = self.session_start
             elif rng == "r_today":
                 since = datetime.combine(date.today(), datetime.min.time()).timestamp()
-            elif rng == "r_24h":
-                since = (now - 86400) // 600 * 600          # auf 10 Min gerundet -> Zahlen springen nicht
-            elif rng == "r_7d":
-                since = (now - 7 * 86400) // 600 * 600
+            elif range_days(rng):
+                since = (now - range_days(rng) * 86400) // 600 * 600   # auf 10 Min gerundet -> Zahlen springen nicht
             elif rng == "r_since" and ov.get("since"):
                 since = datetime.strptime(ov["since"], "%Y-%m-%d").timestamp()
             else:
@@ -4331,14 +6579,22 @@ class App:
             self._since_cur = since
             with self.scanner.lock:
                 nm, self.scanner.new_markers = self.scanner.new_markers, []
-                nb = len(self.scanner.battles)
-            sig = (nb, rng, since if rng != "r_24h" and rng != "r_7d" else int(since // 60), ov.get("pvp_only", True),
+                ver = self.scanner.ver
+            TRADE_FMT["v"], TRADE_FMT["lang"] = ov.get("trade_fmt", "pct"), self.cfg.get("lang", "de")
+            STREAK_GAP["v"] = int(ov.get("streak_gap", 1800) or 1800)
+            AP_COST.update(self.cfg.get("ap_cost") or {})
+            SOUND_MASTER["on"] = bool(self.cfg["alerts"].get("sound_on", True)); SOUND_MASTER["vol"] = int(self.cfg["alerts"].get("master_vol", 100))
+            every = max(1, int(ov.get("calc_every", 5)))
+            self.scanner.calc_every = every
+            if ver != getattr(self, "_ver_used", None) and now - getattr(self, "_calc_at", 0) >= every:
+                self._ver_used = ver                                   # im grossen Kampf hoechstens alle X s neu rechnen
+            sig = (getattr(self, "_ver_used", 0), rng, since if not range_days(rng) else int(since // 60), ov.get("pvp_only", True),
                    tuple(sorted(ids)) if ids is not None else None, self.cfg.get("lang"), int(now // 30))
             sig_changed = sig != getattr(self, "_sig", None)
             if sig_changed:
                 self._sig = sig
-                with self.scanner.lock:
-                    bs = list(self.scanner.battles.values())
+                self._calc_at = now
+                bs = self.scanner.battle_list()
                 self._local = compute(bs, ids, rng, since, ov.get("pvp_only", True), self.cfg.get("lang", "de"))
                 if ov.get("source", "web") == "web" and getattr(self, "_web_stats", None) and self.cfg.get("token"):
                     self._vals = web_vals(self._web_stats, self._local, self.cfg.get("lang", "de"))   # bis neue Website-Zahlen da sind
@@ -4383,12 +6639,14 @@ class App:
                 self.scanner.prune_markers()                       # Marker aelter als 1 h verschwinden
             if nm:
                 self.refresh_markers(True); self.overlay.draw()
-            if sig_changed or self._ticks % 30 == 0:
-                self.update_modules(ids, since, sig_changed)
+            if sig_changed or (self._ticks % 5 == 0 and getattr(recent_cards, "pending", False)) or self._ticks % 30 == 0:
+                self.update_modules(ids, since, sig_changed)          # neu, wenn Berichte fertig werden – sonst alle 30 s
             self.overlay.update(self._vals)
             self.feed.draw(); self.march.draw()
             if self._ticks % 2 == 0:
                 self.feed.keep_top(); self.march.keep_top()
+            if self._ticks % 5 == 0:
+                self.check_rok()
             msg, ts = self._flash
             st = msg if msg and now - ts < 8 else self.scanner.status
             if now < getattr(self, "_mention_until", 0):                # genannt: roter, blinkender Hinweis in der App
