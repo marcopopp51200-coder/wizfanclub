@@ -1053,6 +1053,7 @@ window.I18N = (() => {
         "Die Datei hat keine Spalte „ID“ – bitte die Kingdom-Datei aus RokTracker nehmen.": "The file has no “ID” column – please use the kingdom file from RokTracker."
       },
       patterns: [
+        [/^(.+) – klicken: Kampf anzeigen$/, '$1 – click: show battle'],
         // Heatmap 36 (battles.js)
         [/^Einzel-Erfolg: Kämpfe einmal gegen (.+)$/, 'Single achievement: fight once against $1'], [/^(.+): Einzel-Erfolg: Kämpfe einmal gegen (.+)$/, '$1: Single achievement: fight once against $2'],
         // ---- My Kingdom: Top 300 (RokTracker-Scans) ----
