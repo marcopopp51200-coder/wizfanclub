@@ -1120,21 +1120,23 @@ window.RokMods.battles = (R) => {
   }
   // ===== 🎖️ Abzeichen (5 Stufen) – nur eigene Kämpfe, Pilot-Kämpfe zählen nicht =====
   var KB_ONE = ['✅', 'Erreicht', '#f5c542'];
-  var KB_CMD = [[1, 'liu', 'Liu Che'], [1, 'bq', 'Bai Qi'], [1, 'attila', 'Attila'], [1, 'gajah', 'Gajah Mada'], [1, 'alp', 'Alp Arslan'],
+  var KB_CMD = [[1, 'liu', 'Liu Che'], [1, 'huo', 'Huo Qubing'], [1, 'attila', 'Attila'], [1, 'gajah', 'Gajah Mada'], [1, 'alp', 'Alp Arslan'],
     [2, 'scipio', 'Scipio Africanus'], [2, 'nevsky', 'Alexander Nevsky'], [2, 'philip', 'Philip II'], [2, 'joan', 'Joan of Arc'], [2, 'cm', 'Charles Martel'],
     [3, 'beli', 'Belisarius'], [3, 'alex', 'Alexander the Great'], [3, 'shajar', 'Shajar al-Durr'], [3, 'ragnar', 'Ragnar Lodbrok'], [3, 'archimedes', 'Archimedes'],
     [4, 'guan', 'Guan Yu'], [4, 'mina', 'Minamoto no Yoshitsune'], [4, 'aethel', 'Æthelflæd'], [4, 'seondeok', 'Seondeok'], [4, 'thutmose', 'Thutmose III'],
-    [5, 'huo', 'Huo Qubing']];   // [Stufe 1–5 (Bronze … Diamant), Icon-ID, Name] – weitere hier ergänzen
+    [5, 'const', 'Constantine the Great'], [5, 'boudica', 'Boudica'], [5, 'richard', 'Richard I'], [5, 'mulan', 'Mulan'], [5, 'trajan', 'Trajan']];   // [Stufe 1–5 (Bronze … Diamant), Icon-ID, Name] – weitere hier ergänzen
   var KB_TIER5 = [['🥉', 'Bronze', '#d08b4f'], ['🥈', 'Silber', '#cbd5e1'], ['🥇', 'Gold', '#f5c542'], ['🏅', 'Platin', '#a5b4fc'], ['💎', 'Diamant', '#67e8f9']];
   function kbBadges(R, MR, ALL) {   // R = PvP-Kämpfe zeitlich sortiert, MR = PvP inkl. Rally/Garnison (für Verdienst/Tote), ALL = alle eigenen Kämpfe inkl. PvE (für PvE-Ziele, Teleports)
     const T = R.map(r => Date.parse(r.battle_start)); let best10 = 0;
     for (let i = 0, j = 0, sum = 0; i < R.length; i++) { sum += +R[i].kill_points || 0; while (T[i] - T[j] > 10 * 6e4) { sum -= +R[j].kill_points || 0; j++; } if (sum > best10) best10 = sum; }
-    const S = new Map(); R.forEach(r => { const k = String(r.parent_id || r.mail_id); S.set(k, (S.get(k) || 0) + (+r.kill_points || 0)); }); const bigS = Math.max(0, ...S.values());
+    const S = new Map(); R.forEach(r => { const k = String(r.parent_id || r.mail_id); S.set(k, (S.get(k) || 0) + (+r.kill_points || 0)); }); let bigS = Math.max(0, ...S.values());
+    { const G = new Map(), me = new Set(MR.map(r => String(r.player_id))); MR.filter(r => +r.group_size > 1).forEach(r => { const k = String(r.parent_id || r.mail_id); G.set(k, (G.get(k) || 0) + (+r.kill_points || 0)); });   // Rally/Garnison: KP der ganzen Gruppe zählen
+      (kxRally || []).forEach(r => { if (r.is_pvp && me.has(String(r.player_id)) && !kbIsAoo(r)) bigS = Math.max(bigS, +r.group_kill_points || 0); }); G.forEach(v => { bigS = Math.max(bigS, v); }); }
     const dayKp = new Map(), dayAcc = new Map(); R.forEach((r, i) => { const d = (r.battle_start || '').slice(0, 10); dayKp.set(d, (dayKp.get(d) || 0) + (+r.kill_points || 0)); });
     MR.forEach(r => { const d = (r.battle_start || '').slice(0, 10); dayAcc.set(d, (dayAcc.get(d) || 0) + (+r.acclaim || 0)); });
     const SS = []; { let cur = null; R.forEach((r, i) => { const t = T[i]; if (!cur || t - cur.b > 45 * 6e4) { cur = { a: t, b: t, rows: [] }; SS.push(cur); } cur.b = t; cur.rows.push(r); }); }
     const bestTrade = Math.max(0, ...SS.map(x => anaSum(x.rows)).filter(w => w.kp >= 1e6).map(w => w.kpt === Infinity ? 99 : w.kpt || 0));
-    const longSess = Math.max(0, ...SS.map(x => (x.b - x.a) / 36e5)), night = T.filter(t => new Date(t).getHours() < 5).length, big = R.filter(r => (+r.enemy_severe || 0) + (+r.enemy_dead || 0) >= 1e4).length;
+    const longSess = Math.max(0, ...SS.map(x => (x.b - x.a) / 36e5)), night = T.filter(t => new Date(t).getHours() < 2).length, big = R.filter(r => (+r.enemy_severe || 0) + (+r.enemy_dead || 0) >= 1e4).length;
     const deads = MR.reduce((a, r) => a + (+r.self_dead || 0), 0);
     // Battle Streaks (ein Bericht mit mehreren Gegnern = parent_id): Trade pro Streak
     const ST = new Map(); R.forEach(r => { const k = String(r.parent_id || r.mail_id), o = ST.get(k) || { kp: 0, ek: 0 }; o.kp += +r.kill_points || 0; o.ek += +r.enemy_kill_points || 0; ST.set(k, o); });
@@ -1144,31 +1146,31 @@ window.RokMods.battles = (R) => {
     const L = [
       ['⚡', 'blitz', 'Blitzkrieg', 'Mach so viele KP wie möglich innerhalb von 10 Minuten', best10, [1e7, 2e7, 3e7, 4e7, 5e7], short, ['Blitzkrieg', 'Silberner Blitz', 'Goldener Blitz', 'Platin-Blitz', 'Diamant-Blitz']],
       ['🔁', 'trade', 'Trader', 'Bester KP-Trade in einer Schlacht (Pause unter 45 min), ab 1 Mio. KP', bestTrade, [2, 4, 6, 8, 10], v => v >= 99 ? '∞' : dec(v, 1) + ' : 1'],
-      ['💥', 'flex', 'Flex-König', 'KP in einem einzigen Battle Streak oder einer Rally', bigS, [2e6, 5e6, 1e7, 2.5e7, 5e7], short],
-      ['📅', 'day', 'Tageskönig', 'KP an einem einzigen Tag', Math.max(0, ...dayKp.values()), [2e7, 5e7, 1e8, 1.5e8, 2e8], short],
-      ['🎖️', 'acc', 'Ruhmesjäger', 'Verdienst (Acclaim) an einem einzigen Tag', Math.max(0, ...dayAcc.values()), [1e5, 2.5e5, 5e5, 7.5e5, 1e6], short],
+      ['💥', 'flex', 'Flex-König', 'KP in einem einzigen Battle Streak, einer Rally oder Garnison (bei Rally/Garnison zählen die KP der ganzen Gruppe)', bigS, [2e6, 2.5e7, 1e8, 2.5e8, 5e8], short],
+      ['📅', 'day', 'Tageskönig', 'KP an einem einzigen Tag', Math.max(0, ...dayKp.values()), [2e7, 5e7, 1e8, 2.5e8, 5e8], short],
+      ['🎖️', 'acc', 'Ruhmesjäger', 'Verdienst (Acclaim) an einem einzigen Tag', Math.max(0, ...dayAcc.values()), [1e5, 2.5e5, 5e5, 1e6, 2e6], short],
       ['💀', 'dead', 'Blutzoll', 'Eigene tote Truppen im gewählten Zeitraum', deads, [5e5, 1e6, 1.5e6, 2e6, 3e6], short],
       ['⏱️', 'mara', 'Marathon', 'Längste Schlacht am Stück (keine Pause über 45 min)', longSess, [1, 2, 4, 6, 8], v => dec(v, 1) + ' h'],
-      ['🦉', 'owl', 'Nachteule', 'Kämpfe zwischen 0 und 5 Uhr nachts', night, [100, 500, 1000, 2500, 5000], fmt],
+      ['🦉', 'owl', 'Nachteule', 'Kämpfe zwischen 0 und 2 Uhr nachts', night, [100, 500, 1000, 2500, 5000], fmt],
       ['🌙', 'nshift', 'Nachtschicht', 'Selbst gespielte Kämpfe zwischen 3 und 5 Uhr', T.filter(t => { const h = new Date(t).getHours(); return h >= 3 && h < 5; }).length, [50, 100, 250, 500, 1000], fmt],
       ['🌅', 'early', 'Frühaufsteher', 'Kämpfe zwischen 7 und 9 Uhr morgens', T.filter(t => { const h = new Date(t).getHours(); return h >= 7 && h < 9; }).length, [100, 500, 1000, 2500, 5000], fmt],
       ['🎯', 'sniper', 'Scharfschütze', 'Battle Streaks mit mindestens 1 Mio. KP und KP-Trade 5 : 1 oder besser', snip, [10, 50, 100, 250, 500], fmt],
-      ['🤕', 'ouch', 'Auf die Schnauze', 'Battle Streaks, in denen der Gegner 1 Mio.+ KP macht und du 1 : 5 oder schlechter tradest', ouch, [5, 10, 25, 50, 100], fmt],
+      ['🤕', 'ouch', 'Mach lieber mal Pause', 'Battle Streaks, in denen der Gegner 1 Mio.+ KP macht und du 1 : 5 oder schlechter tradest', ouch, [5, 10, 25, 50, 100], fmt],
       ['🗡️', 'regi', 'Königsmörder', 'Höchste KP in einem einzelnen Kampfbericht', maxRep, [2e6, 5e6, 7e6, 1e7, 1.5e7], short],
       ['🔍', 'hunt', 'Kopfgeldjäger', 'Gegen so viele verschiedene Spieler kämpfen', foes, [20, 30, 50, 100, 200], fmt],
-      ['🧱', 'unb', 'Unbesiegt', 'Kampfberichte hintereinander mit KP-Trade 1 : 1 oder besser (nur Berichte ab 500K KP zählen)', unb, [5, 10, 25, 50, 100], fmt],
+      ['🧱', 'unb', 'Unbesiegt', 'Kampfberichte hintereinander mit KP-Trade 1 : 1 oder besser (nur Berichte ab 500K KP zählen)', unb, [5, 10, 20, 30, 50], fmt],
       ['🌋', 'big', 'Großschlag', 'Kämpfe, in denen der Gegner 10.000+ Truppen verliert (tot oder schwer verwundet)', big, [10, 50, 100, 250, 500], fmt]];
     if (ALL) {   // PvE-Ziele fürs KvK, Teleports, Einzel-Erfolge
       const A2 = ALL.filter(r => !kbPilotRow(r) && !kbIsAoo(r)).map(r => [Date.parse(r.battle_start || ''), r]).filter(x => x[0]).sort((a, b) => a[0] - b[0]), cat = (r) => r.is_pvp ? '' : kbCatOf(r.npc_btype, r.group_size);
-      const pids = new Set(ALL.map(r => String(r.player_id))), barb = A2.filter(([, r]) => cat(r) === 'barb' && !(+r.group_size > 1));
+      const pids = new Set(ALL.map(r => String(r.player_id))), barb = (() => { const sn = new Set(); return A2.filter(([, r]) => { if (cat(r) !== 'barb' || +r.group_size > 1 || !kbDefeated(r)) return false; const k = r.mail_id + '|' + r.opponent_id; if (sn.has(k)) return false; sn.add(k); return true; }); })();   // nur echte Barbaren (Typ 1), nur besiegte, jeder nur einmal
       const kar = A2.filter(([, r]) => cat(r) === 'fort' && !(+r.group_size > 1)).length;   // Kahar = Typ 41, allein angegriffen
       const fort = A2.filter(([, r]) => !r.is_pvp && +r.group_size > 1).length + (kxRally || []).filter(r => !r.is_pvp && pids.has(String(r.player_id))).length;   // Forts = PvE-Rallys
       let chain = 0; { const last = new Map(); barb.filter(([, r]) => !(+r.group_size > 1)).forEach(([t, r]) => { const k = kbMarchOf(r), c = last.get(k); if (c && t - c.t <= 5 * 6e4) { c.n++; c.t = t; } else last.set(k, { n: 1, t }); chain = Math.max(chain, last.get(k).n); }); }
       let tp = 0, far = 0, lc = null; A2.forEach(([, r]) => { if (r.city_x == null) return; const x = +r.city_x / 6, y = +r.city_y / 6; if (lc) { const d = Math.hypot(x - lc[0], y - lc[1]); if (d > 10) { tp++; far = Math.max(far, d); } } lc = [x, y]; });
       const cityHit = A2.some(([, r]) => r.is_pvp && !r.joined && r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 18 && !(+r.group_size > 1 && r.self_role === 'att'));
       L.push(['🌀', 'tp', 'Teleporter', 'Teleportiere deine Stadt (zählt ab 10 Feldern)', tp, [5, 10, 15, 20, 30], fmt],
-        ['🪓', 'barb', 'Barbarenjäger', 'Besiege Barbaren', barb.length, [500, 1000, 5000, 10000, 20000], fmt],
-        ['⛓️', 'chain', 'Kettenmeister', 'Längste Kette: nur Barbaren, derselbe Marsch, höchstens 5 min Pause', chain, [3, 5, 7, 10, 15], v => v + '×'],
+        ['🪓', 'barb', 'Barbarenjäger', 'Besiege Barbaren (nur normale Barbaren, keine Forts/Kahar)', barb.length, [500, 1000, 5000, 10000, 20000], fmt],
+        ['⛓️', 'chain', 'Kettenmeister', 'Längste Kette besiegter Barbaren mit demselben Marsch, höchstens 5 min Pause (keine Forts/Kahar)', chain, [3, 5, 7, 10, 15], v => v + '×'],
         ['🏯', 'fort', 'Fortbrecher', 'Zerstöre Barbaren-Forts (Rallys auf Forts zählen)', fort, [50, 100, 150, 200, 500], fmt],
         ['👹', 'kar', 'Kahar-Jäger', 'Besiege Kahar (allein angegriffen)', kar, [10, 20, 50, 100, 200], fmt],
         ['🏰', 'city', 'Belagert', 'Einzel-Erfolg: Deine Stadt wird angegriffen', cityHit ? 1 : 0, [1], v => v ? '✔' : '–', null, true],
@@ -1178,7 +1180,7 @@ window.RokMods.battles = (R) => {
     const seenH = new Set(); R.forEach(r => { const a = hmIconId(r.enemy_hero1), b = hmIconId(r.enemy_hero2); if (a) seenH.add(a); if (b) seenH.add(b); });   // Einzel-Erfolg: einmal gegen den Kommandanten gekämpft
     KB_CMD.forEach(([tier, slug, hn]) => L.push(['⚔️', 'cmd_' + slug, hn, 'Einzel-Erfolg: Kämpfe einmal gegen ' + hn, seenH.has(slug) ? 1 : 0, [1], v => v ? '✔' : '–', null, tier, 'cmd']));
     const out = L.map(([ic, k, n, d, v, steps, f, names, one, cat]) => { const lv = steps.filter(x => v >= x).length, ct = typeof one === 'number' ? KB_TIER5[one - 1] : KB_ONE;   // Kommandanten: Einzel-Erfolg mit fester Stufenfarbe
-      return { ic, k, n, d, v, steps, f, names, lv, one: !!one, ctier: typeof one === 'number' ? one : 0, cat: cat || (['tp', 'barb', 'chain', 'fort', 'kar', 'city', 'far'].includes(k) ? 'pve' : 'fight'), t: lv ? (one ? ct : KB_TIER5[lv - 1]) : null, title: lv ? (names ? names[lv - 1] : n) : n }; });
+      return { ic, k, n, d, v, steps, f, names, lv, one: !!one, ctier: typeof one === 'number' ? one : 0, cat: cat || (one ? 'one' : ['tp', 'barb', 'chain', 'fort', 'kar', 'city', 'far'].includes(k) ? 'pve' : 'fight'), t: lv ? (one ? ct : KB_TIER5[lv - 1]) : null, title: lv ? (names ? names[lv - 1] : n) : n }; });
     // 🏆 Meta-Erfolge: zählen die anderen Abzeichen
     const got = out.filter(b => b.lv > 0).length, dia = out.filter(b => !b.one && b.lv >= 5).length;
     [['🏅', 'meta', 'Sammler', 'erreichte Abzeichen', got, [5, 10, 20, 30, 40]], ['💎', 'metad', 'Diamant-Sammler', 'Abzeichen auf Diamant', dia, [1, 3, 5, 10, 15]]].forEach(([ic, k, n, d, v, steps]) => { const lv = steps.filter(x => v >= x).length; out.push({ ic, k, n, d, v, steps, f: fmt, lv, one: false, cat: 'meta', t: lv ? KB_TIER5[lv - 1] : null, title: n }); });
@@ -1708,7 +1710,7 @@ window.RokMods.battles = (R) => {
       const MR = (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kbIsPvp(r) && !kbIsAoo(r) && !kbPilotRow(r) && kxInRange(r.battle_start));   // inkl. Rally/Garnison, ohne Pilot
       const mKp = MR.reduce((a, r) => a + (+r.kill_points || 0), 0), mAc = MR.reduce((a, r) => a + (+r.acclaim || 0), 0), mN = MR.length;
       const accSteps = [1e6, 2e6, 5e6, ...Array.from({ length: Math.max(8, Math.floor(mAc / 5e6) + 4) }, (_, i) => (i + 2) * 5e6)];
-      const kpSteps = [5e7, ...Array.from({ length: Math.max(12, Math.floor(mKp / 1e8) + 4) }, (_, i) => (i + 1) * 1e8)];
+      const kpSteps = [4e8, 6e8, 8e8, 1e9, 1.5e9, 2e9, 3e9, 5e9, 1e10];
       const ALLr = (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start)), BADGES = kbBadges(R, MR, ALLr);
       const badgeHtml = BADGES.map(b => { const { ic, d, v, steps, f, lv, t } = b, nx = steps[lv], top = steps[steps.length - 1];
         const pinned = st.acc && ((st.badgePick || {})[st.acc] === b.k);
@@ -1724,11 +1726,11 @@ window.RokMods.battles = (R) => {
           <div class="flex flex-wrap gap-1 mt-2">${win.map(x => { const ok = x <= val, nxt = x === nx; return `<span class="rounded-md border px-1.5 py-0.5 text-[10px] tabular-nums ${ok ? 'border-gold-400/70 bg-gold-500/15 text-gold-100' : nxt ? 'border-sky-400/70 text-sky-200' : 'border-ink-700 text-slate-600'}">${ok ? '✓ ' : nxt ? '▶ ' : ''}${f(x)}</span>`; }).join('')}</div></div>`; };
       const sec = (t, sub) => `<h4 class="font-semibold text-slate-100 mt-5 mb-1 text-base">${t} <span class="text-[11px] text-slate-500 font-normal">${sub || ''}</span></h4>`;
       body = ACH ? `        ${sec('🏁 <span>Meilensteine</span>', '– alle PvP-Kämpfe im Zeitraum oben inkl. Rally/Garnison (für alles: Zeitraum „Alles“)')}
-        <div class="grid lg:grid-cols-3 gap-2">${track('🏆', 'Kill Points', '50 M · 100 M · <span>dann alle</span> 100 M', mKp, kpSteps, short, '#f5c542')}
+        <div class="grid lg:grid-cols-3 gap-2">${track('🏆', 'Kill Points', '400 M · 600 M · 800 M · 1 B · 1,5 B · 2 B · 3 B · 5 B · 10 B', mKp, kpSteps, short, '#f5c542')}
           ${track('🎖️', 'Verdienst', '1 M · 2 M · 5 M · 10 M · <span>dann alle</span> 5 M', mAc, accSteps, short, '#7dd3fc')}
           ${track('⚔️', 'Kämpfe', '1 K · 10 K · 50 K · 100 K …', mN, [1e3, 1e4, 5e4, 1e5, 2.5e5, 5e5], short, '#f87171')}</div>
         ${sec('🎖️ <span>Abzeichen &amp; Ziele</span>', '– 🥉 Bronze · 🥈 Silber · 🥇 Gold · 🏅 Platin · 💎 Diamant · ✅ Einzel-Erfolge · ohne Pilot-Kämpfe')}
-        ${[['fight', '⚔️ Kampf'], ['pve', '🪓 PvE & Stadt'], ['cmd', '🎯 Kommandanten'], ['meta', '🏆 Meta']].map(([c, l]) => { const H = c === 'cmd' ? kbCmdGrid(BADGES) : badgeHtml.filter(x => x[0] === c).map(x => x[1]).join(''); return H ? `<div class="text-xs font-semibold text-slate-300 mt-3 mb-1.5">${l}</div>${c === 'cmd' ? H : `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${H}</div>`}` : ''; }).join('')}
+        ${[['meta', '🏆 Meta'], ['fight', '⚔️ Kampf'], ['pve', '🪓 PvE & Stadt'], ['one', '⭐ Einzel-Erfolge'], ['cmd', '🎯 Kommandanten']].map(([c, l]) => { const H = c === 'cmd' ? kbCmdGrid(BADGES) : badgeHtml.filter(x => x[0] === c).map(x => x[1]).join(''); return H ? `<div class="text-xs font-semibold text-slate-300 mt-3 mb-1.5">${l}</div>${c === 'cmd' ? H : `<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${H}</div>`}` : ''; }).join('')}
 ` : `${sec('📊 <span>Überblick</span>', '– Zeitraum oben')}
         <div class="grid sm:grid-cols-3 gap-2">${rec('🏆', 'KP im Zeitraum', short(tot.kp), fmt(tot.n) + ' <span>Kämpfe</span>')}${rec('🔁', 'KP-Trade im Zeitraum', hmKptTxt(tot.kpt))}${rec('🔮', 'Hochrechnung KvK-Ende', proj ? '~' + short(proj) : '–', proj ? `<span>bei</span> ${short(kvkKp)} <span>nach</span> ${Math.floor(dEl)} <span>von 50 Tagen</span>` : '<span>KvK-Start in der Heatmap setzen</span>')}</div>
         ${sec('🏅 <span>Rekorde</span>')}
@@ -2593,7 +2595,7 @@ window.RokMods.battles = (R) => {
           const tmp = document.createElement('canvas'); tmp.width = tmp.height = 1600; const tc = tmp.getContext('2d'), mk = hmMask(S.h, S.m), ht = hmHeat(S); if (mk) tc.drawImage(mk, 0, 0, 1600, 1600); if (ht) { tc.imageSmoothingEnabled = true; tc.drawImage(ht, 0, 0, 1600, 1600); }
           c.drawImage(tmp, sx * 1600, sy * 1600, sw * 1600, sw * 1600, 0, 0, P, P);
           const map = (u, v) => [(u - sx) / sw * P, (v - sy) / sw * P]; hmPaintDots(c, P, S, map);
-          if (h.zm && h.pngMk) S.zs.forEach(z => { const [x, y] = map(z.mu, z.mv), title = hmZName(h, m, z.z), l2 = h.src === 'pvp' ? `KP ${short(z.kp)} · Trade ${hmTradeTxt(z.trade)} · Deads ${short(z.dead)}` : `${h.src === 'barb' ? 'Barbaren' : 'Forts'} ${z.n}`, l3 = 'ab ' + hmWhen(z.first);
+          if (h.zm && h.pngMk) S.zs.forEach(z => { const [x, y] = map(z.mu, z.mv), title = hmZName(h, m, z.z), l2 = h.src === 'barb' || h.src === 'fort' ? `${h.src === 'barb' ? 'Barbaren' : 'Forts'} ${fmt(z.n)}` : `KP ${short(z.kp)} · Trade ${hmTradeTxt(z.trade)} · Deads ${short(z.dead)}`, l3 = 'ab ' + hmWhen(z.first);
             c.font = 'bold 26px system-ui,sans-serif'; const w1 = c.measureText(title).width; c.font = '20px system-ui,sans-serif'; const w = Math.max(w1, c.measureText(l2).width, c.measureText(l3).width) + 24;
             c.fillStyle = 'rgba(7,9,15,.9)'; c.strokeStyle = '#f59e0b'; c.lineWidth = 2; c.beginPath(); c.roundRect(x + 14, y - 44, w, 88, 12); c.fill(); c.stroke();
             c.fillStyle = '#fcd34d'; c.font = 'bold 26px system-ui,sans-serif'; c.fillText(title, x + 26, y - 14); c.fillStyle = '#e2e8f0'; c.font = '20px system-ui,sans-serif'; c.fillText(l2, x + 26, y + 12); c.fillStyle = '#94a3b8'; c.fillText(l3, x + 26, y + 34); });
@@ -2604,7 +2606,7 @@ window.RokMods.battles = (R) => {
       const near = (hmLast?.S || hmState(st)).dotsM.filter(p => Math.hypot(p.u - u, p.v - v) < .012 / Math.sqrt(hmView.s));
       if (!near.length) { tip.classList.add('hidden'); return; }
       const kp = near.reduce((s, p) => s + (p.kp ?? hmKP(p.r)), 0), en = [...new Set(near.map(p => p.r.enemy_name).filter(Boolean))].slice(0, 3), who = [...new Set(near.map(p => p.mine ? (kbIdName(p.r.player_id) || p.r.self_name || 'Du') + ' · ' + p.r.player_id : hmMates?.[p.fi]?.name).filter(Boolean))];
-      tip.innerHTML = `${h.src === 'pvp' ? `⚔️ ${near.length} · 🏆 ${short(kp)}` : (h.src === 'barb' ? '🪓 ' : '👹 ') + near.length}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].r.pos_x, 'x'))} · Y ${Math.round(hmTile(near[0].r.pos_y, 'y'))} · ${hmWhen(near[near.length - 1].t)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}${who.length ? `<br><span class="text-cyan-200" translate="no">${who.map(esc).join(', ')}</span>` : ''}`;
+      tip.innerHTML = `${h.src !== 'barb' && h.src !== 'fort' ? `⚔️ ${near.length} · 🏆 ${short(kp)}` : (h.src === 'barb' ? '🪓 ' : '👹 ') + near.length}<br><span class="text-slate-400">X ${Math.round(hmTile(near[0].r.pos_x, 'x'))} · Y ${Math.round(hmTile(near[0].r.pos_y, 'y'))} · ${hmWhen(near[near.length - 1].t)}</span>${en.length ? `<br><span class="text-red-200" translate="no">${en.map(esc).join(', ')}</span>` : ''}${who.length ? `<br><span class="text-cyan-200" translate="no">${who.map(esc).join(', ')}</span>` : ''}`;
       tip.style.left = Math.min(bb.width - 190, ev.clientX - bb.left + 12) + 'px'; tip.style.top = (ev.clientY - bb.top + 12) + 'px'; tip.classList.remove('hidden'); });
     box.addEventListener('mouseleave', () => tip.classList.add('hidden'));
     document.addEventListener('fullscreenchange', () => setTimeout(hmApplyView, 100), { once: true });
