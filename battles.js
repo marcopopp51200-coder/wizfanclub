@@ -5,7 +5,8 @@
 // Läuft innerhalb von RokApp (scanner.js); R = geteilter Kontext (window.Rok).
 window.RokMods = window.RokMods || {};
 window.RokMods.battles = (R) => {
-  const $ = R.$, fmt = R.fmt, short = R.short, esc = R.esc, RokAuth = window.RokAuth;
+  const $ = R.$, fmt = R.fmt, esc = R.esc, RokAuth = window.RokAuth;
+  const short = (v) => { const n = +v; if (isFinite(n) && Math.abs(n) >= 1e9) return (n / 1e9).toFixed(Math.abs(n) >= 1e10 ? 1 : 2).replace(/\.?0+$/, '') + 'B'; return R.short(v); };   // 1000.0M → 1B
   const dec = (v, d = 2) => (+v || 0).toLocaleString('de-DE', { maximumFractionDigits: d });
   const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   const makeFold = (sec, key) => { if (sec && R.makeFold) R.makeFold(sec, key); };
@@ -13,7 +14,7 @@ window.RokMods.battles = (R) => {
   const KEY = 'rok_battles_' + (R.PROFILE?.id || 'x');
   let S = {}; try { S = JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch { S = {}; }
   // Farm-Namen, Gruppen, verknüpfte IDs usw. zusätzlich in Supabase (rok_mydata_settings) → gleich auf jedem Gerät / jeder Vercel-Adresse
-  const CLOUD_KEYS = ['rsNames', 'rsGroups', 'rsGroupNames', 'linkIds', 'rsKvk', 'idNames', 'accKvk', 'heatAcc', 'buffRes', 'buffAck', 'buffHide'];
+  const CLOUD_KEYS = ['badgeSeen', 'kdCamp', 'anaMin', 'kvks', 'kvkSeen', 'kvkEdit', 'rsNames', 'rsGroups', 'rsGroupNames', 'linkIds', 'rsKvk', 'idNames', 'accKvk', 'heatAcc', 'buffRes', 'buffAck', 'buffHide'];
   let cloudReady = false, cloudLast = '', cloudMissing = false;
   const cloudPick = () => { const k = S.kampf || {}, o = {}; CLOUD_KEYS.forEach(x => { if (k[x] != null) o[x] = k[x]; }); return o; };
   const cloudSave = () => {
@@ -45,9 +46,17 @@ window.RokMods.battles = (R) => {
     try { const u = new URL(location.href); u.searchParams.delete('heat'); u.searchParams.delete('p'); history.replaceState(null, '', u.pathname + u.search + u.hash); } catch {}
     setTimeout(() => { R.view = 'battles'; R.applyView?.(); window.scrollTo({ top: 0 }); }, 400);
   })();
+  (() => {   // My Data öffnet immer mit „Battles“ (außer Direktlink in die Heatmap)
+    let hp = false; try { hp = !!new URLSearchParams(location.search).get('heat'); } catch {}
+    try { if (!hp) { kbSt().page = 'battles'; } } catch {}
+    document.querySelectorAll('.main-tab[data-view="battles"]').forEach(b => b.addEventListener('click', () => { try { if (R.view !== 'battles') kbSt().page = 'battles'; } catch {} }, true));
+  })();
 
   var kbRows = null, kbErr = '', kbLoading = false, kbProg = 0, kbShow = 50, kbNpcCols = true, kbPosCols = true, kbAccCols = true, kbParCols = true, kbKdCols = true, kbFmCols = true;
-  function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : '') + (kbParCols ? ',parent_id' : '') + (kbKdCols ? ',enemy_kingdom' : '') + (kbFmCols ? ',self_formation,enemy_formation' : ''); }
+  function kbSel() { return KB_COLS + (kbNpcCols ? ',npc_btype,npc_level,group_size' : '') + (kbPosCols ? ',pos_x,pos_y,city_x,city_y,map_role,room_id' : '') + (kbPosCols && kbAccCols ? ',acclaim' : '') + (kbParCols ? ',parent_id' : '') + (kbKdCols ? ',enemy_kingdom' : '') + (kbFmCols ? ',self_formation,enemy_formation' : '') + (kbSkCols ? ',enemy_skills,enemy_hero_lv' : '') + (kbPlCols ? ',pilot_gov,pilot_name,pilot_user,pilot_ok' : '') + (kbGrCols ? ',self_gear,enemy_gear' : ''); }
+  var kbSkCols = true, kbPlCols = true, kbGrCols = true;
+  function kbPilotRow(r) { return r.pilot_gov != null && r.pilot_gov !== ''; }   // von einem Piloten gesteuert → zählt beim Account, aber nicht für Ziele/Erfolge
+  function kbPilotHidden(r) { return r.pilot_ok === false && String(r.pilot_user || '') !== String(RokAuth.userId?.() || ''); }   // Pilot noch nicht freigegeben
   var KB_COLS = 'mail_id,opponent_id,account,player_id,battle_start,battle_end,is_pvp,self_name,self_alliance,self_hero1,self_hero2,self_troops_start,self_wounded,self_severe,self_dead,self_healing,self_power_lost,enemy_name,enemy_alliance,enemy_hero1,enemy_hero2,enemy_troops_start,enemy_wounded,enemy_severe,enemy_dead,enemy_power_lost,kill_points,enemy_kill_points,server_id';
   // Laden pro Account: jede Governor-ID wird einmal geladen und gemerkt – Account-Wechsel ohne Neuladen
   var kbCache = new Map(), kbAllRows = null, kbCurKey = null, kbTotal = 0;
@@ -59,11 +68,21 @@ window.RokMods.battles = (R) => {
     if (st.page === 'heat' && (h.fr || h.cmpOpen)) { if (!hmMates && !hmMatesLoading) hmLoadMates(); (hmMates || []).forEach(m => base.push(String(m.gid))); }
     return [...new Set(base)];
   }
+  // Nur so viel laden wie nötig: Standard die letzten 75 Tage (ein ganzes KvK). „Alles“ oder ein früherer Zeitraum lädt den Rest nach.
+  var kbCacheFrom = new Map(), kbAllFrom = undefined;
+  function kbNeedFrom() {
+    const st = kbSt(), d75 = Date.now() - 75 * 864e5; let f = d75;
+    if (st.days === 'custom') { if (!st.from) return null; f = Math.min(d75, Date.parse(st.from + 'T00:00:00') - 864e5); }
+    else if (!(+st.days > 0)) return null;
+    else f = Math.min(d75, Date.now() - (+st.days + 1) * 864e5);
+    return new Date(f - f % 864e5).toISOString();
+  }
+  function kbCovers(from) { const need = kbNeedFrom(); return from == null || (need != null && need >= from); }
   function kbApply() {
-    const ids = kbScopeIds(), key = ids ? ids.slice().sort().join(',') : '*';
+    const ids = kbScopeIds(), key = (ids ? ids.slice().sort().join(',') : '*') + '@' + (kbNeedFrom() || 'all');
     if (key === kbCurKey && kbRows) return true;
-    if (!ids) { if (!kbAllRows) return false; kbRows = kbAllRows; kbCurKey = key; return true; }
-    if (ids.some(i => !kbCache.has(i))) return false;
+    if (!ids) { if (!kbAllRows || !kbCovers(kbAllFrom)) return false; kbRows = kbAllRows; kbCurKey = key; return true; }
+    if (ids.some(i => !kbCache.has(i) || !kbCovers(kbCacheFrom.get(i)))) return false;
     kbRows = ids.length === 1 ? kbCache.get(ids[0]) : ids.flatMap(i => kbCache.get(i)).sort((a, b) => (b.battle_start || '').localeCompare(a.battle_start || ''));
     kbCurKey = key; return true;
   }
@@ -86,13 +105,17 @@ window.RokMods.battles = (R) => {
     const ids = kbScopeIds();
     if (force) { if (ids) ids.forEach(i => kbCache.delete(i)); else kbAllRows = null; kbCurKey = null; }
     if (kbApply()) return;
-    const miss = ids ? ids.filter(i => !kbCache.has(i)) : null;
+    const need = kbNeedFrom(), miss = ids ? ids.filter(i => !kbCache.has(i) || !kbCovers(kbCacheFrom.get(i))) : null;
+    if (miss) miss.forEach(i => kbCache.delete(i)); else kbAllRows = null;
     kbLoading = true; kbProg = 0; kbTotal = 0; kbErr = ''; if (R.view === 'battles') renderKampf();
     try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
-      const q0 = (cnt) => { let q = db.from('rok_battles').select(kbSel(), cnt ? { count: 'exact' } : undefined); if (miss) q = q.in('player_id', miss); return q.order('battle_start', { ascending: false }).order('mail_id').order('opponent_id'); };
+      const q0 = (cnt) => { let q = db.from('rok_battles').select(kbSel(), cnt ? { count: 'exact' } : undefined); if (miss) q = q.in('player_id', miss); if (need) q = q.gte('battle_start', need); return q.order('battle_start', { ascending: false }).order('mail_id').order('opponent_id'); };
       let first = null;
       for (let t = 0; t < 8; t++) {
         first = await q0(true).range(0, 999); const m = first.error?.message || ''; if (!first.error) break;
+        if (kbGrCols && /self_gear|enemy_gear/i.test(m)) { kbGrCols = false; continue; }
+        if (kbPlCols && /pilot_/i.test(m)) { kbPlCols = false; continue; }   // SQL v29/v30 (Pilot) noch nicht ausgeführt
+        if (kbSkCols && /enemy_skills|enemy_hero_lv/i.test(m)) { kbSkCols = false; continue; }   // SQL v28 (Skill-Level) noch nicht ausgeführt
         if (kbFmCols && /formation/i.test(m)) { kbFmCols = false; continue; }   // SQL v20 (Truppentyp) noch nicht ausgeführt
         if (kbKdCols && /enemy_kingdom/i.test(m)) { kbKdCols = false; continue; }
         if (kbParCols && /parent_id/i.test(m)) { kbParCols = false; continue; }   // SQL v17
@@ -111,6 +134,8 @@ window.RokMods.battles = (R) => {
         } else for (let from = 1000; from < 300000; from += 1000) { const q = await q0(false).range(from, from + 999); if (q.error) throw q.error; all = all.concat(q.data || []); kbProg = all.length; kbProgUI(); if (!q.data || q.data.length < 1000) break; }
         const seen = new Set(); all = all.filter(r => { const k = r.mail_id + '|' + r.opponent_id; if (seen.has(k)) return false; seen.add(k); return true; });
       }
+      all = all.filter(r => !kbPilotHidden(r));   // Pilot-Kämpfe ohne Freigabe sieht nur der Pilot selbst
+      if (miss) miss.forEach(i => kbCacheFrom.set(i, need)); else kbAllFrom = need;
       if (miss) { miss.forEach(i => kbCache.set(i, [])); all.forEach(r => { const k = String(r.player_id); (kbCache.get(k) || kbCache.set(k, []).get(k)).push(r); }); } else kbAllRows = all;
     } catch (e) { if (miss) miss.forEach(i => { if (!kbCache.has(i)) kbCache.set(i, []); }); else kbAllRows = kbAllRows || []; kbErr = /rok_battles|relation|schema cache/i.test(e?.message || '') ? 'missing' : (e?.message || String(e)); }
     kbLoading = false; kbCurKey = null; kbFreshT = Date.now(); kbApply(); if (R.view === 'battles') renderKampf();
@@ -125,7 +150,7 @@ window.RokMods.battles = (R) => {
       const since = low ? new Date(Date.parse(low) - 3 * 36e5).toISOString() : new Date(Date.now() - 2 * 864e5).toISOString();
       let q = db.from('rok_battles').select(kbSel()).gte('battle_start', since); if (ids) q = q.in('player_id', ids.length ? ids : ['0']); q = await q.order('battle_start', { ascending: false }).limit(5000); if (q.error) return 0;
       const have = new Set(kbRows.map(r => r.mail_id + '|' + r.opponent_id)), add = (q.data || []).filter(r => !have.has(r.mail_id + '|' + r.opponent_id));
-      if (add.length) { const touched = new Set(); add.forEach(r => { const c = kbCache.get(String(r.player_id)); if (c) { c.push(r); touched.add(c); } if (kbAllRows && kbAllRows !== c) { kbAllRows.push(r); touched.add(kbAllRows); } });
+      if (add.length) { const touched = new Set(); add.filter(r => !kbPilotHidden(r)).forEach(r => { const c = kbCache.get(String(r.player_id)); if (c) { c.push(r); touched.add(c); } if (kbAllRows && kbAllRows !== c) { kbAllRows.push(r); touched.add(kbAllRows); } });
         touched.forEach(c => c.sort((x, y) => (y.battle_start || '').localeCompare(x.battle_start || ''))); kbCurKey = null; kbApply(); }
       return add.length; } catch { return 0; } finally { kbFreshing = false; }
   }
@@ -154,7 +179,7 @@ window.RokMods.battles = (R) => {
   // Meine IDs: Governor-ID aus dem Profil + selbst verknüpfte IDs (z. B. Filler oder zweiter Account).
   // Battles und Loot zeigen nur Daten dieser IDs – spielst du auf einem anderen Account, trag dessen ID im Profil ein.
   function kbProfileId() { try { return String((window.RokAuth?.ownMeta?.() || {}).governor_id || '').replace(/\D/g, ''); } catch { return ''; } }
-  function kbMyIds() { const s = new Set((kbSt().linkIds || []).map(String)); const p = kbProfileId(); if (p) s.add(p); (kbAppIds || []).forEach(x => s.add(x)); if (!kbAppIds) kbLoadAppIds(); return s; }
+  function kbMyIds() { const s = new Set((kbSt().linkIds || []).map(String)); const p = kbProfileId(); if (p) s.add(p); if (typeof kbAdmIds !== 'undefined') kbAdmIds.forEach(x => s.add(x)); (kbAppIds || []).forEach(x => s.add(x)); if (!kbAppIds) kbLoadAppIds(); return s; }
   // In der Wiz-fan-Club-App gebundene IDs (Main + Zweitaccounts, bestätigt) zählen automatisch mit
   var kbAppIds = null;
   async function kbLoadAppIds() { if (kbAppIds) return; kbAppIds = new Set();
@@ -174,7 +199,22 @@ window.RokMods.battles = (R) => {
     return (kxRally || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start) && (pvp ? !!r.is_pvp : !r.is_pvp))
       .map(r => ({ mail_id: r.mail_id, opponent_id: 'rally', battle_start: r.battle_start, player_id: r.player_id, npc_btype: r.npc_btype, npc_level: r.npc_level, group_size: Math.max(2, +r.members || 2), is_pvp: !!r.is_pvp, joined: true }));
   }
-  function kbIsAoo(r) { const g = +r.server_id; return g > 0 && g < 10000; }   // Ark of Osiris: eigener Schlachtfeld-Server (z. B. 3443), Königreich/KvK = 5-stellig (16144 …)
+  function kbIsAoo(r) { if (r.map_role) return r.map_role === 'dungeon'; const g = +r.server_id; return g > 0 && g < 5000 && g !== +kbHomeSrv(r.player_id); }   // Ark of Osiris = eigenes Schlachtfeld („dungeon“); Heimat-Königreich & KvK = Weltkarte („gsmp“)
+  function kbHomeSrv(pid) { const c = kbCache.get(String(pid)); if (!c) return 0; for (const r of c) if (r.map_role === 'gsmp' && +r.server_id < 10000) return +r.server_id; return 0; }
+  // 🗓️ KvK-Zeitplan: jede KvK-Karte hat ihre eigene Server-ID (= C-Nummer). Start/Ende aus den Kämpfen, von Hand änderbar.
+  var kbPlanMemo = { sig: '', v: null };
+  function kbKvkPlan() {
+    const st = kbSt(), seen = (st.kvkSeen = st.kvkSeen || {}), ed = st.kvkEdit || {}; let ch = false, nR = 0; kbCache.forEach(r => nR += (r || []).length);
+    const sig = nR + '|' + kbCache.size + '|' + JSON.stringify(ed) + '|' + Object.keys(seen).length + '|' + new Date().toISOString().slice(0, 13); if (kbPlanMemo.sig === sig) return kbPlanMemo.v;
+    kbCache.forEach(rows => { const M = new Map(); for (const r of rows || []) { const g = +r.server_id; if (!(g >= 10000) || (r.map_role && r.map_role !== 'gsmp') || !r.is_pvp || !r.battle_start) continue; const d = r.battle_start.slice(0, 10), o = M.get(g); if (!o) M.set(g, { a: d, b: d, n: 1 }); else { if (d < o.a) o.a = d; if (d > o.b) o.b = d; o.n++; } }
+      M.forEach((o, g) => { if (o.n < 20) return; const c = 'C' + g, x = seen[c]; if (!x) { seen[c] = { a: o.a, b: o.b }; ch = true; } else { if (o.a < x.a) { x.a = o.a; ch = true; } if (o.b > x.b) { x.b = o.b; ch = true; } } }); });
+    if (ch) try { savePassive(); } catch {}
+    const today = new Date().toISOString().slice(0, 10);
+    const out = Object.entries(seen).map(([c, x]) => { const e = ed[c] || {}, from = e.from || x.a, to = e.to || x.b, live = !e.to && Date.now() - Date.parse(x.b + 'T00:00:00Z') < 3 * 864e5;
+      return { c, n: e.n || c, from, to: live ? today : to, live, edited: !!(e.from || e.to || e.n) }; }).sort((a, b) => b.from.localeCompare(a.from));
+    kbPlanMemo = { sig, v: out }; return out;
+  }
+  function kbKvkOf(code) { const c = String(code || '').toUpperCase(); return c ? kbKvkPlan().find(k => k.c === c) || null : null; }   // Ark of Osiris: eigener Schlachtfeld-Server (z. B. 3443), Königreich/KvK = 5-stellig (16144 …)
   function kbIsPvp(r) { return !!r.is_pvp && kbN(r.kill_points) > 0; }   // PvP = nur Kämpfe gegen Spieler, die Kill Points gebracht haben
 
   // ===== Truppentyp (geschätzt): erst nach Rüstungs-Formation, sonst nach Hauptkommandant =====
@@ -197,7 +237,7 @@ window.RokMods.battles = (R) => {
   function kbN(v) { return +v || 0; }
   function kbAgg(rows) {
     const o = { battles: new Set(rows.map(r => r.mail_id)).size, rows: rows.length, kp: 0, sDead: 0, sSev: 0, sWound: 0, sHeal: 0, sPow: 0, sTroops: 0, eDead: 0, eSev: 0, eWound: 0, ePow: 0 };
-    rows.forEach(r => { o.kp += kbN(r.kill_points); o.sDead += kbN(r.self_dead); o.sSev += kbN(r.self_severe); o.sWound += kbN(r.self_wounded); o.sHeal += kbN(r.self_healing); o.sPow += kbN(r.self_power_lost);
+    rows.forEach(r => { o.kp += kbN(r.kill_points); o.acc = (o.acc || 0) + kbN(r.acclaim); o.sDead += kbN(r.self_dead); o.sSev += kbN(r.self_severe); o.sWound += kbN(r.self_wounded); o.sHeal += kbN(r.self_healing); o.sPow += kbN(r.self_power_lost);
       o.sTroops += kbN(r.self_troops_start); o.eDead += kbN(r.enemy_dead); o.eSev += kbN(r.enemy_severe); o.eWound += kbN(r.enemy_wounded); o.ePow += kbN(r.enemy_power_lost); });
     return o;
   }
@@ -327,8 +367,13 @@ window.RokMods.battles = (R) => {
     const n = Math.max(1, Math.round((to - from) / 86400000) + 1);
     return { from, n };
   }
-  function kbSubTabs() { const page = kbSt().page || 'battles'; return `<div class="grid grid-cols-3 sm:grid-cols-5 gap-3 max-w-4xl mx-auto mt-2" role="tablist">${[['battles', '⚔️', 'Battles', '#f43f5e'], ['heat', '🔥', 'Heatmap', '#fb923c'], ['ana', '📊', 'Analyse', '#a78bfa'], ['loot', '🎁', 'Loot', '#f5c542'], ['res', '🌾', 'Ressourcen', '#34d399']].map(([k, i, l, c]) =>
-        `<button type="button" class="hub-tile panel !min-h-[6.5rem] sm:!min-h-[8rem]" data-kbpage="${k}" role="tab" aria-pressed="${page === k}"><span class="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl grid place-items-center text-2xl sm:text-3xl" style="background:linear-gradient(135deg,${c}33,${c}11);border:1px solid ${c}55">${i}</span><span class="font-display text-sm sm:text-lg text-white tracking-wide">${l}</span></button>`).join('')}</div>`; }
+  function kbSubTabs() { const page = kbSt().page || 'battles'; return `<div class="grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3 max-w-6xl mx-auto mt-2" role="tablist">${[['battles', '⚔️', 'Battles', '#f43f5e'], ['heat', '🔥', 'Heatmap', '#fb923c'], ['ana', '📊', 'Analyse', '#a78bfa'], ['loot', '🎁', 'Loot', '#f5c542'], ['res', '🌾', 'Ressourcen', '#34d399'], ['hist', '📚', 'History', '#60a5fa'], ['pilot', '🕹️', 'Pilot', '#c084fc'], ['feed', '📣', 'Feed', '#f472b6']].map(([k, i, l, c]) =>
+        `<button type="button" class="hub-tile panel !min-h-[5.5rem] sm:!min-h-[7rem]" data-kbpage="${k}" role="tab" aria-pressed="${page === k}"><span class="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl grid place-items-center text-2xl sm:text-3xl" style="background:linear-gradient(135deg,${c}33,${c}11);border:1px solid ${c}55">${i}</span><span class="font-display text-sm sm:text-lg text-white tracking-wide">${l}</span></button>`).join('')}</div>`; }
+  function kbLiveBar() {   // „… kämpft gerade“: Kampf in den letzten 15 min – auf allen Seiten (Heatmap hat ihre eigene Anzeige mit Freunden)
+    const L = new Map(), now = Date.now(); kbCache.forEach(rows => { for (const r of rows || []) { const t = Date.parse(r.battle_start || ''); if (!t || now - t > 15 * 6e4) break; if (!r.is_pvp || !kbMine(r.player_id)) continue; const k = String(r.player_id), o = L.get(k); if (!o || t > o.t) L.set(k, { t, name: hmPName(k, r.self_name), n: (o?.n || 0) + 1 }); else o.n++; } });
+    if (!L.size) return '';
+    return `<div class="max-w-6xl mx-auto mb-2 flex flex-wrap items-center justify-center gap-1.5">${[...L.entries()].map(([id, x]) => `<button type="button" data-kblive="${esc(id)}" title="Zur Heatmap von ${esc(x.name)}" class="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/60 bg-emerald-500/10 hover:bg-emerald-500/20 px-2.5 py-1 text-xs text-emerald-200"><span class="relative flex w-2.5 h-2.5"><span class="absolute inset-0 rounded-full bg-emerald-400 animate-ping"></span><span class="relative w-2.5 h-2.5 rounded-full bg-emerald-400"></span></span><b translate="no">${esc(x.name)}</b>${kbBadgeIcons(id, 2)} <span>fightet</span> <span class="text-emerald-300/70 tabular-nums">· ${Math.max(0, Math.round((now - x.t) / 6e4))} min</span> <span class="text-emerald-300">🔥 →</span></button>`).join('')}</div>`;
+  }
   function kbAccBar() {   // alle Accounts in einer Reihe – gilt für Battles, Heatmap, Analyse, Loot und Ressourcen
     const st = kbSt(), pidP = kbProfileId(), ids = [...kbMyIds()], cur = String(st.acc || ''); if (!kbSiteNames) kbLoadSiteNames();
     const seen = (st.idAuto = st.idAuto || {}); kbCache.forEach((rows, id) => { if (rows[0]?.self_name) seen[id] = rows[0].self_name; });
@@ -336,19 +381,25 @@ window.RokMods.battles = (R) => {
     const farms = st.page === 'res' && rsRows ? [...new Map(rsRows.filter(r => r.pid != null && !ids.includes(String(r.pid))).map(r => [String(r.pid), rsNameOf(r.pid, r.acc)])).entries()] : [];
     const chip = (id, icon, label, extra) => { const on = cur === id; return `<span class="inline-flex items-center rounded-xl border transition ${on ? 'border-gold-400 bg-gold-500/20 text-gold-100 shadow-[0_0_12px_rgba(245,197,66,.25)]' : 'border-ink-600 bg-ink-950/60 text-slate-300 hover:border-gold-500/60'}" translate="no">
       <button type="button" data-kbaccbar="${esc(id)}" class="px-3 py-1.5 text-sm font-semibold whitespace-nowrap">${icon} ${label}${id ? ` <span class="text-[10px] tabular-nums ${on ? 'text-gold-300/80' : 'text-slate-500'}">${esc(id)}</span>${loaded(id) ? '' : ' <span class="text-[10px] text-slate-600" title="Noch nicht geladen">•</span>'}` : ''}</button>${extra || ''}</span>`; };
-    const own = ids.map(id => { const n = kbIdName(id, names), me = id === pidP;
-      return chip(id, me ? '👤' : '🔗', n ? esc(n) : '<span class="text-slate-500">?</span>', (kbSiteNames?.get(id) ? '' : `<button type="button" data-hmidname="${esc(id)}" class="pr-1 text-slate-500 hover:text-gold-300" title="Namen eintragen">✏️</button>`) + (me ? '' : `<button type="button" data-kbunlink="${esc(id)}" class="pr-2 text-slate-500 hover:text-red-300" title="Verknüpfung lösen">✕</button>`)); }).join('');
+    const own = ids.slice().sort((a, b) => (b === pidP) - (a === pidP)).map(id => { const n = kbIdName(id, names), me = id === pidP;
+      return chip(id, me ? '👤' : '🔗', (n ? esc(n) : '<span class="text-slate-500">?</span>') + kbBadgeIcons(id, 3), (kbSiteNames?.get(id) ? '' : `<button type="button" data-hmidname="${esc(id)}" class="pr-1 text-slate-500 hover:text-gold-300" title="Namen eintragen">✏️</button>`) + (me ? '' : `<button type="button" data-kbunlink="${esc(id)}" class="pr-2 text-slate-500 hover:text-red-300" title="Verknüpfung lösen">✕</button>`)); }).join('');
     return `<div class="max-w-6xl mx-auto mt-3 mb-1 flex flex-wrap items-center justify-center gap-2">
       ${ids.length > 1 || farms.length ? chip('', '🌍', '<span>Alle</span>') : ''}${own}
-      ${farms.length ? `<span class="w-px h-7 bg-ink-700 mx-1"></span><span class="text-xs text-slate-500">🌾 <span>Farmen</span></span>${farms.map(([id, l]) => chip(id, '🌾', esc(l))).join('')}` : ''}
+      ${farms.length ? (() => { const curF = farms.find(([id]) => id === cur), fs = farms.slice().sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'de', { numeric: true }));
+        return `${curF ? chip(curF[0], '🌾', esc(curF[1])) : ''}<span class="relative inline-block"><button type="button" data-kbfarmtog class="inline-flex items-center gap-1.5 rounded-xl border ${st.farmOpen ? 'border-gold-400 text-gold-100' : 'border-ink-600 text-slate-300'} bg-ink-950/60 px-3 py-1.5 text-sm font-semibold hover:border-gold-500/60">🌾 <span>Farmen</span> <span class="text-[10px] text-slate-500 tabular-nums">${fmt(farms.length)}</span> ${st.farmOpen ? '▴' : '▾'}</button>
+          ${st.farmOpen ? `<div class="absolute z-40 left-1/2 -translate-x-1/2 mt-2 w-[min(92vw,640px)] rounded-2xl border border-ink-600 bg-ink-900 shadow-2xl p-3"><input data-kbfarmq placeholder="🔍 Farm suchen …" value="${esc(st.farmQ || '')}" class="w-full mb-2 bg-ink-950 border border-ink-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-gold-500">
+            <div class="max-h-72 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-1.5 pr-1">${fs.filter(([id, l]) => !st.farmQ || (l + ' ' + id).toLowerCase().includes(st.farmQ.toLowerCase())).map(([id, l]) => `<button type="button" data-kbaccbar="${esc(id)}" class="text-left rounded-lg border ${cur === id ? 'border-gold-400 bg-gold-500/20 text-gold-100' : 'border-ink-700 bg-ink-950/60 text-slate-300 hover:border-gold-500/60'} px-2 py-1 text-xs" translate="no"><div class="font-semibold truncate">🌾 ${esc(l)}</div><div class="text-[10px] text-slate-500 tabular-nums">${esc(id)}</div></button>`).join('')}</div></div>` : ''}</span>`; })() : ''}
       <input data-kblinkid inputmode="numeric" placeholder="+ ID" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-xl px-2.5 py-1.5 text-xs w-24 text-slate-100 focus:outline-none focus:border-gold-500">
-      <a href="/uploader.html" class="inline-flex items-center gap-1.5 rounded-xl border border-gold-500/60 bg-gold-500/10 text-gold-200 hover:bg-gold-500/20 px-3 py-1.5 text-sm font-semibold whitespace-nowrap">📲 <span>App &amp; Overlay</span></a>
+      ${kbAdmHtml(st)}
       ${ids.length ? '' : '<span class="text-[11px] text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}</div>`;
   }
   function renderKampf() {
     const el = $('battlesView'); if (!el) return; const st0 = kbSt(); kbBuffStart(); kbKvkFillLoad();
-    const wip = `<div class="text-center"><span class="inline-flex items-center gap-2 rounded-full border border-amber-500/50 bg-amber-500/10 px-4 py-1.5 font-display text-sm sm:text-base tracking-widest uppercase text-amber-300">🚧 <span>In Work</span> 🚧</span></div>`;
-    if (!st0.accV2 && kbProfileId()) { st0.accV2 = 1; st0.acc = kbProfileId(); }   // Standard: dein Profil-Account
+    const idWarn = kbProfileId() ? '' : `<div class="max-w-3xl mx-auto mb-3 rounded-2xl border-2 border-red-500/70 bg-red-500/10 p-4 text-center"><div class="text-lg font-bold text-red-200">🆔 <span>Bitte trag deine Governor-ID ein</span></div><div class="text-sm text-slate-300 mt-1">Ohne ID kann die Seite deine Kämpfe, Erfolge und Pilot-Daten nicht zuordnen. Du findest sie im Spiel im Profil („Governor (ID: …)“).</div><button type="button" data-kbgoprof class="mt-3 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold px-5 py-2">👤 <span>Zum Profil – ID eintragen</span></button></div>`;
+    const wip = idWarn + `<div class="flex flex-wrap items-center justify-center gap-2">
+      <button type="button" data-kbapp class="relative inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-gold-400 to-amber-500 text-ink-950 font-bold px-5 py-2 shadow-lg shadow-amber-500/30 hover:brightness-110"><span class="absolute -top-1 -right-1 flex w-3 h-3"><span class="absolute inset-0 rounded-full bg-emerald-400 animate-ping"></span><span class="relative w-3 h-3 rounded-full bg-emerald-400"></span></span>📲 <span>App herunterladen</span> <span class="text-[10px] font-semibold opacity-70">Windows</span></button></div>`;
+    if (!st0.accV2 && kbProfileId()) { st0.accV2 = 1; st0.acc = kbProfileId(); }
+    if (st0.pvpV2 !== 1) { st0.pvpV2 = 1; st0.pvpMode = 'field'; }   // KvK und Ark of Osiris getrennt – Standard: nur Weltkarte   // Standard: dein Profil-Account
     if ((st0.page || 'battles') !== 'res' && !kbApply()) { kbRows = null; kbCurKey = null; if (!kbLoading) loadBattles(); }
     else if ((st0.page || 'battles') !== 'res' && kbRows && !kbLoading && !kbFreshing && Date.now() - kbFreshT > 90e3) kbLoadNew().then(n => { if (n && R.view === 'battles') renderKampf(); });   // gemerkte Accounts: neue Kämpfe alle 90 s nachladen
     kbCharts.forEach(c => { try { c.destroy(); } catch {} }); kbCharts = [];
@@ -390,6 +441,9 @@ window.RokMods.battles = (R) => {
     const enemyChip = pvp && st.enemy ? `<button type="button" data-kbenemy="" class="px-2 py-1 rounded-lg bg-red-500/15 border border-red-500/40 text-xs text-red-200">🎯 ${esc(st.enemy)} ✕</button>` : '';
     const timeRow = (lead, list) => `<div class="flex flex-wrap items-center gap-2 mb-2">${lead}
         <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[[1, '24 h'], [7, '7 Tage'], [30, '30 Tage'], [90, '90 Tage'], [0, 'Alles'], ['custom', 'Zeitraum']].map(([k, l]) => segBtn('data-kbdays', k, l, String(st.days) === String(k))).join('')}</div>
+        ${kbKvkPlan().slice(0, 6).map(k => { const on = st.days === 'custom' && st.from === k.from && st.to === k.to, dd = (x) => x.slice(8, 10) + '.' + x.slice(5, 7) + '.' + x.slice(2, 4);
+          return `<span class="inline-flex items-center rounded-lg border ${on ? 'border-gold-500/70 bg-gold-500/15 text-gold-200' : 'border-ink-600 text-slate-300'} text-xs" translate="no"><button type="button" data-kbplan="${esc(k.c)}" class="pl-2 pr-1 py-1" title="KvK-Karte ${esc(k.c)}">🏁 <b>${esc(k.n)}</b>${k.n !== k.c ? ` <span class="text-slate-500">${esc(k.c)}</span>` : ''} <span class="text-slate-400">${dd(k.from)} – ${k.live ? '<span class="text-emerald-300">läuft</span>' : dd(k.to)}</span></button>${on ? `<button type="button" data-kbplanedit="${esc(k.c)}" class="px-1.5 py-1 text-slate-400 hover:text-gold-300" title="Name, Start und Ende ändern">✏️</button>` : ''}</span>`; }).join('')}
+        <button type="button" data-kbnewkvk class="inline-flex items-center gap-1 rounded-lg border border-emerald-500/60 bg-emerald-500/10 text-emerald-200 px-2 py-1 text-xs font-semibold">🆕 <span>Neues KvK</span></button>${kbNewKvkHtml(st)}
         ${(st.kvks || []).map((k, i) => { const on = st.days === 'custom' && st.from === k.from && st.to === k.to;
           return `<span class="inline-flex items-center rounded-lg border ${on ? 'border-gold-500/70 bg-gold-500/15 text-gold-200' : 'border-ink-600 text-slate-300'} text-xs"><button type="button" data-kbkvk="${i}" class="pl-2 pr-1 py-1" title="${esc(k.from)} – ${esc(k.to)}">🏁 ${esc(k.n)}</button><button type="button" data-kbkvkdel="${i}" class="px-1.5 py-1 text-slate-500 hover:text-red-300" title="Zeitraum löschen">✕</button></span>`; }).join('')}
         ${st.days === 'custom' ? `<input type="date" data-kbdate="from" value="${esc(st.from)}" class="${inp}"><span class="text-xs text-slate-500">bis</span><input type="date" data-kbdate="to" value="${esc(st.to)}" class="${inp}">
@@ -401,24 +455,39 @@ window.RokMods.battles = (R) => {
     const filters = catSel + timeRow(modeSel + marchSel + enemyChip);
     // Unterseiten: Battles · Loot · Ressourcen
     const page = st.page || 'battles';
-    const subTabs = kbSubTabs() + kbAccBar();
+    const subTabs = kbSubTabs() + kbAccBar() + kbLiveBar();
     const pageHead = (icon, t, sub) => `<section class="panel rounded-2xl p-5"><h2 class="font-display text-lg text-gold-300">${icon} ${t}</h2><p class="text-xs text-slate-400 mb-3">${sub}</p>`;
     if (page === 'res') {
       if (!rsRows && !rsLoading) loadRes();
       el.innerHTML = wip + subTabs + rsHtml(timeRow('', accsRes));
       kbBind(el); rsDraw(); return;
     }
+    try { kbFeedCheck(); } catch {}
+    if (page === 'pilot' || page === 'hist' || page === 'feed') {
+      el.innerHTML = wip + subTabs + (page === 'pilot' ? kbPilotHtml(st) : page === 'feed' ? kbFeedHtml(st) : kbHistHtml(st));
+      el.querySelectorAll('[data-kbfeedf]').forEach(b => b.onclick = () => { st.feedMine = b.dataset.kbfeedf === '1'; renderKampf(); });
+      kbBind(el); el.querySelectorAll('[data-kbpses]').forEach(b => b.onclick = () => { const [pid, day, f, t] = b.dataset.kbpses.split('|'), h = hmCfg(st); kbAdmIds.add(pid); st.acc = pid; st.page = 'heat'; h.mode = 'my'; h.t = 'day'; h.day = day; h.hf = f; h.ht = t; h.fight = null; savePassive(); renderKampf(); window.scrollTo({ top: 0 }); });
+      el.querySelectorAll('[data-kbpilotsel]').forEach(b => b.onclick = () => { st.pilotSel = b.dataset.kbpilotsel; renderKampf(); });
+      el.querySelectorAll('[data-kbpilotre]').forEach(b => b.onclick = () => { kbPilot.key = ''; kbPilotLoad(true); renderKampf(); });
+      el.querySelectorAll('[data-kbhist]').forEach(b => b.onclick = () => { st.histOpen = st.histOpen === b.dataset.kbhist ? '' : b.dataset.kbhist; renderKampf(); });
+      el.querySelectorAll('[data-kbhistsave]').forEach(b => b.onclick = () => { const todo = kbHistTodo(false); if (!todo.length) { kbHist.msg = 'Keine KvK-Kämpfe im geladenen Zeitraum (mind. 20 PvP).'; renderKampf(); return; } b.disabled = true; kbHistSave(todo).then(n => { kbHist.msg = n + ' gespeichert'; }).catch(e => { kbHist.err = e?.message || String(e); }).finally(() => { kbHist.rows = null; kbHistLoad(true); renderKampf(); }); });
+      return;
+    }
     if (page === 'ana') {
       if (!kxLoot && !kxLoading) loadKampfExtra();
       el.innerHTML = wip + subTabs + anaHtml(st, timeRow('', accsRes));
       kbBind(el); el.querySelectorAll('[data-anatab]').forEach(b => b.onclick = () => { st.anaTab = b.dataset.anatab; savePassive(); renderKampf(); });
       el.querySelectorAll('[data-anatier]').forEach(b => b.onclick = () => { st.anaTier = b.dataset.anatier; savePassive(); renderKampf(); });
+      el.querySelectorAll('[data-anamin]').forEach(b => b.onclick = () => { st.anaMin = +b.dataset.anamin; savePassive(); renderKampf(); });
+      el.querySelectorAll('[data-anacamp]').forEach(x => x.onchange = () => { const m = (st.kdCamp = st.kdCamp || {}); if (x.value === 'auto') delete m[x.dataset.anacamp]; else m[x.dataset.anacamp] = +x.value; savePassive(); renderKampf(); });
+      el.querySelectorAll('[data-anacampf]').forEach(b => b.onclick = () => { st.anaCampF = +b.dataset.anacampf || 0; savePassive(); renderKampf(); });
+      el.querySelectorAll('[data-anaby]').forEach(b => b.onclick = () => { st.anaBy = b.dataset.anaby; savePassive(); renderKampf(); });
       el.querySelectorAll('[data-anakd]').forEach(b => b.onclick = () => { const k = +b.dataset.anakd; st.anaKd = st.anaKd != null && +st.anaKd === k ? null : k; savePassive(); renderKampf(); }); return;
     }
     if (page === 'heat') {
       const accSel = accs.length > 1 ? `<select data-kbacc class="${inp}"><option value="">Alle Accounts</option>${accs.map(([k, l]) => `<option value="${esc(k)}" ${st.acc === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : '';
       el.innerHTML = wip + subTabs + hmHtml(st, `<button type="button" id="kbReload" class="ml-auto px-3 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">${kbLoading ? 'Lädt …' : '↻ Neu laden'}</button>`);
-      kbBind(el); hmBind(el, st); hmDraw(st); return;
+      kbBind(el); hmBind(el, st); { const box = $('hmBox'); if (box && !hmLast) box.style.opacity = '.55'; requestAnimationFrame(() => setTimeout(() => { hmDraw(st); if (box) box.style.opacity = ''; }, 0)); } return;
     }
     const last = kbRows[0]?.battle_start ? new Date(kbRows[0].battle_start) : null;
     const nJoin = new Set((pvp ? rallyPvp : rallyPve).map(r => r.mail_id)).size;
@@ -427,7 +496,7 @@ window.RokMods.battles = (R) => {
     const idBar = `<div class="flex flex-wrap items-center gap-1.5 mb-2 text-[11px]"><span class="text-slate-500">🆔 <span>Angezeigt für</span>:</span>
         ${pidP ? idChip(pidP, true) : '<span class="text-amber-300">Keine Governor-ID im Profil – es werden alle hochgeladenen Accounts gezeigt.</span>'}${links.filter(x => x !== pidP).map(x => idChip(x, false)).join('')}
         <input data-kblinkid inputmode="numeric" placeholder="+ ID verknüpfen" maxlength="12" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-0.5 text-[11px] w-32 text-slate-100 focus:outline-none focus:border-gold-500">
-        <a href="/uploader.html" class="ml-auto inline-flex items-center gap-1 rounded-lg border border-gold-500/60 bg-gold-500/10 text-gold-200 hover:bg-gold-500/20 px-2 py-0.5">📲 <span>App &amp; Overlay</span></a></div>`;
+        <button type="button" data-kbapp class="ml-auto inline-flex items-center gap-1 rounded-lg border border-gold-500/60 bg-gold-500/10 text-gold-200 hover:bg-gold-500/20 px-2 py-0.5">📲 <span>App &amp; Overlay</span></button></div>`;
     const info = note + `<div class="text-[11px] text-slate-500 mb-4">${nJoin ? `<span class="text-sky-300">🛡️ ${fmt(nJoin)}</span> <span>${pvp ? 'Rally-/Garnisonskämpfe als Teilnehmer (unten)' : 'Rallys als Teilnehmer mitgezählt'}</span> · ` : ''}${fmt(kbRows.length)} Berichte geladen${last ? ` · letzter Kampf ${last.toLocaleString('de-DE', { dateStyle: 'short', timeStyle: 'short' })}` : ''} · im Filter: ${fmt(rows.length)}</div>`;
     // 1) Karten
     const cardHtml = KB_METRICS.filter(m => pvp || m.k !== 'kp').map(m => { const v = m.v(A), on = !!cards[m.k];
@@ -449,13 +518,13 @@ window.RokMods.battles = (R) => {
         <div class="mt-1 text-[10px] text-slate-500"><span>Schätzung ohne Boni für</span> ${short(khHeal)} <span>schwer Verwundete.</span> <span>Stufe aus der verlorenen Power erkannt, Truppenart steht nicht im Bericht.</span></div></div>`;
     const topBar = !pvp ? `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
         ${khTile('🪓', 'Besiegte Ziele', fmt(kbTargets(rowsT)), KB_CATS.filter(([k]) => cc(k)).map(([k, l]) => `<span style="color:${KB_CAT_COL[k]}">${l.split(' ')[0]} ${fmt(cc(k))}</span>`).join(' · ') || '–', 'text-emerald-300')}
-        ${khTile('🩸', 'Verwundete', short(khHeal), `<span>schwer verwundet (Lazarett)</span> · ${short(A.sWound)} <span>leicht verwundet</span>`, 'text-orange-300')}
+        ${khTile('🩸', 'Schwer verwundet', short(khHeal), '<span>eigene Truppen im Lazarett</span>', 'text-orange-300')}
         ${healTile}
-      </div>` : `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+      </div>` : `<div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
         ${khTile('🏆', 'Kill Points', short(A.kp), fmt(A.kp), 'text-gold-300')}
-        ${khTile('🩸', 'Verwundete', short(khHeal), `<span>schwer verwundet (Lazarett)</span> · ${short(A.sWound)} <span>leicht verwundet</span>`, 'text-orange-300')}
+        ${khTile('🎖️', 'Verdienst', short(A.acc || 0), fmt(A.acc || 0), 'text-sky-300')}
         ${khTile('⚖️', 'Trade %', khTr == null ? '–' : khTr === Infinity ? '∞' : dec(khTr * 100, 0) + ' %', `<span>Kills</span> ${short(khKills)} ÷ <span>Heal</span> ${short(khHeal)}`, khTr == null ? 'text-white' : khTr >= 1 ? 'text-emerald-300' : 'text-red-300')}
-      </div>`;
+      </div>${pvp ? kbBaseStats(rows, A) : ''}`;
     const cardsBox = !pvp ? '' : `<div class="text-[11px] text-slate-500 mb-2">Karten antippen, um sie im Diagramm ein- oder auszublenden. „/ Tag“ zählt jeden Tag im Zeitraum mit.</div><div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">${cardHtml}</div>`;
     // 1b) PvP: meistbekämpfte Gegner · PvE: Gegnerarten zuordnen
     let extraBox = '';
@@ -500,7 +569,7 @@ window.RokMods.battles = (R) => {
           ${stat('Schwer verwundet erlitten', 'Eigene Truppen, die mit diesem Marsch schwer verwundet wurden.', fmt(M.sSev), 'text-red-300')}
           ${stat('Tote erlitten', 'Eigene Truppen, die gestorben sind.', fmt(M.sDead), 'text-red-300')}
           ${stat('Gegner getötet', 'Gegnerische Truppen, die dieser Marsch getötet hat.', fmt(M.eDead), 'text-emerald-300')}
-          ${stat('Verwundet erlitten', 'Leicht verwundet – kommen von selbst zurück.', fmt(M.sWound))}
+          ${stat('Verdienst', 'Verdienst (Acclaim) mit diesem Marsch.', fmt(M.acc || 0), 'text-sky-300')}
           ${stat('Ø Kampfdauer', 'Wie lange ein Kampf im Schnitt gedauert hat.', kbDur(M.battles ? sec / M.battles : 0))}
           ${stat('KP pro Toten', 'Kill Points pro eigenem Toten.', M.sDead > 0 ? dec(M.kp / M.sDead, 0) : '–')}
           ${stat('KP pro Sekunde', 'Kill Points pro Sekunde Kampfzeit.', ps(M.kp), 'text-gold-300')}
@@ -516,7 +585,7 @@ window.RokMods.battles = (R) => {
     const kpdCol = { k: 'kpd', l: 'KP / Toter', v: (a) => a.sDead > 0 ? a.kp / a.sDead : (a.kp > 0 ? Infinity : null), f: (a) => kbRatioTxt(a.sDead > 0 ? a.kp / a.sDead : (a.kp > 0 ? Infinity : null)) };
     const lossCols = [
       { k: 'sDead', l: 'Tote', v: a => a.sDead, f: a => short(a.sDead), c: red }, { k: 'sSev', l: 'Schwer verw.', v: a => a.sSev, f: a => short(a.sSev), c: red },
-      { k: 'sWound', l: 'Verwundet', v: a => a.sWound, f: a => short(a.sWound) }, { k: 'sHeal', l: 'Heilung', v: a => a.sHeal, f: a => short(a.sHeal), c: sky },
+      { k: 'acc', l: 'Verdienst', v: a => a.acc || 0, f: a => short(a.acc || 0), c: sky }, { k: 'sHeal', l: 'Heilung', v: a => a.sHeal, f: a => short(a.sHeal), c: sky },
       { k: 'eDead', l: 'Geg. Tote', v: a => a.eDead, f: a => short(a.eDead), c: grn }, { k: 'eSev', l: 'Geg. SV', v: a => a.eSev, f: a => short(a.eSev), c: grn }];
     const lim = kbShow; let T, hint = '';
     if (!pvp) tab = 'list';
@@ -550,7 +619,8 @@ window.RokMods.battles = (R) => {
     }
     const tabs = !pvp ? '<h2 class="font-display text-lg text-gold-300 mb-2">📜 Alle Kämpfe</h2>' : `<div class="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 mb-3 max-w-2xl">${[['march', '🛡️ Märsche'], ['day', '📅 Pro Tag'], ['enemy', pvp ? '🎯 Gegner' : '🪓 Ziele'], ['list', '📜 Alle Kämpfe']].map(([k, l]) => segBtn('data-kbtab', k, l, tab === k, 'py-1.5')).join('')}</div>`;
     const more = lim && T.n > lim && tab !== 'march' ? `<button type="button" id="kbMore" class="mt-3 px-3 py-1.5 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">Mehr anzeigen (${fmt(T.n - lim)} weitere)</button>` : '';
-    el.innerHTML = wip + subTabs + head(filters + info + topBar + cardsBox) + `</section>${extraBox}${pvp ? '' : kxSections('loot')}${trend}${pvp ? analysis + kxSections() : ''}
+    const fieldBox = pvp ? (() => { try { const hc = hmCfg(st); return `<section class="panel rounded-2xl px-4 pb-4 pt-3 mt-4">${hmQuickHtml(st, hc).replace('xl:grid-cols-1', 'xl:grid-cols-6').replace('xl:sticky xl:top-2', '')}${hmFieldHtml(st, hc, hmMap(hc))}</section>${kbGearHtml(st)}`; } catch (e) { return ''; } })() : '';
+    el.innerHTML = wip + subTabs + head(filters + info + topBar + cardsBox) + `</section>${fieldBox}${extraBox}${pvp ? '' : kbBarbHtml(st) + kxSections('loot')}${trend}${pvp ? analysis + kxSections() : ''}
       <section id="kbTabBox" class="panel rounded-2xl p-5">${tabs}<div class="text-[11px] text-slate-500 mb-2">Zum Sortieren auf eine Spalte klicken.${hint ? ' ' + hint : ''}</div>${T.html}${more}</section>`;
     makeFold($('kbTrendBox'), 'kbtrend'); ['kbFoeBox', 'kbNpcBox'].forEach(id => $(id) && makeFold($(id), id)); makeFold($('kbMarchBox'), 'kbmarch'); ['kxLootBox', 'kxRallyBox'].forEach(id => $(id) && makeFold($(id), id));
     kbDrawCharts(pvp ? rows : rowsT, R0, cards, !!st.cum, pvp);
@@ -782,6 +852,20 @@ window.RokMods.battles = (R) => {
   }
   function kbBind(el) {
     const st = kbSt(), re = () => { kbShow = 50; savePassive(); renderKampf(); };
+    el.querySelectorAll('[data-kbgearcmp]').forEach(c => c.onclick = () => { const r = kbGearIdx[+c.dataset.kbgearcmp]; if (r) kbGearCompare(r); });
+    el.querySelectorAll('[data-kbgeardet]').forEach(d => d.ontoggle = () => { st.gearOpen = d.open; savePassive(); });
+    el.querySelectorAll('[data-kbgearq]').forEach(i => i.onchange = () => { st.gearQ = i.value.trim(); re(); });
+    kbNewKvkBind(el);
+    el.querySelectorAll('[data-kbgoprof]').forEach(b => b.onclick = () => { try { R.openProfile ? R.openProfile(RokAuth.userId()) : (R.view = 'profile', R.applyView?.()); } catch { R.view = 'profile'; R.applyView?.(); } window.scrollTo({ top: 0 }); });
+    el.querySelectorAll('[data-kbapp]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbAppModal(); });
+    el.querySelectorAll('[data-kblive]').forEach(b => b.onclick = () => { st.acc = b.dataset.kblive; st.page = 'heat'; const h = hmCfg(st); h.mode = 'my'; re(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    el.querySelectorAll('[data-kbadm]').forEach(b => b.onclick = (e) => { e.stopPropagation(); st.admOpen = !st.admOpen; renderKampf(); });
+    el.querySelectorAll('[data-kbadmq]').forEach(i => { i.oninput = () => { const q = i.value.toLowerCase(); i.nextElementSibling.querySelectorAll('[data-kbadmpick]').forEach(b => b.style.display = !q || b.textContent.toLowerCase().includes(q) ? '' : 'none'); }; setTimeout(() => i.focus(), 0); });
+    el.querySelectorAll('[data-kbadmpick]').forEach(b => b.onclick = () => { const id = b.dataset.kbadmpick; kbAdmIds.add(id); st.admOpen = false; st.acc = id; re(); });
+    if (st.page !== 'heat') { const h = hmCfg(st);
+      el.querySelectorAll('[data-hmfw]').forEach(b => b.onclick = (e) => { e.preventDefault(); h.fw = +b.dataset.hmfw; re(); });
+      el.querySelectorAll('[data-hmfrel]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbField.t = 0; kbFieldLoad(kbField.key ? kbField.key.split(',') : [], true, h.fw); });
+      el.querySelectorAll('[data-hmfield]').forEach(d => d.ontoggle = () => { if (h.fieldOpen !== d.open) { h.fieldOpen = d.open; savePassive(); if (d.open) renderKampf(); } }); }
     $('kbReload')?.addEventListener('click', () => { loadBattles(true); loadKampfExtra(true); if (st.page === 'res') loadRes(true); renderKampf(); });
     el.querySelector('[data-kbacc]')?.addEventListener('change', (ev) => { st.acc = ev.target.value; re(); });
     el.querySelectorAll('[data-kbtype]').forEach(b => b.onclick = () => { st.type = b.dataset.kbtype; st.march = ''; st.enemy = ''; re(); });
@@ -803,11 +887,18 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-kblinkid]')?.addEventListener('change', (ev) => { const v = ev.target.value.replace(/\D/g, ''); if (v) { st.linkIds = [...new Set([...(st.linkIds || []), v])]; } re(); });
     el.querySelectorAll('[data-kbunlink]').forEach(b => b.onclick = () => { st.linkIds = (st.linkIds || []).filter(x => String(x) !== b.dataset.kbunlink); re(); });
     el.querySelectorAll('[data-kbpage]').forEach(b => b.onclick = () => { st.page = b.dataset.kbpage; re(); });
-    el.querySelectorAll('[data-kbaccbar]').forEach(b => b.onclick = () => { st.acc = b.dataset.kbaccbar; st.accV2 = 1; st.march = ''; st.enemy = ''; const h = st.heat; if (h) { h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; try { const mp = hmAk(hmCfg(st)).map; if (mp) h.map = mp; } catch {} } hmView = { s: 1, x: 0, y: 0 }; re(); });
+    el.querySelectorAll('[data-kbfarmtog]').forEach(b => b.onclick = (e) => { e.stopPropagation(); st.farmOpen = !st.farmOpen; re(); });
+    el.querySelectorAll('[data-kbfarmq]').forEach(i => { i.oninput = () => { st.farmQ = i.value; const q = i.value.toLowerCase(); i.nextElementSibling.querySelectorAll('[data-kbaccbar]').forEach(b => b.style.display = !q || b.textContent.toLowerCase().includes(q) ? '' : 'none'); }; });
+    el.querySelectorAll('[data-kbaccbar]').forEach(b => b.onclick = () => { st.farmOpen = false; st.acc = b.dataset.kbaccbar; st.accV2 = 1; st.march = ''; st.enemy = ''; const h = st.heat; if (h) { h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; try { const mp = hmAk(hmCfg(st)).map; if (mp) h.map = mp; } catch {} } hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelectorAll('[data-hmidname]').forEach(b => b.onclick = () => { const id = b.dataset.hmidname, n = (st.idNames || {})[id] || '';
       hmAsk('Name für ' + id, n, (v) => { st.idNames = { ...(st.idNames || {}) }; if (v) st.idNames[id] = v.slice(0, 24); else delete st.idNames[id]; re(); }, '', 'z. B. Farm 1'); });
     el.querySelectorAll('[data-kblootcat]').forEach(b => b.onclick = () => { st.lootCat = b.dataset.kblootcat; re(); });
     el.querySelectorAll('[data-kbheal]').forEach(b => b.onclick = () => { st.healType = b.dataset.kbheal; re(); });
+    el.querySelectorAll('[data-kbplan]').forEach(b => b.onclick = () => { const k = kbKvkOf(b.dataset.kbplan); if (!k) return; st.days = 'custom'; st.from = k.from; st.to = k.to; st.pvpMode = 'field'; re(); });
+    el.querySelectorAll('[data-kbplanedit]').forEach(b => b.onclick = () => { const c = b.dataset.kbplanedit, k = kbKvkOf(c); if (!k) return; const e = ((st.kvkEdit = st.kvkEdit || {})[c] = st.kvkEdit[c] || {});
+      const n = prompt('Name für ' + c + ' (leer = ' + c + ')', e.n || ''); if (n === null) return; const f = prompt('Start (JJJJ-MM-TT)', k.from); if (f === null) return; const t = prompt('Ende (JJJJ-MM-TT, leer = läuft noch)', e.to || (k.live ? '' : k.to)); if (t === null) return;
+      const ok = (x) => /^\d{4}-\d{2}-\d{2}$/.test(x); e.n = n.trim() || undefined; e.from = ok(f.trim()) ? f.trim() : undefined; e.to = ok(t.trim()) ? t.trim() : undefined; if (!e.n && !e.from && !e.to) delete st.kvkEdit[c];
+      const k2 = kbKvkOf(c); if (k2) { st.from = k2.from; st.to = k2.to; } re(); });
     el.querySelectorAll('[data-kbkvk]').forEach(b => b.onclick = () => { const k = (st.kvks || [])[+b.dataset.kbkvk]; if (!k) return; st.days = 'custom'; st.from = k.from; st.to = k.to; re(); });
     el.querySelectorAll('[data-kbkvkdel]').forEach(b => b.onclick = () => { (st.kvks || []).splice(+b.dataset.kbkvkdel, 1); re(); });
     el.querySelector('[data-kbkvksave]')?.addEventListener('click', () => { const n = (el.querySelector('[data-kbkvkname]')?.value || '').trim() || 'KvK';
@@ -839,6 +930,12 @@ window.RokMods.battles = (R) => {
     o.kpt = o.ekp > 0 ? o.kp / o.ekp : (o.kp ? Infinity : null); o.trade = o.my > 0 ? o.en / o.my : (o.en ? Infinity : null); return o; }
   function kbKdNum(k) { k = +k; return k > 0 ? (k < 10000 ? k + 1000 : k) : null; }   // Bericht: COSId = Königreich − 1000 (79 → 1079, 2489 → 3489 …)
   function anaKd(k) { return k ? '#' + k : ''; }
+  // 🏕️ Camps: von Hand je Königreich (Analyse) – sonst aus dem KvK-Rechner im Profil (Karte → Camps)
+  var ANA_CAMPS = [{ i: '🔥', n: 'Feuer', c: '#f87171', rgb: '248,113,113' }, { i: '🪨', n: 'Erde', c: '#d6a46b', rgb: '214,164,107' }, { i: '💧', n: 'Wasser', c: '#60a5fa', rgb: '96,165,250' }, { i: '🌪️', n: 'Wind', c: '#b794f4', rgb: '183,148,244' }];
+  function anaCalcCamps() { try { const md = window.KvKCalc?.getState?.()?.mid; if (!md?.camps) return null; const m = new Map(); md.camps.forEach((c, i) => String(c?.kds || '').split(/[,;\s]+/).map(k => k.replace(/[^\d]/g, '').slice(0, 4)).filter(Boolean).forEach(k => m.set(k, i + 1)));
+    return { m, names: md.camps.map((c, i) => (c?.name || '').trim() || ANA_CAMPS[i].n), my: +md.myCamp || 0 }; } catch { return null; } }
+  function anaCampOf(kd) { const st = kbSt(), man = (st.kdCamp || {})[kd]; if (man != null) return { c: +man, auto: false }; const cc = anaCalcCamps(); const v = cc?.m.get(String(kd)); return v ? { c: v, auto: true } : { c: 0, auto: false }; }
+  function anaCampName(i) { const cc = anaCalcCamps(); return i ? ANA_CAMPS[i - 1].i + ' ' + (cc?.names[i - 1] || ANA_CAMPS[i - 1].n) : '–'; }
   var anaKdCache = { src: null, f: null };
   function anaKdOf() {   // Königreich des Gegners; fehlt es im Bericht → vom selben Spieler, sonst von seiner Allianz
     if (anaKdCache.src === kbRows && anaKdCache.f) return anaKdCache.f;
@@ -899,6 +996,344 @@ window.RokMods.battles = (R) => {
         ${tile('⚔️', 'Kämpfe', fmt(a.n), fmt(b.n))}
         ${tile('💀', 'Verluste', short(a.dead + a.sev), short(b.dead + b.sev), 'text-red-200')}
       </div></div>`;
+  }
+  // ⏱️ Kampfzeit aus den Kampfzeiten: Kämpfe mit höchstens 5 min Pause gehören zusammen
+  function kbFightTime(rows) { const I = rows.map(r => { const a = Date.parse(r.battle_start || ''), b = Date.parse(r.battle_end || '') || a + 30e3; return [a, Math.max(b, a + 10e3)]; }).filter(x => x[0]).sort((x, y) => x[0] - y[0]);
+    let tot = 0, cur = null, n = 0; I.forEach(([a, b]) => { if (cur && a - cur[1] <= 5 * 6e4) cur[1] = Math.max(cur[1], b); else { if (cur) tot += cur[1] - cur[0]; cur = [a, b]; n++; } }); if (cur) tot += cur[1] - cur[0]; return { ms: tot, n }; }
+  function kbDurTxt(ms) { const m = Math.round(ms / 6e4); return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h ' + String(m % 60).padStart(2, '0') + ' min'; }
+  function kbBaseStats(rows, A) {   // 📋 Basis-Statistik unter den großen Kacheln
+    const ft = kbFightTime(rows), en = new Set(rows.map(r => String(r.enemy_player_id || r.enemy_name || '')).filter(Boolean)), days = new Set(rows.map(r => (r.battle_start || '').slice(0, 10))).size, h = ft.ms / 36e5;
+    const kills = A.eDead + A.eSev, own = A.sDead + A.sSev, ek = rows.reduce((a, r) => a + kbN(r.enemy_kill_points), 0), def = rows.filter(kbDefeated).length;
+    const it = (i, l, v, sub, c) => `<div class="rounded-lg border border-ink-800 bg-ink-950/50 px-3 py-2"><div class="text-[10px] text-slate-400">${i} <span>${l}</span></div><div class="text-base font-bold tabular-nums ${c || 'text-slate-100'}">${v}</div>${sub ? `<div class="text-[10px] text-slate-500">${sub}</div>` : ''}</div>`;
+    return `<div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2 mb-4">
+      ${it('⏱️', 'Kampfzeit', kbDurTxt(ft.ms), fmt(ft.n) + ' <span>Schlachten</span>', 'text-amber-200')}
+      ${it('⚔️', 'Kämpfe', fmt(rows.length), fmt(days) + ' <span>Tage aktiv</span>')}
+      ${it('🎯', 'Gegner', fmt(en.size), '<span>verschiedene Spieler</span>')}
+      ${it('🏆', 'KP pro Stunde', h > 0 ? short(A.kp / h) : '–', '<span>Kampfzeit</span>', 'text-gold-300')}
+      ${it('📊', 'Ø KP pro Kampf', rows.length ? short(A.kp / rows.length) : '–')}
+      ${it('🔁', 'KP-Trade', ek ? dec(A.kp / ek, 2) + ' : 1' : '–', short(ek) + ' <span>Gegner-KP</span>', ek && A.kp / ek >= 1 ? 'text-emerald-300' : 'text-red-300')}
+      ${it('☠️', 'Kills', short(kills), short(A.eDead) + ' <span>tot</span> · ' + short(A.eSev) + ' SV', 'text-emerald-300')}
+      ${it('💀', 'Eigene Verluste', short(own), short(A.sDead) + ' <span>tot</span> · ' + short(A.sSev) + ' SV · ' + fmt(def) + ' <span>Gegner besiegt</span>', 'text-red-300')}</div>`;
+  }
+  // ===== 🆕 Neues KvK starten: C-Nummer + Karte angeben → altes KvK landet automatisch in der History =====
+  function kbNewKvkHtml(st) { if (!st.newKvkOpen) return ''; const today = new Date().toISOString().slice(0, 10);
+    return `<div class="basis-full mt-2 rounded-2xl border border-emerald-500/50 bg-emerald-500/5 p-3"><div class="text-sm font-semibold text-emerald-100 mb-2">🆕 <span>Neues KvK starten</span></div>
+      <div class="flex flex-wrap items-end gap-2 text-xs"><label class="flex flex-col gap-1"><span class="text-slate-400">C-Nummer</span><input data-nk="c" placeholder="C16152" maxlength="8" class="w-28 bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-slate-100 uppercase"></label>
+        <label class="flex flex-col gap-1"><span class="text-slate-400">Karte</span><select data-nk="map" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-slate-100">${HM_MAPS.map(m => `<option value="${m.k}">${esc(m.n)}</option>`).join('')}</select></label>
+        <label class="flex flex-col gap-1"><span class="text-slate-400">Start</span><input data-nk="from" type="date" value="${today}" class="bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-slate-100"></label>
+        <label class="flex flex-col gap-1"><span class="text-slate-400">Name (optional)</span><input data-nk="n" placeholder="z. B. KvK 3 – Heroic Anthem" class="w-48 bg-ink-950 border border-ink-600 rounded-lg px-2 py-1.5 text-slate-100"></label>
+        <button type="button" data-nkgo class="rounded-lg bg-emerald-500 hover:bg-emerald-400 text-ink-950 font-bold px-4 py-1.5">✔ <span>Starten</span></button><button type="button" data-nkx class="rounded-lg border border-ink-600 px-3 py-1.5 text-slate-300">✕</button></div>
+      <div class="text-[11px] text-slate-400 mt-2">Das laufende KvK wird am Tag davor beendet und mit allen Accounts in der 📚 History gespeichert. Danach zählen Battles, Heatmap und Analyse ab dem Start des neuen KvK.</div><div data-nkmsg class="text-xs mt-1"></div></div>`; }
+  function kbNewKvkBind(el) { const st = kbSt(), g = (k) => el.querySelector(`[data-nk="${k}"]`)?.value?.trim() || '';
+    el.querySelectorAll('[data-kbnewkvk]').forEach(b => b.onclick = () => { st.newKvkOpen = !st.newKvkOpen; renderKampf(); });
+    el.querySelectorAll('[data-nkx]').forEach(b => b.onclick = () => { st.newKvkOpen = false; renderKampf(); });
+    el.querySelectorAll('[data-nkgo]').forEach(b => b.onclick = async () => { const msg = el.querySelector('[data-nkmsg]'), c = ('C' + g('c').replace(/\D/g, '')).toUpperCase(), from = g('from'), map = g('map'), n = g('n');
+      if (c.length < 4 || !/^\d{4}-\d{2}-\d{2}$/.test(from)) { msg.innerHTML = '<span class="text-red-300">C-Nummer und Start angeben.</span>'; return; }
+      b.disabled = true; msg.innerHTML = '<span class="text-slate-300">Speichere altes KvK …</span>';
+      const prev = new Date(Date.parse(from + 'T12:00:00') - 864e5).toISOString().slice(0, 10), ed = (st.kvkEdit = st.kvkEdit || {});
+      kbKvkPlan().filter(k => k.c !== c && k.live).forEach(k => { ed[k.c] = { ...(ed[k.c] || {}), to: prev }; });
+      ed[c] = { ...(ed[c] || {}), from, n: n || undefined }; (st.kvkSeen = st.kvkSeen || {})[c] = st.kvkSeen[c] || { a: from, b: from }; kbPlanMemo.sig = '';
+      let saved = 0; try { const todo = kbHistTodo(false).filter(x => x.c !== c); if (todo.length) saved = await kbHistSave(todo); kbHist.rows = null; } catch (e) { msg.innerHTML = '<span class="text-red-300">History: ' + esc(e?.message || String(e)) + '</span>'; }
+      const acc = (st.accKvk = st.accKvk || {}); [...kbMyIds()].forEach(id => { acc[id] = { ...(acc[id] || {}), kvk: c, start: from, map }; }); try { hmCfg(st).map = map; } catch {}
+      st.days = 'custom'; st.from = from; st.to = new Date().toISOString().slice(0, 10); st.pvpMode = 'field'; st.newKvkOpen = false; savePassive(); renderKampf();
+      try { R.toast?.(`🆕 ${c} gestartet · ${saved} KvK-Zusammenfassung(en) in der History`); } catch {} }); }
+  // ===== 📣 Feed: erreichte Abzeichen-Stufen werden automatisch gepostet (Tabelle rok_feed) =====
+  var kbFeed = { rows: null, loading: false, err: '', t: 0 }, kbFeedBusy = false, kbFeedT = 0;
+  function kbFeedCheck() {   // neue Stufen der eigenen Accounts erkennen und posten (beim ersten Mal nur merken, nichts posten)
+    if (kbFeedBusy || Date.now() - kbFeedT < 20e3 || !RokAuth.userId?.()) return; kbFeedT = Date.now(); const st = kbSt(), seen = (st.badgeSeen = st.badgeSeen || {}), out = []; let ch = false;
+    [...kbMyIds()].filter(id => !kbAdmIds.has(id) && kbCache.has(id)).forEach(id => { const B = kbAccBadges(id), was = seen[id]; const nm = (kbCache.get(id) || []).find(r => r.self_name)?.self_name || id;
+      if (!was) { seen[id] = Object.fromEntries(B.map(b => [b.k, b.lv])); ch = true; return; }
+      B.forEach(b => { if (b.lv > (was[b.k] || 0)) { out.push({ governor_id: +id, name: nm, badge: b.k, icon: b.ic, tier: b.one ? 0 : b.lv, title: b.title, value: String(b.f(b.v)).replace(/<[^>]+>/g, ''), descr: b.d }); was[b.k] = b.lv; ch = true; } }); });
+    if (ch) savePassive(); if (!out.length) return; kbFeedBusy = true;
+    (async () => { try { const db = RokAuth.db?.(); const r = await db.from('rok_feed').insert(out); if (r.error) throw r.error; kbFeed.rows = null; try { R.toast?.('📣 ' + out.map(o => o.icon + ' ' + o.title).join(' · ')); } catch {} } catch (e) { kbFeed.err = e?.message || String(e); } kbFeedBusy = false; })();
+  }
+  function kbFeedLoad() { if (kbFeed.loading || (kbFeed.rows && Date.now() - kbFeed.t < 60e3)) return; kbFeed.loading = true;
+    (async () => { try { const db = RokAuth.db?.(); const r = await db.from('rok_feed').select('*').order('created_at', { ascending: false }).limit(150); if (r.error) throw r.error; kbFeed.rows = r.data || []; kbFeed.err = ''; }
+      catch (e) { kbFeed.rows = []; kbFeed.err = e?.message || String(e); } kbFeed.loading = false; kbFeed.t = Date.now(); if (R.view === 'battles' && kbSt().page === 'feed') renderKampf(); })(); }
+  function kbFeedHtml(st) { kbFeedLoad(); const miss = /rok_feed|relation|does not exist|schema cache/i.test(kbFeed.err || ''), mine = new Set([...kbMyIds()]), f = st.feedMine;
+    const L = (kbFeed.rows || []).filter(r => !f || mine.has(String(r.governor_id)));
+    const ago = (t) => { const m = Math.round((Date.now() - Date.parse(t)) / 6e4); return m < 60 ? m + ' min' : m < 1440 ? Math.round(m / 60) + ' h' : Math.round(m / 1440) + ' d'; };
+    return `<section class="panel rounded-2xl p-5 mt-4"><div class="flex flex-wrap items-center gap-2 mb-1"><h2 class="font-display text-lg text-gold-300">📣 <span>Feed</span></h2>
+      <div class="ml-auto flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 text-xs"><button type="button" data-kbfeedf="0" aria-pressed="${!f}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold"><span>Alle</span></button><button type="button" data-kbfeedf="1" aria-pressed="${!!f}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold"><span>Meine</span></button></div></div>
+      <p class="text-xs text-slate-400 mb-3">Erreicht jemand eine neue Abzeichen-Stufe (Bronze bis Diamant), wird das hier automatisch gepostet. Pilot-Kämpfe zählen nicht.</p>
+      ${miss ? '<div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-100 mb-3">⚠️ <span>Die Tabelle rok_feed fehlt noch – SQL v30 aus dem Chat ausführen.</span></div>' : ''}
+      ${L.length ? `<div class="space-y-2">${L.map(r => { const t = !r.tier ? KB_ONE : KB_TIER5[r.tier - 1] || KB_TIER5[0]; return `<div class="flex items-center gap-3 rounded-xl border bg-ink-950/60 p-2.5" style="border-color:${t[2]}66"><span class="grid place-items-center w-11 h-11 rounded-full text-2xl shrink-0" style="background:${t[2]}22;box-shadow:0 0 0 2px ${t[2]}">${esc(r.icon || '🏅')}</span>
+        <div class="min-w-0 flex-1"><div class="text-sm"><b translate="no">${esc(r.name || r.governor_id)}</b> <span class="text-slate-400">hat</span> <b style="color:${t[2]}">${esc(r.title || r.badge)}</b> <span class="text-slate-400">erreicht</span></div><div class="text-[11px] text-slate-500">${t[0]} ${t[1]} · ${esc(r.descr || '')}: <b class="text-slate-300">${esc(r.value || '')}</b></div></div><span class="text-[11px] text-slate-500 shrink-0">${ago(r.created_at)}</span></div>`; }).join('')}</div>` : `<div class="text-sm text-slate-500 py-6 text-center">${kbFeed.loading ? 'Lädt …' : 'Noch keine Einträge.'}</div>`}</section>`; }
+  // ===== 🎖️ Abzeichen (5 Stufen) – nur eigene Kämpfe, Pilot-Kämpfe zählen nicht =====
+  var KB_ONE = ['✅', 'Erreicht', '#f5c542'];
+  var KB_CMD = [['huo', '🏹', 'Huo-Jäger', 'Huo Qubing'], ['cm', '🛡️', 'Martel-Brecher', 'Charles Martel']];   // weitere Kommandanten: hier ergänzen
+  var KB_TIER5 = [['🥉', 'Bronze', '#d08b4f'], ['🥈', 'Silber', '#cbd5e1'], ['🥇', 'Gold', '#f5c542'], ['🏅', 'Platin', '#a5b4fc'], ['💎', 'Diamant', '#67e8f9']];
+  function kbBadges(R, MR, ALL) {   // R = PvP-Kämpfe zeitlich sortiert, MR = PvP inkl. Rally/Garnison (für Verdienst/Tote), ALL = alle eigenen Kämpfe inkl. PvE (für PvE-Ziele, Teleports)
+    const T = R.map(r => Date.parse(r.battle_start)); let best10 = 0;
+    for (let i = 0, j = 0, sum = 0; i < R.length; i++) { sum += +R[i].kill_points || 0; while (T[i] - T[j] > 10 * 6e4) { sum -= +R[j].kill_points || 0; j++; } if (sum > best10) best10 = sum; }
+    const S = new Map(); R.forEach(r => { const k = String(r.parent_id || r.mail_id); S.set(k, (S.get(k) || 0) + (+r.kill_points || 0)); }); const bigS = Math.max(0, ...S.values());
+    const dayKp = new Map(), dayAcc = new Map(); R.forEach((r, i) => { const d = (r.battle_start || '').slice(0, 10); dayKp.set(d, (dayKp.get(d) || 0) + (+r.kill_points || 0)); });
+    MR.forEach(r => { const d = (r.battle_start || '').slice(0, 10); dayAcc.set(d, (dayAcc.get(d) || 0) + (+r.acclaim || 0)); });
+    const SS = []; { let cur = null; R.forEach((r, i) => { const t = T[i]; if (!cur || t - cur.b > 45 * 6e4) { cur = { a: t, b: t, rows: [] }; SS.push(cur); } cur.b = t; cur.rows.push(r); }); }
+    const bestTrade = Math.max(0, ...SS.map(x => anaSum(x.rows)).filter(w => w.kp >= 1e6).map(w => w.kpt === Infinity ? 99 : w.kpt || 0));
+    const longSess = Math.max(0, ...SS.map(x => (x.b - x.a) / 36e5)), night = T.filter(t => new Date(t).getHours() < 5).length, big = R.filter(r => (+r.enemy_severe || 0) + (+r.enemy_dead || 0) >= 1e4).length;
+    const deads = MR.reduce((a, r) => a + (+r.self_dead || 0), 0);
+    // Battle Streaks (ein Bericht mit mehreren Gegnern = parent_id): Trade pro Streak
+    const ST = new Map(); R.forEach(r => { const k = String(r.parent_id || r.mail_id), o = ST.get(k) || { kp: 0, ek: 0 }; o.kp += +r.kill_points || 0; o.ek += +r.enemy_kill_points || 0; ST.set(k, o); });
+    let snip = 0, ouch = 0; ST.forEach(o => { if (o.kp >= 1e6 && o.kp >= 5 * Math.max(1, o.ek)) snip++; if (o.ek >= 1e6 && o.ek >= 5 * Math.max(1, o.kp)) ouch++; });
+    const maxRep = Math.max(0, ...R.map(r => +r.kill_points || 0)), foes = new Set(R.map(r => String(r.enemy_player_id || r.enemy_name || '')).filter(Boolean)).size;
+    let unb = 0; { let run = 0; R.forEach(r => { const kp = +r.kill_points || 0, ek = +r.enemy_kill_points || 0; if (kp < 5e5 && ek < 5e5) return; if (kp >= ek) { run++; unb = Math.max(unb, run); } else run = 0; }); }
+    const L = [
+      ['⚡', 'blitz', 'Blitzkrieg', 'KP in 10 Minuten', best10, [1e7, 2e7, 3e7, 4e7, 5e7], short, ['Blitzkrieg', 'Silberner Blitz', 'Goldener Blitz', 'Platin-Blitz', 'Diamant-Blitz']],
+      ['🔁', 'trade', 'Trader', 'KP-Trade in einer Schlacht (ab 1 Mio. KP)', bestTrade, [2, 4, 6, 8, 10], v => v >= 99 ? '∞' : dec(v, 1) + ' : 1'],
+      ['💥', 'flex', 'Flex-König', 'KP in einem Battle Streak / Rally', bigS, [1e7, 2.5e7, 5e7, 7.5e7, 1e8], short],
+      ['📅', 'day', 'Tageskönig', 'KP an einem Tag', Math.max(0, ...dayKp.values()), [2e7, 5e7, 1e8, 1.5e8, 2e8], short],
+      ['🎖️', 'acc', 'Ruhmesjäger', 'Verdienst an einem Tag', Math.max(0, ...dayAcc.values()), [1e5, 2.5e5, 5e5, 7.5e5, 1e6], short],
+      ['💀', 'dead', 'Blutzoll', 'eigene Tote im Zeitraum', deads, [5e5, 1e6, 1.5e6, 2e6, 3e6], short],
+      ['⏱️', 'mara', 'Marathon', 'längste Schlacht ohne 45 min Pause', longSess, [1, 2, 4, 6, 8], v => dec(v, 1) + ' h'],
+      ['🦉', 'owl', 'Nachteule', 'Kämpfe zwischen 0 und 5 Uhr', night, [100, 500, 1000, 2500, 5000], fmt],
+      ['🌙', 'nshift', 'Nachtschicht', 'eigene Kämpfe zwischen 3 und 5 Uhr', T.filter(t => { const h = new Date(t).getHours(); return h >= 3 && h < 5; }).length, [50, 100, 250, 500, 1000], fmt],
+      ['🌅', 'early', 'Frühaufsteher', 'Kämpfe zwischen 7 und 9 Uhr', T.filter(t => { const h = new Date(t).getHours(); return h >= 7 && h < 9; }).length, [100, 500, 1000, 2500, 5000], fmt],
+      ['🎯', 'sniper', 'Scharfschütze', 'Battle Streaks mit KP-Trade ab 5 : 1 (ab 1 Mio. KP)', snip, [10, 50, 100, 250, 500], fmt],
+      ['🤕', 'ouch', 'Auf die Schnauze', 'Battle Streaks mit 1 : 5 oder schlechter (ab 1 Mio. Gegner-KP)', ouch, [5, 10, 25, 50, 100], fmt],
+      ['🗡️', 'regi', 'Königsmörder', 'KP in einem einzigen Bericht', maxRep, [2e6, 5e6, 7e6, 1e7, 1.5e7], short],
+      ['🔍', 'hunt', 'Kopfgeldjäger', 'verschiedene Gegner bekämpft', foes, [20, 30, 50, 100, 200], fmt],
+      ['🧱', 'unb', 'Unbesiegt', 'Berichte am Stück mit Trade ab 1 : 1 (nur ab 500K KP oder Gegner-KP)', unb, [5, 10, 25, 50, 100], fmt],
+      ['🌋', 'big', 'Großschlag', 'Kämpfe mit 10.000+ Gegner-Verlusten', big, [10, 50, 100, 250, 500], fmt]];
+    if (ALL) {   // PvE-Ziele fürs KvK, Teleports, Einzel-Erfolge
+      const A2 = ALL.filter(r => !kbPilotRow(r) && !kbIsAoo(r)).map(r => [Date.parse(r.battle_start || ''), r]).filter(x => x[0]).sort((a, b) => a[0] - b[0]), cat = (r) => r.is_pvp ? '' : kbCatOf(r.npc_btype, r.group_size);
+      const barb = A2.filter(([, r]) => cat(r) === 'barb'), fort = A2.filter(([, r]) => cat(r) === 'fort').length, kar = A2.filter(([, r]) => cat(r) === 'ckaruak').length;
+      let chain = 0; { const last = new Map(); barb.filter(([, r]) => !(+r.group_size > 1)).forEach(([t, r]) => { const k = kbMarchOf(r), c = last.get(k); if (c && t - c.t <= 5 * 6e4) { c.n++; c.t = t; } else last.set(k, { n: 1, t }); chain = Math.max(chain, last.get(k).n); }); }
+      let tp = 0, far = 0, lc = null; A2.forEach(([, r]) => { if (r.city_x == null) return; const x = +r.city_x / 6, y = +r.city_y / 6; if (lc) { const d = Math.hypot(x - lc[0], y - lc[1]); if (d > 10) { tp++; far = Math.max(far, d); } } lc = [x, y]; });
+      const cityHit = A2.some(([, r]) => r.is_pvp && !r.joined && r.city_x != null && r.pos_x != null && Math.hypot(+r.pos_x - +r.city_x, +r.pos_y - +r.city_y) <= 18 && !(+r.group_size > 1 && r.self_role === 'att'));
+      L.push(['🌀', 'tp', 'Teleporter', 'Teleports (ab 10 Feldern)', tp, [5, 10, 15, 20, 30], fmt],
+        ['🪓', 'barb', 'Barbarenjäger', 'Barbaren besiegt', barb.length, [500, 1000, 5000, 10000, 20000], fmt],
+        ['⛓️', 'chain', 'Kettenmeister', 'längste Barbaren-Kette', chain, [3, 5, 7, 10, 15], v => v + '×'],
+        ['🏯', 'fort', 'Fortbrecher', 'Forts zerstört', fort, [50, 100, 150, 200, 500], fmt],
+        ['💎', 'kar', 'Karuak-Jäger', 'Kristall-Karuaks besiegt', kar, [10, 20, 50, 100, 200], fmt],
+        ['🏰', 'city', 'Belagert', 'Einzel-Erfolg: deine Stadt wurde angegriffen', cityHit ? 1 : 0, [1], v => v ? '✔' : '–', null, true],
+        ['🚀', 'far', 'Fernreise', 'Einzel-Erfolg: Teleport über 300 Felder', far, [300], v => fmt(Math.round(v)) + ' <span>Felder</span>', null, true]);
+    }
+    // ⚔️ Kommandanten-Bereich: Kämpfe gegen bestimmte Kommandanten (Haupt- oder Zweitkommandant)
+    const vsH = (slug) => R.filter(r => hmIconId(r.enemy_hero1) === slug || hmIconId(r.enemy_hero2) === slug).length;
+    KB_CMD.forEach(([slug, ic, n, hn]) => L.push([ic, 'cmd_' + slug, n, 'Kämpfe gegen ' + hn, vsH(slug), [50, 100, 250, 500, 1000], fmt, null, false, 'cmd']));
+    const out = L.map(([ic, k, n, d, v, steps, f, names, one, cat]) => { const lv = steps.filter(x => v >= x).length; return { ic, k, n, d, v, steps, f, names, lv, one: !!one, cat: cat || (['tp', 'barb', 'chain', 'fort', 'kar', 'city', 'far'].includes(k) ? 'pve' : 'fight'), t: lv ? (one ? KB_ONE : KB_TIER5[lv - 1]) : null, title: lv ? (names ? names[lv - 1] : n) : n }; });
+    // 🏆 Meta-Erfolge: zählen die anderen Abzeichen
+    const got = out.filter(b => b.lv > 0).length, dia = out.filter(b => !b.one && b.lv >= 5).length;
+    [['🏅', 'meta', 'Sammler', 'erreichte Abzeichen', got, [5, 10, 20, 30, 40]], ['💎', 'metad', 'Diamant-Sammler', 'Abzeichen auf Diamant', dia, [1, 3, 5, 10, 15]]].forEach(([ic, k, n, d, v, steps]) => { const lv = steps.filter(x => v >= x).length; out.push({ ic, k, n, d, v, steps, f: fmt, lv, one: false, cat: 'meta', t: lv ? KB_TIER5[lv - 1] : null, title: n }); });
+    return out;
+  }
+  var kbBadgeMemo = new Map();
+  function kbAccBadges(id) {   // Abzeichen eines Accounts aus den geladenen Kämpfen (ohne Pilot, ohne Ark of Osiris)
+    const rows = kbCache.get(String(id)); if (!rows || !rows.length) return []; const sig = rows.length + '|' + (rows[0]?.battle_start || ''), m = kbBadgeMemo.get(String(id)); if (m && m.sig === sig) return m.v;
+    const MR = rows.filter(r => kbIsPvp(r) && !kbIsAoo(r) && !kbPilotRow(r)), R = MR.filter(r => !(+r.group_size > 1)).sort((a, b) => Date.parse(a.battle_start) - Date.parse(b.battle_start));
+    const v = kbBadges(R, MR, rows).filter(b => b.lv > 0); kbBadgeMemo.set(String(id), { sig, v }); return v;
+  }
+  function kbBadgeIcons(id, max) {   // kleine Abzeichen neben dem Namen – Maus drauf zeigt den Wert
+    const B = kbAccBadges(id).filter(b => !b.one && b.cat !== 'meta').sort((a, b) => b.lv - a.lv).slice(0, max || 4); if (!B.length) return '';
+    return `<span class="inline-flex items-center gap-0.5 ml-1">${B.map(b => { const t = b.t; return `<span class="inline-grid place-items-center w-5 h-5 rounded-full text-[11px] leading-none" style="background:${t[2]}26;box-shadow:0 0 0 1.5px ${t[2]}" title="${esc(b.title)} (${t[1]}) · ${esc(b.d)}: ${esc(b.f(b.v))}">${b.ic}</span>`; }).join('')}</span>`;
+  }
+  // ===== 🕹️ Pilot: Kämpfe, die ich für andere gesteuert habe – und die andere für mich gesteuert haben (Spalte pilot_gov kommt aus der App) =====
+  var kbPilot = { key: '', mine: null, forMe: null, loading: false, err: '' };
+  function kbPilotLoad(force) {
+    const me = kbProfileId(), ids = [...kbMyIds()], key = me + '|' + ids.join(','); if (kbPilot.loading || (!force && kbPilot.key === key && kbPilot.mine)) return; kbPilot.loading = true;
+    const cols = 'player_id,self_name,pilot_gov,pilot_name,battle_start,battle_end,is_pvp,kill_points,enemy_kill_points,enemy_severe,enemy_dead,self_severe,self_dead,acclaim,mail_id,opponent_id,npc_btype,group_size,server_id,map_role,pos_x,pos_y';
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline');
+        const all = async (mk) => { let out = []; for (let p = 0; p < 20; p++) { const r = await mk().range(p * 1000, p * 1000 + 999); if (r.error) throw r.error; out = out.concat(r.data || []); if ((r.data || []).length < 1000) break; } return out; };
+        const mine = me ? await all(() => db.from('rok_battles').select(cols).eq('pilot_gov', +me).order('battle_start', { ascending: false })) : [];
+        const forMe = ids.length ? await all(() => db.from('rok_battles').select(cols).in('player_id', ids).not('pilot_gov', 'is', null).order('battle_start', { ascending: false })) : [];
+        kbPilot = { key, mine, forMe: forMe.filter(r => String(r.pilot_gov) !== me), loading: false, err: '' }; }
+      catch (e) { kbPilot = { key, mine: [], forMe: [], loading: false, err: e?.message || String(e) }; }
+      if (R.view === 'battles' && kbSt().page === 'pilot') renderKampf(); })();
+  }
+  function kbPilotHtml(st) {
+    kbPilotLoad(); if (kbPilot.loading && !kbPilot.mine) return `<section class="panel rounded-2xl p-8 mt-4 text-center">${kbLoaderHtml ? kbLoaderHtml('Pilot-Daten') : 'Lädt …'}</section>`;
+    const miss = /pilot_gov|pilot_name|column/i.test(kbPilot.err || '');
+    const sess = (rows) => { const S = [], last = new Map(); rows.map(r => [Date.parse(r.battle_start), r]).sort((a, b) => a[0] - b[0]).forEach(([t, r]) => { const k = String(r.player_id) + '|' + (r.pilot_gov || ''), c = last.get(k); if (c && t - c.b <= 45 * 6e4) { c.b = t; c.rows.push(r); } else { const n = { k, a: t, b: t, rows: [r], r }; S.push(n); last.set(k, n); } }); return S.sort((a, b) => b.a - a.a); };
+    const grp = (rows, keyF, nameF) => { const M = new Map(); rows.forEach(r => { const k = keyF(r), o = M.get(k) || { k, name: nameF(r), rows: [] }; o.rows.push(r); M.set(k, o); }); return [...M.values()].map(o => ({ ...o, w: anaSum(o.rows.filter(r => r.is_pvp)), pve: o.rows.filter(r => !r.is_pvp).length, acc: o.rows.reduce((a, r) => a + (+r.acclaim || 0), 0), first: o.rows.reduce((m, r) => Math.min(m, Date.parse(r.battle_start)), Infinity), last: o.rows.reduce((m, r) => Math.max(m, Date.parse(r.battle_start)), 0), ses: sess(o.rows).length })).sort((a, b) => b.last - a.last); };
+    const th = 'py-1.5 pr-3 font-medium text-slate-400 whitespace-nowrap', td = 'py-2 pr-3 tabular-nums whitespace-nowrap';
+    const tbl = (L, who) => L.length ? `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr class="text-[11px]"><th class="${th} text-left">${who}</th><th class="${th} text-right">PvP</th><th class="${th} text-right">KP</th><th class="${th} text-right">KP-Trade</th><th class="${th} text-right">Verdienst</th><th class="${th} text-right">PvE</th><th class="${th} text-right">Sitzungen</th><th class="${th} text-right">Zeitraum</th></tr></thead><tbody>
+      ${L.map(o => `<tr class="border-t border-ink-800/60"><td class="py-2 pr-3"><b class="text-slate-100" translate="no">${esc(o.name)}</b> <span class="text-[10px] text-slate-500">${esc(o.k)}</span></td><td class="${td} text-right">${fmt(o.w.n)}</td><td class="${td} text-right text-gold-200 font-semibold">${short(o.w.kp)}</td><td class="${td} text-right ${o.w.kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">${hmKptTxt(o.w.kpt)}</td><td class="${td} text-right text-sky-200">${o.acc ? short(o.acc) : '–'}</td><td class="${td} text-right">${fmt(o.pve)}</td><td class="${td} text-right">${fmt(o.ses)}</td><td class="${td} text-right text-[11px] text-slate-400">${hmWhen(o.first)} – ${hmWhen(o.last)}</td></tr>`).join('')}</tbody></table></div>` : '';
+    const zoneOf = (rows) => { try { const h = hmCfg(st), m = hmMap(h), Z = new Map(); rows.forEach(r => { if (!r.is_pvp || r.pos_x == null || !hmIn(r.pos_x, r.pos_y, r.map_role)) return; const [u, v] = hmXY(+r.pos_x, +r.pos_y, h, m), z = hmZoneAt(u, v, m, false, Date.parse(r.battle_start)); if (z < 0) return; const n = hmZName(h, m, z); Z.set(n, (Z.get(n) || 0) + 1); }); return [...Z.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3); } catch { return []; } };
+    const kvkOf = (r) => { const g = +r.server_id; return r.map_role === 'dungeon' ? '🏛️ Osiris' : g >= 10000 ? '🏁 C' + g : g ? '🏠 #' + g : ''; };
+    const sesList = (rows, lab) => { const S = sess(rows).slice(0, 15); return S.length ? `<h3 class="text-sm font-semibold text-slate-200 mt-4 mb-1">🕒 <span>Sitzungen</span> <span class="text-[11px] text-slate-500 font-normal">– <span>antippen = Heatmap genau dieser Sitzung</span></span></h3><div class="space-y-1">${S.map(x => { const w = anaSum(x.rows.filter(r => r.is_pvp)), zs = zoneOf(x.rows), d0 = new Date(x.a), hh = (t) => new Date(t).toTimeString().slice(0, 5), acc = x.rows.reduce((a, r) => a + (+r.acclaim || 0), 0), pve = x.rows.filter(r => !r.is_pvp).length;
+      return `<button type="button" data-kbpses="${esc(x.r.player_id)}|${new Date(x.a).toISOString().slice(0, 10)}|${hh(x.a)}|${hh(x.b + 6e4)}" class="w-full text-left flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-ink-950/60 border border-ink-800 hover:border-fuchsia-400/60 px-2.5 py-1.5 text-xs"><span class="text-slate-300 tabular-nums font-semibold">📅 ${d0.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit' })} ${hh(x.a)}–${hh(x.b)}</span><b translate="no">${esc(lab(x.r))}</b><span class="text-sky-300" translate="no">${kvkOf(x.r)}</span>${zs.map(([n, c]) => `<span class="rounded bg-ink-800 px-1.5 text-slate-300" translate="no">📍 ${esc(n)} <span class="text-slate-500">${c}</span></span>`).join('')}<span class="ml-auto flex gap-3"><span>⚔️ ${fmt(w.n)}${pve ? ` <span class="text-slate-500">+${pve} PvE</span>` : ''}</span><span class="text-gold-200">🏆 ${short(w.kp)}</span><span class="text-sky-200">🎖️ ${short(acc)}</span><span class="${w.kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">🔁 ${hmKptTxt(w.kpt)}</span></span></button>`; }).join('')}</div>` : ''; };
+    const A = grp(kbPilot.mine || [], r => String(r.player_id), r => r.self_name || String(r.player_id)), B = grp(kbPilot.forMe || [], r => String(r.pilot_gov), r => r.pilot_name || String(r.pilot_gov));
+    const tot = anaSum((kbPilot.mine || []).filter(r => r.is_pvp)), sel = st.pilotSel || '';
+    const P = sel ? (sel[0] === 'a' ? A : B).find(o => o.k === sel.slice(2)) : null;
+    const chipP = (k, o, ic) => `<button type="button" data-kbpilotsel="${k}" class="inline-flex items-center gap-1.5 rounded-xl border ${sel === k ? 'border-fuchsia-400 bg-fuchsia-500/15 text-fuchsia-100' : 'border-ink-600 bg-ink-950/60 text-slate-300 hover:border-fuchsia-400/60'} px-2.5 py-1 text-xs" translate="no">${ic} <b>${esc(o.name)}</b> <span class="text-gold-200 tabular-nums">${short(o.w.kp)}</span> <span class="text-slate-500 tabular-nums">· ${fmt(o.w.n)}</span></button>`;
+    const pick = (A.length || B.length) ? `<div class="flex flex-wrap items-center gap-1.5 mb-4"><button type="button" data-kbpilotsel="" class="rounded-xl border ${!sel ? 'border-fuchsia-400 bg-fuchsia-500/15 text-fuchsia-100' : 'border-ink-600 text-slate-300'} px-2.5 py-1 text-xs font-semibold">👥 <span>Alle</span></button>${A.map(o => chipP('a:' + o.k, o, '🕹️')).join('')}${B.map(o => chipP('b:' + o.k, o, '🤝')).join('')}</div>` : '';
+    const detail = P ? (() => { const pv = P.rows.filter(r => r.is_pvp), w = anaSum(pv), ft = kbFightTime(pv), dd = pv.reduce((a, r) => a + (+r.self_dead || 0), 0), sv = pv.reduce((a, r) => a + (+r.self_severe || 0), 0);
+      const it = (i, l, v, c) => `<div class="rounded-xl border border-fuchsia-500/30 bg-fuchsia-500/5 p-3"><div class="text-[11px] text-slate-400">${i} <span>${l}</span></div><div class="text-xl font-bold tabular-nums ${c || 'text-slate-100'}">${v}</div></div>`;
+      return `<div class="rounded-2xl border border-fuchsia-500/40 p-3 mb-4"><div class="font-semibold text-fuchsia-100 mb-2" translate="no">${sel[0] === 'a' ? '🕹️ <span>Du für</span>' : '🤝 <span>Für dich:</span>'} ${esc(P.name)}</div><div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+        ${it('⚔️', 'PvP', fmt(w.n))}${it('🏆', 'KP', short(w.kp), 'text-gold-200')}${it('🔁', 'KP-Trade', hmKptTxt(w.kpt), w.kpt >= 1 ? 'text-emerald-300' : 'text-red-300')}${it('🎖️', 'Verdienst', short(P.acc), 'text-sky-200')}
+        ${it('⏱️', 'Kampfzeit', kbDurTxt(ft.ms), 'text-amber-200')}${it('💀', 'Tote', short(dd), 'text-red-300')}${it('🩸', 'Schwer verwundet', short(sv), 'text-orange-300')}${it('📅', 'Sitzungen', fmt(P.ses))}</div></div>`; })() : '';
+    return `<section class="panel rounded-2xl p-5 mt-4"><div class="flex flex-wrap items-center gap-2 mb-1"><h2 class="font-display text-lg text-gold-300">🕹️ <span>Pilot</span></h2><button type="button" data-kbpilotre class="ml-auto px-2.5 py-1 rounded-lg border border-ink-600 hover:border-gold-500/60 text-xs">↻ <span>Neu laden</span></button></div>
+      <p class="text-xs text-slate-400 mb-3">Kämpfe zählen immer beim gesteuerten Account. Hier siehst du extra, wen du gesteuert hast und wer dich gesteuert hat. Den Account, den du pilotierst, bindest du in der App als „Pilot“ – ab dann schickt die App mit, dass du gesteuert hast.</p>
+      ${miss ? `<div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-100 mb-3">⚠️ <span>Die Pilot-Spalten fehlen noch in Supabase – SQL v29 aus dem Chat ausführen.</span></div>` : kbPilot.err ? `<div class="text-xs text-red-300 mb-2">${esc(kbPilot.err)}</div>` : ''}
+      ${!kbProfileId() ? '<div class="text-xs text-amber-200 mb-3">Trag im Profil deine Governor-ID ein – daran erkennt die Seite deine Pilot-Kämpfe.</div>' : ''}
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">${[['🕹️', 'Gesteuerte Accounts', fmt(A.length)], ['⚔️', 'PvP als Pilot', fmt(tot.n)], ['🏆', 'KP als Pilot', short(tot.kp)], ['🤝', 'Haben dich gesteuert', fmt(B.length)]].map(([i, l, v]) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">${i} <span>${l}</span></div><div class="text-2xl font-bold tabular-nums text-slate-100">${v}</div></div>`).join('')}</div>
+      ${pick}${detail}
+      <h3 class="font-semibold text-slate-100 mb-1">🕹️ <span>Ich habe gesteuert</span></h3>${tbl(A, 'Account') || '<div class="text-xs text-slate-500 py-2">Noch keine gepilotierten Kämpfe.</div>'}${sesList(P && sel[0] === 'a' ? P.rows : (kbPilot.mine || []), r => r.self_name || r.player_id)}
+      <h3 class="font-semibold text-slate-100 mt-6 mb-1">🤝 <span>Wurde für mich gesteuert</span></h3>${tbl(B, 'Pilot') || '<div class="text-xs text-slate-500 py-2">Niemand hat deine Accounts gesteuert.</div>'}${sesList(P && sel[0] === 'b' ? P.rows : (kbPilot.forMe || []), r => (r.pilot_name || r.pilot_gov) + ' → ' + (r.self_name || r.player_id))}</section>`;
+  }
+  // ===== 📚 KvK-History: wenn ein KvK vorbei ist, wird es mit seiner C-Nummer zusammengefasst gespeichert (Tabelle rok_kvk_history) =====
+  var kbHist = { rows: null, loading: false, err: '', saving: false, msg: '' };
+  function kbHistLoad(force) { if (kbHist.loading || (kbHist.rows && !force)) return; kbHist.loading = true;
+    (async () => { try { const db = RokAuth.db?.(), uid = RokAuth.userId?.(); if (!db || !uid) throw new Error('Bitte einloggen.'); const r = await db.from('rok_kvk_history').select('*').eq('user_id', uid).order('date_from', { ascending: false }); if (r.error) throw r.error; kbHist.rows = r.data || []; kbHist.err = ''; }
+      catch (e) { kbHist.rows = []; kbHist.err = e?.message || String(e); } kbHist.loading = false; if (R.view === 'battles' && kbSt().page === 'hist') { kbHistAuto(); renderKampf(); } })(); }
+  function kbHistBuild(acc, k) {
+    const a = Date.parse(k.from + 'T00:00:00'), b = Date.parse(k.to + 'T23:59:59'), sid = +String(k.c).replace(/\D/g, '');
+    const rows = (kbCache.get(String(acc)) || []).filter(r => { const t = Date.parse(r.battle_start || ''); return t >= a && t <= b && (+r.server_id === sid || (r.is_pvp === false && +r.server_id >= 10000)); });
+    const pvp = rows.filter(r => r.is_pvp), w = anaSum(pvp); if (pvp.length < 20) return null;
+    const acc2 = rows.reduce((s, r) => s + (+r.acclaim || 0), 0), D = new Map(), KD = new Map(), EN = new Map(), HG = new Map();
+    pvp.forEach(r => { const d = r.battle_start.slice(0, 10), o = D.get(d) || { d, n: 0, kp: 0 }; o.n++; o.kp += +r.kill_points || 0; D.set(d, o);
+      const kd = kbKdNum(r.enemy_kingdom); if (kd) { const q = KD.get(kd) || { kd, n: 0, kp: 0 }; q.n++; q.kp += +r.kill_points || 0; KD.set(kd, q); }
+      const en = String(r.enemy_player_id || r.enemy_name || ''); if (en) { const q = EN.get(en) || { name: r.enemy_name || en, kd, n: 0, kp: 0 }; q.n++; q.kp += +r.kill_points || 0; EN.set(en, q); }
+      if (r.pos_x != null && r.pos_y != null) { const x = Math.floor(+r.pos_x / 6 / 10), y = Math.floor(+r.pos_y / 6 / 10), hk = x + ',' + y; HG.set(hk, (HG.get(hk) || 0) + 1); } });
+    const pve = rows.filter(r => !r.is_pvp);
+    const own = pvp.filter(r => !kbPilotRow(r)), BG = kbBadges(own.filter(r => !(+r.group_size > 1)).sort((x, y) => Date.parse(x.battle_start) - Date.parse(y.battle_start)), own, rows).filter(b => b.lv > 0).map(b => ({ ic: b.ic, t: b.title, tier: b.one ? 0 : b.lv, v: String(b.f(b.v)).replace(/<[^>]+>/g, ''), d: b.d })), ft = kbFightTime(pvp), sum = (k) => pvp.reduce((x, r) => x + (+r[k] || 0), 0), dl = [...D.values()].sort((x, y) => y.kp - x.kp)[0];
+    return { acc: String(acc), name: (rows.find(r => r.self_name) || {}).self_name || String(acc), tot: { n: w.n, kp: w.kp, ekp: w.ekp, my: w.my, en: w.en, dead: w.dead, acclaim: acc2, pve: pve.length, barb: pve.filter(r => kbCatOf(r.npc_btype, r.group_size) === 'barb').length,
+        sDead: sum('self_dead'), sSev: sum('self_severe'), eDead: sum('enemy_dead'), eSev: sum('enemy_severe'), ftMs: ft.ms, ftN: ft.n, daysOn: D.size, bestDay: dl ? [dl.d, dl.kp] : null, foes: EN.size, pilotN: pvp.length - own.length },
+      days: [...D.values()].sort((x, y) => x.d.localeCompare(y.d)), kds: [...KD.values()].sort((x, y) => y.n - x.n).slice(0, 6), enemies: [...EN.values()].sort((x, y) => y.kp - x.kp).slice(0, 5), heat: [...HG.entries()].map(([k, n]) => [...k.split(',').map(Number), n]), badges: BG, v: 3 };
+  }
+  async function kbHistSave(list) { const db = RokAuth.db?.(), uid = RokAuth.userId?.(); if (!db || !uid || !list.length) return 0;
+    const r = await db.from('rok_kvk_history').upsert(list.map(x => ({ user_id: uid, governor_id: +x.acc, c_code: x.c, name: x.n, date_from: x.from, date_to: x.to, data: x.data, updated_at: new Date().toISOString() })), { onConflict: 'user_id,governor_id,c_code' }); if (r.error) throw r.error; return list.length; }
+  function kbHistTodo(onlyEnded) { const have = new Set((kbHist.rows || []).map(h => h.governor_id + '|' + h.c_code)), out = [];
+    kbKvkPlan().filter(k => !onlyEnded || !k.live).forEach(k => [...kbMyIds()].forEach(acc => { if (onlyEnded && have.has(acc + '|' + k.c)) return; const data = kbHistBuild(acc, k); if (data) out.push({ acc, c: k.c, n: k.n, from: k.from, to: k.to, data }); })); return out; }
+  function kbHistAuto() { if (kbHist.saving || kbHist.autoDone || !kbHist.rows || kbHist.err) return; kbHist.autoDone = true; /* einmal pro Besuch */ const todo = kbHistTodo(true); if (!todo.length) return; kbHist.saving = true;
+    kbHistSave(todo).then(n => { kbHist.msg = n + ' KvK gespeichert'; kbHist.rows = null; }).catch(e => { kbHist.err = e?.message || String(e); }).finally(() => { kbHist.saving = false; kbHistLoad(true); }); }
+  function kbHistHtml(st) {
+    kbHistLoad(); const miss = /rok_kvk_history|relation|does not exist|schema cache/i.test(kbHist.err || '');
+    const L = (kbHist.rows || []).filter(h => !st.acc || String(h.governor_id) === st.acc), open = st.histOpen || '';
+    const card = (h) => { const d = h.data || {}, t = d.tot || {}, kpt = t.ekp ? t.kp / t.ekp : null, on = open === h.id;
+      return `<div class="rounded-2xl border ${on ? 'border-gold-400' : 'border-ink-700'} bg-ink-950/60"><button type="button" data-kbhist="${esc(h.id)}" class="w-full text-left p-3 flex flex-wrap items-center gap-x-4 gap-y-1"><span class="font-display text-lg text-gold-200" translate="no">🏁 ${esc(h.name || h.c_code)}</span>${h.name && h.name !== h.c_code ? `<span class="text-xs text-slate-500">${esc(h.c_code)}</span>` : ''}<span class="text-xs text-slate-400">${esc(h.date_from)} – ${esc(h.date_to)}</span><b class="text-sm" translate="no">${esc(d.name || h.governor_id)}</b>
+        <span class="ml-auto flex flex-wrap gap-3 text-xs"><span>⚔️ ${fmt(t.n)}</span><span class="text-gold-200">🏆 ${short(t.kp)}</span><span class="${kpt >= 1 ? 'text-emerald-300' : 'text-red-300'}">🔁 ${hmKptTxt(kpt)}</span><span class="text-sky-200">🎖️ ${short(t.acclaim || 0)}</span>${t.ftMs != null ? `<span class="text-amber-200">⏱️ ${kbDurTxt(t.ftMs)}</span>` : ''}</span></button>
+        ${on ? kbHistDetail(h) : ''}</div>`; };
+    return `<section class="panel rounded-2xl p-5 mt-4"><div class="flex flex-wrap items-center gap-2 mb-1"><h2 class="font-display text-lg text-gold-300">📚 <span>KvK-History</span></h2><button type="button" data-kbhistsave class="ml-auto px-2.5 py-1 rounded-lg border border-gold-500/60 bg-gold-500/10 text-gold-200 text-xs">💾 <span>Laufendes KvK jetzt sichern</span></button></div>
+      <p class="text-xs text-slate-400 mb-3">Ist ein KvK vorbei (C-Nummer im Zeitplan, letzter Kampf älter als 3 Tage), wird es automatisch zusammengefasst gespeichert: Summen, Tage, Königreiche, Gegner und Heatmap-Raster. Das braucht nur ein paar KB – die einzelnen Kämpfe kann man später löschen.</p>
+      ${miss ? `<div class="rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-xs text-amber-100 mb-3">⚠️ <span>Die Tabelle rok_kvk_history fehlt noch – SQL v29 aus dem Chat ausführen.</span></div>` : kbHist.err ? `<div class="text-xs text-red-300 mb-2">${esc(kbHist.err)}</div>` : ''}${kbHist.msg ? `<div class="text-xs text-emerald-300 mb-2">✔ ${esc(kbHist.msg)}</div>` : ''}
+      ${kbHist.loading && !kbHist.rows ? '<div class="text-xs text-slate-500">Lädt …</div>' : L.length ? `<div class="space-y-2">${L.map(card).join('')}</div>` : '<div class="text-sm text-slate-500 py-4 text-center">Noch kein KvK gespeichert.</div>'}</section>`;
+  }
+  function kbHistDetail(h) { const d = h.data || {}, t = d.tot || {}, days = d.days || [], mx = Math.max(1, ...days.map(x => x.kp)), hm = d.heat || [], hx = Math.max(1, ...hm.map(x => x[2])), kpt = t.ekp ? t.kp / t.ekp : null;
+    const xs = hm.map(x => x[0]), ys = hm.map(x => x[1]), x0 = Math.min(...xs, 0), y0 = Math.min(...ys, 0), x1 = Math.max(...xs, 1), y1 = Math.max(...ys, 1), sz = Math.max(x1 - x0, y1 - y0) + 2;
+    const hmSvg = hm.length ? `<svg viewBox="${x0 - 1} ${-(y0 + sz - 1)} ${sz} ${sz}" class="w-full aspect-square rounded-xl bg-ink-950 border border-ink-700">${hm.map(([x, y, n]) => `<rect x="${x}" y="${-y - 1}" width="1" height="1" rx=".2" fill="rgb(245,${Math.round(197 - n / hx * 160)},${Math.round(66 - n / hx * 40)})" opacity="${(.35 + .65 * n / hx).toFixed(2)}"/>`).join('')}</svg>` : '<div class="text-xs text-slate-500">–</div>';
+    const it = (i, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 px-3 py-2"><div class="text-[10px] text-slate-400">${i} <span>${l}</span></div><div class="text-lg font-bold tabular-nums ${c || 'text-slate-100'}">${v}</div>${sub ? `<div class="text-[10px] text-slate-500">${sub}</div>` : ''}</div>`;
+    const nn = (v, f) => v == null ? '–' : (f || short)(v);
+    return `<div class="border-t border-ink-800 p-3"><div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+        ${it('🏆', 'Kill Points', short(t.kp), fmt(t.n) + ' <span>Kämpfe</span>', 'text-gold-200')}${it('🎖️', 'Verdienst', short(t.acclaim || 0), '', 'text-sky-200')}
+        ${it('🔁', 'KP-Trade', hmKptTxt(kpt), short(t.ekp) + ' <span>Gegner-KP</span>', kpt >= 1 ? 'text-emerald-300' : 'text-red-300')}${it('⏱️', 'Kampfzeit', t.ftMs != null ? kbDurTxt(t.ftMs) : '–', t.ftN != null ? fmt(t.ftN) + ' <span>Schlachten</span> · ' + fmt(t.daysOn) + ' <span>Tage</span>' : '', 'text-amber-200')}
+        ${it('☠️', 'Kills', nn(t.eDead != null ? t.eDead + t.eSev : null), t.eDead != null ? short(t.eDead) + ' <span>tot</span> · ' + short(t.eSev) + ' SV' : '', 'text-emerald-300')}${it('💀', 'Eigene Tote', nn(t.sDead), t.sSev != null ? short(t.sSev) + ' <span>schwer verwundet</span>' : '', 'text-red-300')}
+        ${it('📅', 'Bester Tag', t.bestDay ? short(t.bestDay[1]) : '–', t.bestDay ? t.bestDay[0].slice(8, 10) + '.' + t.bestDay[0].slice(5, 7) + '.' : '')}${it('🎯', 'Gegner', nn(t.foes, fmt), '<span>PvE</span> ' + fmt(t.pve || 0) + (t.pilotN ? ' · 🕹️ ' + fmt(t.pilotN) + ' <span>gepilotet</span>' : ''))}</div>
+      <div class="grid lg:grid-cols-[1fr_15rem] gap-4"><div><div class="text-xs text-slate-400 mb-1">📅 <span>KP pro Tag</span></div><div class="flex items-end gap-px h-20">${days.map(x => `<div class="flex-1 rounded-t bg-gold-400/70" style="height:${Math.max(2, x.kp / mx * 100)}%" title="${x.d}: ${short(x.kp)} KP · ${x.n} Kämpfe"></div>`).join('')}</div>
+        <div class="grid sm:grid-cols-2 gap-4 mt-3"><div><div class="text-xs text-slate-400 mb-1">👑 <span>Königreiche</span></div>${(d.kds || []).slice(0, 6).map(k => `<div class="flex justify-between text-xs border-t border-ink-800/60 py-1"><span>#${k.kd}</span><span class="tabular-nums text-slate-400">${fmt(k.n)} · <span class="text-gold-200">${short(k.kp)}</span></span></div>`).join('')}</div>
+        <div><div class="text-xs text-slate-400 mb-1">🎯 <span>Top-Gegner</span></div>${(d.enemies || []).slice(0, 5).map(e => `<div class="flex justify-between gap-2 text-xs border-t border-ink-800/60 py-1"><span class="truncate" translate="no">${esc(e.name)}</span><span class="tabular-nums text-gold-200 shrink-0">${short(e.kp)}</span></div>`).join('')}</div></div></div>
+      <div><div class="text-xs text-slate-400 mb-1">🔥 <span>Wo du gekämpft hast</span></div>${hmSvg}</div></div>
+      ${(d.badges || []).length ? `<div class="mt-4"><div class="text-xs text-slate-400 mb-1.5">🎖️ <span>In diesem KvK geschafft</span></div><div class="flex flex-wrap gap-1.5">${d.badges.map(b => { const t = !b.tier ? KB_ONE : KB_TIER5[b.tier - 1]; return `<span class="inline-flex items-center gap-1.5 rounded-xl border px-2 py-1 text-xs" style="border-color:${t[2]}88;background:${t[2]}14" title="${esc(b.d)}: ${esc(b.v)}"><span class="text-base">${b.ic}</span><b style="color:${t[2]}">${esc(b.t)}</b><span class="text-slate-400">${t[0]} ${esc(b.v)}</span></span>`; }).join('')}</div></div>` : (d.v || 1) < 3 ? '<div class="mt-3 text-[11px] text-slate-500">🎖️ Erfolge gibt es ab jetzt gespeicherten KvKs (mit „Laufendes KvK jetzt sichern“ neu speichern).</div>' : ''}</div>`; }
+  // ===== 👑 Admin: Statistiken aller Spieler ansehen =====
+  var kbIsAdm = false, kbAdmIds = new Set(), kbAdmList = null;
+  try { Promise.resolve(window.RokAuth?.isAdmin?.()).then(v => { kbIsAdm = !!v; if (kbIsAdm && R.view === 'battles') renderKampf(); }).catch(() => {}); } catch {}
+  function kbAdmLoad() { if (kbAdmList) return; kbAdmList = [];
+    (async () => { try { const db = RokAuth.db?.(); const r = await db.from('leaderboard').select('username,governor_id').not('governor_id', 'is', null).limit(2000); kbAdmList = (r.data || []).map(x => ({ n: x.username || '', id: String(x.governor_id || '').replace(/\D/g, '') })).filter(x => x.id); } catch { kbAdmList = []; } if (R.view === 'battles') renderKampf(); })(); }
+  function kbAdmHtml(st) { if (!kbIsAdm) return ''; if (st.admOpen) kbAdmLoad();
+    return `<span class="relative inline-block"><button type="button" data-kbadm class="inline-flex items-center gap-1.5 rounded-xl border ${st.admOpen ? 'border-fuchsia-400 text-fuchsia-100' : 'border-fuchsia-500/50 text-fuchsia-200'} bg-fuchsia-500/10 px-3 py-1.5 text-sm font-semibold">👑 <span>Admin</span> ▾</button>
+      ${st.admOpen ? `<div class="absolute z-40 left-1/2 -translate-x-1/2 mt-2 w-[min(92vw,560px)] rounded-2xl border border-fuchsia-500/50 bg-ink-900 shadow-2xl p-3"><div class="text-[11px] text-slate-400 mb-1.5">Statistiken jedes Spielers ansehen (Name oder ID) – nur für dich als Admin sichtbar.</div>
+        <input data-kbadmq placeholder="🔍 Name oder ID …" class="w-full mb-2 bg-ink-950 border border-ink-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-fuchsia-400">
+        <div class="max-h-72 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 gap-1.5 pr-1">${(kbAdmList || []).map(x => `<button type="button" data-kbadmpick="${esc(x.id)}" class="text-left rounded-lg border border-ink-700 bg-ink-950/60 hover:border-fuchsia-400 px-2 py-1 text-xs" translate="no"><div class="font-semibold truncate">${esc(x.n || x.id)}</div><div class="text-[10px] text-slate-500 tabular-nums">${esc(x.id)}</div></button>`).join('') || '<div class="text-xs text-slate-500">Lädt …</div>'}</div></div>` : ''}</span>`; }
+  // ===== 📲 App-Download mit Erklär-Fenster =====
+  function kbAppModal() { document.getElementById('kbAppDlg')?.remove();
+    const REPO = 'https://github.com/marcopopp51200-coder/rok-scanner', TAG = /-git-/.test(location.hostname) ? 'app-test' : 'app-main', d = document.createElement('div'); d.id = 'kbAppDlg';
+    d.className = 'fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm grid place-items-center p-4';
+    d.innerHTML = `<div class="panel rounded-2xl max-w-lg w-full p-5 border border-gold-500/50 max-h-[90vh] overflow-y-auto"><div class="flex items-start gap-3 mb-3"><span class="text-4xl">📲</span><div><h2 class="font-display text-xl text-gold-200">Wiz fan Club App</h2><div class="text-xs text-slate-400">Windows · kostenlos · verändert nichts am Spiel</div></div><button type="button" data-kbappx class="ml-auto text-slate-400 hover:text-white text-xl leading-none">✕</button></div>
+      <ul class="space-y-2 text-sm text-slate-200 mb-4">
+        <li>⚔️ <b>Kampfberichte automatisch hochladen</b> – die App liest deine Berichte aus dem Spielordner und schickt sie an die Website. Kein Abtippen, kein Screenshot.</li>
+        <li>📊 <b>Live-Overlay über dem Spiel</b> – KP, Trade, Verluste und Kämpfe der Sitzung direkt im Spiel sehen.</li>
+        <li>🕹️ <b>Pilot-Modus</b> – steuerst du einen fremden Account, bindest du ihn als „Pilot“. Die Kämpfe zählen beim Account, und im Reiter „Pilot“ siehst du, was du gesteuert hast.</li>
+        <li>🔔 <b>Meldungen</b> – Buffs, Pass-Eroberungen und Meilensteine auf Wunsch auch in Discord.</li>
+        <li>🔒 <b>Sicher</b> – die App ist an deinen Website-Account gebunden und lädt nur Kämpfe deiner eigenen oder freigegebenen IDs hoch.</li></ul>
+      <div class="flex flex-wrap gap-2"><a href="${REPO}/releases/download/${TAG}/WizFanClubApp.exe" class="flex-1 text-center rounded-xl bg-gold-500 hover:bg-gold-400 text-ink-950 font-bold px-4 py-2.5">⬇️ <span>Jetzt herunterladen</span></a><a href="/uploader.html" class="flex-1 text-center rounded-xl border border-gold-500/60 text-gold-200 px-4 py-2.5 font-semibold">🔗 <span>Einrichten &amp; verbinden</span></a></div>
+      <div class="text-[11px] text-slate-500 mt-3">Windows warnt beim ersten Start („Unbekannter Herausgeber“)? → „Weitere Informationen“ → „Trotzdem ausführen“.</div></div>`;
+    d.onclick = (e) => { if (e.target === d || e.target.closest('[data-kbappx]')) d.remove(); }; document.body.appendChild(d); try { window.RokI18n?.apply?.(d); } catch {} }
+  var KB_EQ = {"1":["Sacred Dominion","sacred_dominion.webp"],"2":["Hammer of the Sun and Moon","hammer_of_the_sun_and_moon.webp"],"3":["The Hydra's Blast","the_hydras_blast.webp"],"4":["Pride of the Khan","pride_of_the_khan.webp"],"5":["Helm of the Conqueror","helm_of_the_conqueror.webp"],"6":["Ancestral Mask of Night","ancestral_mask_of_night.webp"],"7":["Lance of the Hellish Wasteland","lance_of_the_hellish_wasteland.webp"],"8":["War Helm of the Hellish Wasteland","war_helm_of_the_hellish_wasteland.webp"],"9":["Heavy Armor of the Hellish Wasteland","heavy_armor_of_the_hellish_wasteland.webp"],"10":["Armband of the Hellish Wasteland","armband_of_the_hellish_wasteland.webp"],"11":["Tassets of the Hellish Wasteland","tassets_of_the_hellish_wasteland.webp"],"12":["Boots of the Hellish Wasteland","boots_of_the_hellish_wasteland.webp"],"13":["Shield of the Eternal Empire","shield_of_the_eternal_empire.webp"],"14":["Gold Helm of the Eternal Empire","gold_helm_of_the_eternal_empire.webp"],"15":["Plate of the Eternal Empire","plate_of_the_eternal_empire.webp"],"16":["Vambraces of the Eternal Empire","vambraces_of_the_eternal_empire.webp"],"17":["Greaves of the Eternal Empire","greaves_of_the_eternal_empire.webp"],"18":["Sturdy Boots of the Eternal Empire","sturdy_boots_of_the_eternal_empire.webp"],"19":["Dragon's Breath Bow","dragons_breath_bow.webp"],"20":["Dragon's Breath Helm","dragons_breath_helm.webp"],"21":["Dragon's Breath Plate","dragons_breath_plate.webp"],"22":["Dragon's Breath Vambraces","dragons_breath_vambraces.webp"],"23":["Dragon's Breath Tassets","dragons_breath_tassets.webp"],"24":["Dragon's Breath Boots","dragons_breath_boots.webp"],"25":["Shadow Legion's Retribution","shadow_legions_retribution.webp"],"26":["Hope Cloak","hope_cloak.webp"],"27":["The Milky Way","the_milky_way.webp"],"28":["Navar's Control","navars_control.webp"],"29":["Sacred Grips","sacred_grips.webp"],"30":["Ian's Choice","ians_choice.webp"],"31":["Tassets of the War God","tassets_of_the_war_god.webp"],"32":["Eternal Night","eternal_night.webp"],"33":["Ash of the Dawn","ash_of_the_dawn.webp"],"34":["Shio's Return","shios_return.webp"],"35":["Mountain Crushers","mountain_crushers.webp"],"36":["Commander's Boots","commanders_boots.webp"],"37":["Ring of Doom","ring_of_doom.webp"],"38":["Greatest Glory","greatest_glory.webp"],"39":["Pendant of Eternal Night","pendant_of_eternal_night.webp"],"40":["Horn of Fury","horn_of_fury.webp"],"41":["Concealed Dagger","concealed_dagger.webp"],"42":["Mora's Web","moras_web.webp"],"43":["Scolas' Lucky Coin","scolas_lucky_coin.webp"],"44":["Vengeance","vengeance.webp"],"51":["Revival Helm","revival_helm_purple.webp"],"52":["Revival Plate","revival_plate_purple.webp"],"53":["Revival Gauntlets","revival_gauntlets_purple.webp"],"55":["Scepter of the Forest Guardian","scepter_of_the_forest_guardian_purple.webp"],"56":["Mask of the Forest Guardian","mask_of_the_forest_guardian_purple.webp"],"57":["Robe of the Forest Guardian","robe_of_the_forest_guardian_purple.webp"],"58":["Claws of the Forest Guardian","claws_of_the_forest_guardian_purple.webp"],"59":["Sakura Fubuki","sakura_fubuki_purple.webp"],"60":["Golden Age","golden_age_purple.webp"],"61":["Heart of the Saint","heart_of_the_saint_purple.webp"],"62":["Abyssal Visage","abyssal_visage_purple.webp"],"63":["Witch's Lineage","witchs_lineage_purple.webp"],"64":["Dark Lord's Blessing","dark_lords_blessing_purple.webp"],"65":["Quinn's Soul","quinns_soul_purple.webp"],"66":["Iset's Sufferance","isets_sufferance_purple.webp"],"67":["Seth's Brutality","seths_brutality_purple.webp"],"68":["Karuak's Humility","karuaks_humility_purple.webp"],"69":["Fanatic's Tassets","fanatics_tassets_purple.webp"],"70":["Gladiator","gladiator_purple.webp"],"71":["Cloud Racers","cloud_racers_purple.webp"],"72":["Frost Treads","frost_treads_purple.webp"],"73":["Flame Treads","flame_treads_purple.webp"],"74":["The Bard's Pendant","the_bards_pendant_purple.webp"],"75":["Silent Trial","silent_trial_purple.webp"],"76":["Delane's Amulet","delanes_amulet_purple.webp"],"77":["Peter's Sickle","peters_sickle_purple.webp"],"78":["Crimson Ring","crimson_ring_purple.webp"],"79":["Harvester's Headscarf","harvesters_headscarf_blue.webp"],"80":["Harvester Robes","harvester_robes_blue.webp"],"81":["Harvester Breeches","harvester_breeches_blue.webp"],"82":["Harvester Boots","harvester_boots_blue.webp"],"97":["Call of the Loyal","call_of_the_loyal_blue.webp"],"98":["Lohar's Bone Necklace","lohars_bone_necklace_blue.webp"],"99":["Savage Totem","savage_totem_blue.webp"],"112":["Sharp Longsword","sharp_longsword_grey.webp"],"116":["Cloth Gloves","cloth_gloves_grey.webp"],"118":["Karuak's War Drums","karuaks_war_drums.webp"],"119":["Seth's Call","seths_call.webp"],"120":["Wind Scars","wind_scars_purple.webp"],"121":["Ancient Stratagems","ancient_stratagems_purple.webp"],"122":["Fierce Wolf's Helmet","fierce_wolfs_helmet.webp"],"123":["Vigilant Wolf's Leather Armor","vigilant_wolfs_leather_armor.webp"],"124":["Twilight Epiphany","twilight_epiphany.webp"],"125":["Wailing Wolf's Gauntlets","wailing_wolfs_gauntlets.webp"],"126":["Lone Wolf's Leather Tassets","lone_wolfs_leather_tassets.webp"],"128":["Knight's Battleworn Gauntlets","knights_battleworn_gauntlets_purple.webp"],"127":["Roaring Wolf's Claws","roaring_wolfs_claws.webp"],"129":["Knight's Triumphant Tassets","knights_triumphant_tassets_purple.webp"],"130":["Knight's Winter Sabatons","knights_winter_sabatons_purple.webp"],"131":["Knight's Steel Diadem","knights_steel_diadem_purple.webp"],"132":["Knight's Valorous Cloak","knights_valorous_cloak_purple.webp"],"133":["Knight's Oathsworn Bow","knights_oathsworn_bow_purple.webp"],"140":["Scepter of the Glorious Goddess","scepter_of_the_glorious_goddess.webp"],"141":["Diadem of the Glorious Goddess","diadem_of_the_glorious_goddess.webp"],"142":["Plate of the Glorious Goddess","plate_of_the_glorious_goddess.webp"],"143":["Gauntlets of the Glorious Goddess","gauntlets_of_the_glorious_goddess.webp"],"144":["Chausses of the Glorious Goddess","chausses_of_the_glorious_goddess.webp"],"145":["Greaves of the Glorious Goddess","greaves_of_the_glorious_goddess.webp"],"164":["Immolating Plume","immolating_plume.webp"],"166":["Hero's Hilt","heros_hilt.webp"],"167":["Saddle of a Thousand Blessings","saddle_of_a_thousand_blessings.webp"],"168":["Timeless Amber","timeless_amber.webp"]};
+  var KB_AFX = {"1101":"Destructive","1201":"Straight to the Point","1301":"Invincible","1401":"Fearless","2101":"Hunter","2201":"Unstoppable","2301":"Balanced","2401":"Intrepid","3101":"Sharpshooter","3201":"Drilled","3301":"Merciless","3401":"Astute","4101":"Influential Leader","4201":"Loaded","4301":"Civilized","4401":"Fixed","5101":"Cocoon","5201":"Inviolable","5301":"Crowned","5401":"Rounded","6101":"Rich","6201":"Battlements","6301":"Moneyed","6401":"Transporter","7101":"Enmeshed","7201":"Logistical","7301":"Unassailed","7401":"Winged","101":"Warcry","201":"Brutal","301":"Spiked","401":"Infamy","102":"Fearless","202":"Rugged","302":"Duelist","402":"Secure","103":"Well Clad","203":"Armored","303":"Metallics","403":"Shielded","104":"Robust","204":"Fit","304":"Vitality","404":"Hardy","105":"Swift","205":"Fine Horse","305":"Galloping","405":"Haste","106":"Payback","206":"Annexer","306":"Cleanser","406":"Pacifier","107":"Onslaught","207":"Warhunger","307":"Striker","407":"Militant","108":"Retaliatory","208":"Alert","308":"Rebuff","408":"Resistant","109":"Enraged","209":"Devious","309":"Brawler","409":"Daring","110":"Valiant","210":"Fearsome","310":"Warflames","410":"Elite","111":"Iron Wall","211":"Evasive","311":"Eclipsed","411":"Evasive","112":"Bellicose","212":"Requital","312":"Brave","412":"Smite","113":"Pulverize","213":"Respite","313":"Strategic","413":"Enduring","114":"Breaker","214":"Guarded","314":"Desperado","414":"Artisan","115":"Furious","215":"Embattled","315":"Cohesive","415":"Rapacious","116":"Ward","216":"Vengeful","316":"Pursuer","416":"Guardians","117":"Phalanx","217":"Patronage","317":"Assertive","417":"Counterer","118":"Hurried","218":"Primed","318":"Wary","418":"Deflecter","119":"Tremors","219":"Uplifting","319":"Siegework","419":"Watchmen","120":"Calm","220":"Spirited","320":"Sentries","420":"Lineshot","121":"Loosed","221":"Bluster","321":"Ballistics","421":"Riftmaker","122":"Warcry","222":"Brutal","322":"Spiked","422":"Infamy","124":"Well Clad","224":"Armored","324":"Metallics","424":"Shielded","125":"Robust","225":"Fit","325":"Vitality","425":"Hardy","126":"Swift","226":"Fine Horse","326":"Galloping","426":"Haste","127":"Payback","227":"Annexer","327":"Cleanser","427":"Pacifier","128":"Onslaught","228":"Warhunger","328":"Striker","428":"Militant","129":"Retaliatory","229":"Alert","329":"Rebuff","429":"Resistant","130":"Enraged","230":"Devious","330":"Brawler","430":"Daring","131":"Valiant","231":"Fearsome","331":"Warflames","431":"Elite","132":"Iron Wall","232":"Evasive","332":"Eclipsed","432":"Evasive","133":"Bellicose","233":"Respite","333":"Strategic","433":"Guardians","134":"Breaker","234":"Guarded","334":"Cohesive","434":"Counterer","135":"Ward","235":"Primed","335":"Assertive","435":"Deflecter","136":"Loosed","236":"Spirited","336":"Ballistics","436":"Lineshot","137":"Enrichment","237":"Brisk","337":"Harvester","437":"Bountiful","5102":"Self-Defense","5202":"Aegis","5302":"Reinforced","5402":"Tenacious","8101":"Irreproachable","8201":"Cautious","8301":"Shield Bash","8401":"Rock Solid","9101":"Avenger","9201":"Guarding Light","9301":"Turn the Corner","9401":"Panacea","8102":"Ironclad","8202":"Strike & Parry","8302":"Unshakeable","8402":"Convalescing","9102":"Back In Action","9202":"Medic","9302":"Rise Up","9402":"Refreshing","1102":"Battle-Ready","1202":"Even-Keeled","1302":"Unswerving","1402":"Forceful","2102":"Crazed","2202":"Boiling Blood","2302":"Defiant","2402":"Focus Fire","3102":"Full Draw","3202":"Bloody Bolt","3302":"Tempered","3402":"Sharp Arrows","4102":"Drums of War","4202":"Nullify","4302":"Counter-Parry","4402":"Persevering","6102":"Gold Panner","6202":"Safeguard","6302":"Plentitude","6402":"Sturdy Back","7102":"Entangling","7202":"Arms Race","7302":"Sprinter","7402":"Strider","10101":"Hasty Retreat","10102":"Fall Back","10201":"Blast Shield","10202":"Spread Out","10301":"Full Force","10302":"Shock Troops","10401":"United Front","10402":"Mutual Defense","13101":"Thrasher","13102":"Pummeler","13201":"Butterfly Effect","13202":"Causative","13301":"Steelskin","13302":"Determined","13401":"Flurry","13402":"Relentless","14101":"Battle Ready","14102":"Vigilant","14201":"Fortified","14202":"Resolute","14301":"Chokepoint","14302":"Precautions","14401":"Steelheart","14402":"Ironsides","17101":"Toppler","17102":"Imploder","17201":"Demolisher","17202":"Raider","17301":"Airtight","17302":"Hardheaded","17401":"Thundering","17402":"Rattling","16101":"Vanquisher","16102":"Overwhelm","16201":"Self Heal","16202":"Self Tend","16301":"Brilliant","16302":"Astute","16401":"Mountain","16402":"Stone","19101":"Advantage Advanced","19102":"Fury","19201":"Indomitable","19202":"Soar","19301":"Maneuver at Ease","19302":"Ballista","19401":"Horseback Action","19402":"Divine Staff","20101":"Dominate","20102":"Bludgeon","20201":"Cleaver","20202":"Charge","20301":"Bulwark","20302":"Bolstered","20401":"Tidebreaker","20402":"Vigor","21101":"Rapid Advance","21102":"Driven","21201":"Bold Ambitions","21202":"Burst","21301":"Impervious","21302":"Steady","21401":"Raging Tide","21402":"Surge"};
+  // ===== 🛡️ Gegner-Gear: nur bei Garnison (Pass/Heiligtum, Allianz-Flagge) und Rallys – nur der Hauptkommandant (Spalte enemy_gear, Uploader v29) =====
+  var kbGearCols = true, kbSelfGear = true, kbGearIdx = [];
+  var kbGear = { key: '', rows: null, loading: false, err: '' };
+  function kbGearLoad(ids) { const key = ids.slice().sort().join(',') + '|' + (kbNeedFrom() || 'all'); if (!kbGearCols || kbGear.loading || kbGear.key === key) return; kbGear.loading = true; kbGear.key = key;
+    (async () => { try { const db = RokAuth.db?.(); let q = db.from('rok_battles').select('player_id,self_name,self_hero1,battle_start,enemy_player_id,enemy_name,enemy_alliance,enemy_kingdom,enemy_hero1,enemy_hero2,enemy_gear,kill_points,group_size,pos_x,pos_y' + (kbSelfGear ? ',self_gear' : '')).not('enemy_gear', 'is', null);
+        if (ids.length) q = q.in('player_id', ids); const nf = kbNeedFrom(); if (nf) q = q.gte('battle_start', nf);
+        const r = await q.order('battle_start', { ascending: false }).limit(2000); if (r.error) throw r.error; kbGear.rows = r.data || []; kbGear.err = ''; }
+      catch (e) { kbGear.rows = []; kbGear.err = e?.message || String(e); if (/self_gear/.test(kbGear.err)) { kbSelfGear = false; kbGear.key = ''; kbGear.loading = false; return kbGearLoad(ids); } if (/enemy_gear/.test(kbGear.err)) kbGearCols = false; }
+      kbGear.loading = false; if (R.view === 'battles' && (kbSt().page || 'battles') === 'battles') renderKampf(); })(); }
+  function kbGearCard(g, r) {
+    const ROM = ['', 'I', 'II', 'III', 'IV', 'V'], TT = { 1: ['infantry.webp', 'Infanterie'], 2: ['archer (1).webp', 'Bogen'], 3: ['cavalry (1).webp', 'Kavallerie'] };
+    const items = [...String(g.eq || '').matchAll(/(\d+):(\d+)_\d+:(\d+)/g)].map(m => { const id = +m[2] - 20000, v = +m[3], tt = Math.floor(v / 10), ic = v % 10, e = KB_EQ[id];
+      return `<div class="text-center" title="${esc(e ? e[0] : '#' + id)}${TT[tt] ? ' · ' + TT[tt][1] : ''}"><div class="relative aspect-square rounded-md bg-ink-900 border border-ink-700 overflow-hidden">${e ? `<img src="/icons/gear/${encodeURIComponent(e[1])}" class="w-full h-full object-contain" loading="lazy" alt="">` : '<span class="text-[9px] text-slate-500">?</span>'}${TT[tt] ? `<img src="/icons/gear/${encodeURIComponent(TT[tt][0])}" class="absolute right-0 bottom-0 w-3 h-3" alt="">` : ''}</div><div class="text-[9px] font-extrabold text-amber-200 leading-tight h-3">${ic >= 1 && ic <= 5 ? ROM[ic] : ''}</div></div>`; }).join('');
+    const ord = { 3: 0, 4: 1, 1: 2, 2: 3 }, ins = Object.values(g.wb || {}).sort((a, b) => (ord[String(a[0])[2]] ?? 9) - (ord[String(b[0])[2]] ?? 9)).flatMap(w => String(w[1] || '').split(';').filter(Boolean)).map(a => { const n = KB_AFX[+a] || a, c = a.length >= 5 ? (a.endsWith('01') ? 'text-orange-400' : 'text-sky-400') : 'text-stone-400'; return `<span class="${c}">${esc(n)}</span>`; }).join('');
+    const pos = r.pos_x != null ? ` · ${Math.round(+r.pos_x / 6)}:${Math.round(+r.pos_y / 6)}` : '', where = (g.ct === 5 ? '🏯 Pass' : g.ct === 7 ? '🚩 Flagge' : g.r ? '⚔️ Rally' : '') + pos, gi = kbGearIdx.push(r) - 1;
+    return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-2 cursor-pointer hover:border-gold-500/60" data-kbgearcmp="${gi}" title="Klicken: dein Gear gegen seins"><div class="flex items-center gap-2 mb-1.5">${hmHeroImg(r.enemy_hero1, 'w-8 h-8 rounded-lg' + (g.aw ? ' ring-2 ring-gold-400' : ''))}<div class="min-w-0 flex-1"><div class="text-xs font-bold truncate" translate="no">${r.enemy_alliance ? `<span class="text-slate-500">[${esc(r.enemy_alliance)}]</span> ` : ''}${esc(r.enemy_name || '?')}</div>
+      <div class="text-[10px] text-slate-400 truncate" translate="no">${esc(r.enemy_hero1 || '')} · Lv${g.lv || '?'} · ★${g.st || 0} · ${esc(g.sk || '')} · ${g.aw ? '<span class="text-gold-300">✦ Awk</span>' : '<span class="text-red-300">✗ Awk</span>'}</div></div><div class="text-right text-[10px] text-slate-500 shrink-0">${where}<br>${hmWhen(Date.parse(r.battle_start))}</div></div>
+      <div class="grid grid-cols-8 gap-1">${items}</div><div class="flex flex-wrap gap-x-2 text-[11px] font-bold mt-1">${ins}</div></div>`;
+  }
+  // ⚔️ Gear-Vergleich: dein Hauptkommandant gegen den des Gegners (gleicher Kampf)
+  var KB_SLOT = ['Waffe', 'Helm', 'Brust', 'Hände', 'Beine', 'Füße', 'Zubehör', 'Zubehör'];
+  function kbGearParse(js) { let g = null; try { g = JSON.parse(js || 'null'); } catch {} if (!g) return null; const it = {}; [...String(g.eq || '').matchAll(/(\d+):(\d+)_\d+:(\d+)/g)].forEach(m => { it[+m[1]] = { id: +m[2] - 20000, ic: +m[3] % 10, tt: Math.floor(+m[3] / 10) }; });
+    const bf = {}; Object.values(g.wb || {}).forEach(w => String(w[2] || '').split(';').forEach(x => { const [k, v] = x.split('_'); if (k) bf[k] = (bf[k] || 0) + (+v || 0); }));
+    const ins = Object.values(g.wb || {}).flatMap(w => String(w[1] || '').split(';').filter(Boolean)); return { ...g, it, bf, ins }; }
+  function kbBuffLab(k) { if (k === '10002') return 'Zusatzwert'; const a = { 3: 'Angriff', 4: 'Verteidigung', 5: 'Leben' }[k[0]], t = { 1: 'Infanterie', 2: 'Kavallerie', 3: 'Bogen', 4: 'Belagerung' }[k[k.length - 1]]; return a ? a + (t ? ' ' + t : '') : 'Wert ' + k; }
+  function kbGearCompare(r) { document.getElementById('kbGearDlg')?.remove(); const A = kbGearParse(r.self_gear), B = kbGearParse(r.enemy_gear), ROM = ['', 'I', 'II', 'III', 'IV', 'V'], TT = { 1: 'infantry.webp', 2: 'archer (1).webp', 3: 'cavalry (1).webp' };
+    const cell = (x) => { if (!x) return '<div class="h-12 grid place-items-center text-slate-600 text-xs">–</div>'; const e = KB_EQ[x.id]; return `<div class="flex items-center gap-1.5"><div class="relative w-11 h-11 rounded-md bg-ink-900 border border-ink-700 overflow-hidden shrink-0">${e ? `<img src="/icons/gear/${encodeURIComponent(e[1])}" class="w-full h-full object-contain">` : ''}${TT[x.tt] ? `<img src="/icons/gear/${encodeURIComponent(TT[x.tt])}" class="absolute right-0 bottom-0 w-3.5 h-3.5">` : ''}</div><div class="min-w-0"><div class="text-[11px] truncate">${esc(e ? e[0] : '#' + x.id)}</div><div class="text-[11px] font-bold text-amber-200">${x.ic ? 'Iconic ' + ROM[x.ic] : '<span class="text-slate-600 font-normal">kein Iconic</span>'}</div></div></div>`; };
+    const head = (g, hero, nm) => g ? `<div class="flex items-center gap-2">${hmHeroImg(hero, 'w-10 h-10 rounded-lg' + (g.aw ? ' ring-2 ring-gold-400' : ''))}<div class="min-w-0"><div class="font-bold text-sm truncate" translate="no">${esc(nm || '?')}</div><div class="text-[11px] text-slate-400" translate="no">${esc(hero || '')} · Lv${g.lv || '?'} · ★${g.st || 0} · ${esc(g.sk || '')} · ${g.aw ? '✦ Awk' : '✗ Awk'}</div></div></div>` : '<div class="text-xs text-slate-500">Dein Gear fehlt in diesem Bericht (erst ab Uploader v30).</div>';
+    const iconSum = (g) => g ? Object.values(g.it).reduce((a, x) => a + x.ic, 0) : 0, specN = (g) => g ? Object.values(g.it).filter(x => x.tt >= 1 && x.tt <= 3).length : 0;
+    const keys = [...new Set([...Object.keys(A?.bf || {}), ...Object.keys(B?.bf || {})])].sort();
+    const cmp = (a, b, f) => { const c = a > b ? 'text-emerald-300' : a < b ? 'text-red-300' : 'text-slate-300'; return `<td class="py-1 text-right tabular-nums font-semibold ${c}">${f(a)}</td>`; };
+    const insH = (g) => (g?.ins || []).map(a => { const n = KB_AFX[+a] || a, c = a.length >= 5 ? (a.endsWith('01') ? 'text-orange-400' : 'text-sky-400') : 'text-stone-400'; return `<span class="${c}">${esc(n)}</span>`; }).join(' ');
+    const d = document.createElement('div'); d.id = 'kbGearDlg'; d.className = 'fixed inset-0 z-[90] bg-black/70 backdrop-blur-sm grid place-items-center p-3';
+    d.innerHTML = `<div class="panel rounded-2xl w-full max-w-3xl p-4 border border-gold-500/40 max-h-[92vh] overflow-y-auto"><div class="flex items-center gap-2 mb-3"><h2 class="font-display text-lg text-gold-200">⚔️ <span>Gear-Vergleich</span></h2><span class="text-xs text-slate-400">${hmWhen(Date.parse(r.battle_start))}${r.pos_x != null ? ' · ' + Math.round(+r.pos_x / 6) + ':' + Math.round(+r.pos_y / 6) : ''}</span><button type="button" data-x class="ml-auto text-xl text-slate-400 hover:text-white">✕</button></div>
+      <div class="grid grid-cols-[1fr_auto_1fr] gap-x-3 gap-y-2 items-center"><div class="text-xs text-emerald-300 font-semibold">🙋 <span>Du</span></div><div></div><div class="text-xs text-red-300 font-semibold text-right">🎯 <span>Gegner</span></div>
+        <div>${head(A, r.self_hero1, r.self_name)}</div><div class="text-slate-500 text-xs">vs</div><div>${head(B, r.enemy_hero1, r.enemy_name)}</div>
+        ${[1, 2, 3, 4, 5, 6, 7, 8].map(i => `<div>${cell(A?.it[i])}</div><div class="text-[10px] text-slate-500 text-center w-14">${KB_SLOT[i - 1]}</div><div>${cell(B?.it[i])}</div>`).join('')}</div>
+      <table class="w-full text-xs mt-4"><thead><tr class="text-slate-500"><th class="text-left font-medium py-1"><span>Wert</span></th><th class="text-right font-medium"><span>Du</span></th><th class="text-right font-medium"><span>Gegner</span></th></tr></thead><tbody>
+        <tr class="border-t border-ink-800/60"><td class="py-1"><span>Iconic-Stufen gesamt</span></td>${cmp(iconSum(A), iconSum(B), fmt)}${cmp(iconSum(B), iconSum(A), fmt)}</tr>
+        <tr class="border-t border-ink-800/60"><td class="py-1"><span>Teile mit Spezialisierung</span></td>${cmp(specN(A), specN(B), fmt)}${cmp(specN(B), specN(A), fmt)}</tr>
+        ${keys.map(k => { const a = A?.bf[k] || 0, b = B?.bf[k] || 0, f = v => '+' + dec(v * 100, 1) + ' %'; return `<tr class="border-t border-ink-800/60"><td class="py-1">⚔️ <span>${kbBuffLab(k)}</span> <span class="text-slate-500">(Armaments)</span></td>${cmp(a, b, f)}${cmp(b, a, f)}</tr>`; }).join('')}</tbody></table>
+      <div class="grid sm:grid-cols-2 gap-3 mt-3 text-xs font-bold"><div><div class="text-[10px] text-slate-500 font-normal mb-0.5"><span>Deine Inschriften</span></div>${insH(A) || '–'}</div><div><div class="text-[10px] text-slate-500 font-normal mb-0.5"><span>Inschriften Gegner</span></div>${insH(B) || '–'}</div></div>
+      <div class="text-[10px] text-slate-500 mt-3">Grün = besser, rot = schlechter. Gear-Werte selbst stehen nicht im Kampfbericht – verglichen werden Teile, Iconic-Stufe, Spezialisierung und die Armament-Werte.</div></div>`;
+    d.onclick = (e) => { if (e.target === d || e.target.closest('[data-x]')) d.remove(); }; document.body.appendChild(d); try { window.RokI18n?.apply?.(d); } catch {} }
+  function kbGearHtml(st) {
+    if (!kbGearCols) return ''; const ids = st.acc ? [st.acc] : [...kbMyIds()]; kbGearLoad(ids); if (!kbGear.rows || !kbGear.rows.length) return '';
+    const P = new Map(); kbGear.rows.forEach(r => { let g; try { g = JSON.parse(r.enemy_gear); } catch { return; } if (!g || !g.h) return; const k = (r.enemy_player_id || r.enemy_name) + '|' + g.h; if (!P.has(k)) P.set(k, { g, r, n: 0 }); P.get(k).n++; });
+    const q = (st.gearQ || '').toLowerCase(), L = [...P.values()].filter(x => !q || ((x.r.enemy_name || '') + ' ' + (x.r.enemy_alliance || '') + ' ' + (x.r.enemy_hero1 || '')).toLowerCase().includes(q));
+    return `<section class="panel rounded-2xl p-4 mt-4"><details ${st.gearOpen ? 'open' : ''} data-kbgeardet><summary class="cursor-pointer flex flex-wrap items-center gap-2"><h2 class="font-display text-lg text-gold-300 inline">🛡️ <span>Gegner-Gear</span></h2><span class="text-[11px] text-slate-400">${fmt(P.size)} <span>Märsche</span> · <span>nur Garnisonen (Pässe, Flaggen) und Rallys · nur Hauptkommandant</span></span></summary>
+      <input data-kbgearq value="${esc(st.gearQ || '')}" placeholder="🔍 Name, Allianz oder Kommandant …" class="mt-2 mb-2 w-full sm:w-72 bg-ink-950 border border-ink-600 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 focus:outline-none focus:border-gold-500">
+      <div class="text-[10px] text-slate-500 mb-2">Römische Zahl = Iconic-Stufe · kleines Symbol = Truppen-Spezialisierung · Inschriften: <span class="text-orange-400 font-bold">Spezial</span> <span class="text-sky-400 font-bold">Selten</span> <span class="text-stone-400 font-bold">Normal</span></div>
+      <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${(kbGearIdx = [], L.slice(0, 60).map(x => kbGearCard(x.g, x.r)).join(''))}</div></details></section>`;
+  }
+  // ===== 🪓 Barbaren & Ketten (Loot-Seite): Kette = gleicher Marsch, max. 5 min zwischen zwei Barbaren =====
+  function kbBarbHtml(st) {
+    const R0 = (kbRows || []).filter(r => !r.is_pvp && kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start) && kbCatOf(r.npc_btype, r.group_size) === 'barb' && !(+r.group_size > 1))
+      .map(r => ({ r, t: Date.parse(r.battle_start), mk: kbMarchOf(r) })).filter(x => x.t).sort((a, b) => a.t - b.t);
+    if (!R0.length) return '';
+    const C = [], last = new Map(); R0.forEach(x => { const c = last.get(x.mk); if (c && x.t - c.end <= 5 * 6e4) { c.n++; c.end = x.t; c.lv.push(+x.r.npc_level || 0); } else { const n = { mk: x.mk, n: 1, a: x.t, end: x.t, lv: [+x.r.npc_level || 0] }; C.push(n); last.set(x.mk, n); } });
+    const avg = R0.length / C.length, best = C.reduce((a, c) => c.n > a.n ? c : a, C[0]), multi = C.filter(c => c.n > 1);
+    const days = new Set(R0.map(x => new Date(x.t).toDateString())).size, lvC = new Map(); R0.forEach(x => { const l = +x.r.npc_level || 0; if (l) lvC.set(l, (lvC.get(l) || 0) + 1); });
+    const lv = [...lvC.entries()].sort((a, b) => b[0] - a[0]).slice(0, 12), lvMax = Math.max(1, ...lv.map(x => x[1]));
+    const M = new Map(); C.forEach(c => { const o = M.get(c.mk) || { mk: c.mk, n: 0, ch: 0, best: 0 }; o.n += c.n; o.ch++; o.best = Math.max(o.best, c.n); M.set(c.mk, o); });
+    const ML = [...M.values()].sort((a, b) => b.n - a.n).slice(0, 10);
+    const D = new Map(); C.forEach(c => { const d = new Date(c.a), k = `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`, o = D.get(k) || { n: 0, ch: 0, t: c.a }; o.n += c.n; o.ch++; D.set(k, o); });
+    const DL = [...D.entries()].sort((a, b) => a[1].t - b[1].t).slice(-21), dMax = Math.max(1, ...DL.map(x => x[1].n));
+    const tile = (i, l, v, sub, c) => `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">${i} <span>${l}</span></div><div class="text-2xl font-bold tabular-nums ${c || 'text-slate-100'}">${v}</div>${sub ? `<div class="text-[11px] text-slate-500">${sub}</div>` : ''}</div>`;
+    return `<section class="panel rounded-2xl p-5 mt-4"><h2 class="font-display text-lg text-gold-300 mb-1">🪓 <span>Barbaren &amp; Ketten</span></h2>
+      <div class="text-[11px] text-slate-500 mb-3">Zeitraum und Account oben · Kette = derselbe Marsch, höchstens 5 min zwischen zwei Barbaren (nur eigene Märsche, keine Forts)</div>
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+        ${tile('🪓', 'Alle Barbaren', fmt(R0.length), fmt(days) + ' <span>Tage</span> · Ø ' + fmt(Math.round(R0.length / Math.max(1, days))) + ' <span>pro Tag</span>', 'text-gold-200')}
+        ${tile('⛓️', 'Ø Kettenlänge', dec(avg, 1), '<span>Barbaren pro Kette</span>', 'text-sky-200')}
+        ${tile('🔗', 'Ketten', fmt(C.length), fmt(multi.length) + ' <span>mit 2+</span>')}
+        ${tile('🏆', 'Längste Kette', fmt(best.n), hmWhen(best.a))}
+        ${tile('📈', 'Ø nur echte Ketten', multi.length ? dec(multi.reduce((a, c) => a + c.n, 0) / multi.length, 1) : '–', '<span>ohne Einzelkämpfe</span>')}
+        ${tile('🎚️', 'Höchstes Level', lv.length ? fmt(lv[0][0]) : '–', lv.length ? fmt(lv[0][1]) + '×' : '')}</div>
+      <div class="grid lg:grid-cols-2 gap-4">
+        <div><h3 class="text-sm font-semibold text-slate-200 mb-1">🛡️ <span>Pro Marsch</span></h3><table class="w-full text-xs"><thead><tr class="text-slate-500"><th class="text-left py-1"><span>Marsch</span></th><th class="text-right"><span>Barbaren</span></th><th class="text-right"><span>Ketten</span></th><th class="text-right">Ø</th><th class="text-right"><span>Längste</span></th></tr></thead><tbody>
+          ${ML.map(o => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2"><div class="flex items-center gap-1.5"><span class="flex gap-0.5 shrink-0 [&_img]:w-5 [&_img]:h-5">${hmHeroes(o.mk)}</span><span class="truncate" translate="no">${esc(o.mk)}</span></div></td><td class="text-right tabular-nums">${fmt(o.n)}</td><td class="text-right tabular-nums">${fmt(o.ch)}</td><td class="text-right tabular-nums text-sky-200 font-semibold">${dec(o.n / o.ch, 1)}</td><td class="text-right tabular-nums">${fmt(o.best)}</td></tr>`).join('')}</tbody></table></div>
+        <div><h3 class="text-sm font-semibold text-slate-200 mb-1">📅 <span>Pro Tag</span> <span class="text-[11px] text-slate-500 font-normal">– Barbaren · Ø Kette</span></h3>
+          <div class="flex items-end gap-1 h-32">${DL.map(([k, o]) => `<div class="flex-1 flex flex-col items-center justify-end h-full" title="${k}: ${o.n} Barbaren · ${o.ch} Ketten · Ø ${dec(o.n / o.ch, 1)}"><span class="text-[9px] text-sky-300 tabular-nums">${dec(o.n / o.ch, 1)}</span><div class="w-full rounded-t bg-amber-400/70" style="height:${Math.max(3, o.n / dMax * 100)}%"></div></div>`).join('')}</div>
+          <div class="flex gap-1 mt-0.5">${DL.map(([k]) => `<span class="flex-1 text-center text-[9px] text-slate-600">${k.slice(0, 3)}</span>`).join('')}</div>
+          ${lv.length ? `<h3 class="text-sm font-semibold text-slate-200 mt-4 mb-1">🎚️ <span>Nach Level</span></h3><div class="space-y-1">${lv.map(([l, n]) => `<div class="flex items-center gap-2 text-xs"><span class="w-10 text-slate-400">Lv ${l}</span><div class="flex-1 h-2.5 rounded bg-ink-800"><div class="h-2.5 rounded bg-amber-400/70" style="width:${n / lvMax * 100}%"></div></div><span class="w-12 text-right tabular-nums">${fmt(n)}</span></div>`).join('')}</div>` : ''}</div></div></section>`;
   }
   // ===== 🚩 Gebiet & Flaggen: aus den Allianz-Mails (Territory Report, Crusader Flag Planning/Under Attack) =====
   var kbFlags = { key: '', ev: null, loading: false, err: '' };
@@ -961,22 +1396,23 @@ window.RokMods.battles = (R) => {
   }
   // ===== 🔥 Gegner-Märsche auf dem Feld: aus den Kampfberichten der letzten Minuten (du + alle aus deinem KvK, die den Uploader nutzen) =====
   var kbField = { key: '', rows: null, t: 0, loading: false, err: '' };
-  function kbFieldLoad(ids, force) {
-    const key = ids.slice().sort().join(','); if (kbField.loading || (!force && kbField.key === key && Date.now() - kbField.t < 55e3)) return;
+  var KB_FW = [[15, '15 min'], [60, '1 h'], [180, '3 h'], [1440, '24 h'], [10080, '1 Woche'], [20160, '2 Wochen'], [40320, '4 Wochen']];
+  function kbFieldLoad(ids, force, win) {
+    win = +win || 60; const key = ids.slice().sort().join(','), need = Math.max(65, win + 5); if (kbField.loading || (!force && kbField.key === key && (kbField.win || 0) >= need && Date.now() - kbField.t < (win > 180 ? 5 * 6e4 : 55e3))) return;
     kbField.loading = true;
-    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); const since = new Date(Date.now() - 65 * 6e4).toISOString();
-        let q = db.from('rok_battles').select('player_id,self_name,mail_id,opponent_id,enemy_player_id,enemy_name,enemy_alliance,enemy_kingdom,enemy_hero1,enemy_hero2,enemy_formation,battle_start,pos_x,pos_y,kill_points,enemy_severe,enemy_dead,is_pvp').gte('battle_start', since).eq('is_pvp', true);
-        if (ids.length) q = q.in('player_id', ids);
-        const r = await q.order('battle_start', { ascending: false }).limit(5000); if (r.error) throw r.error;
-        kbField = { key, rows: r.data || [], t: Date.now(), loading: false, err: '' }; }
-      catch (e) { kbField = { key, rows: kbField.rows || [], t: Date.now(), loading: false, err: e?.message || String(e) }; }
+    (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); const since = new Date(Date.now() - need * 6e4).toISOString();
+        const q0 = () => { let q = db.from('rok_battles').select('player_id,self_name,mail_id,opponent_id,enemy_player_id,enemy_name,enemy_alliance,enemy_kingdom,enemy_hero1,enemy_hero2,enemy_formation,battle_start,pos_x,pos_y,kill_points,enemy_severe,enemy_dead,is_pvp').gte('battle_start', since).eq('is_pvp', true).gt('enemy_player_id', 0);
+          if (ids.length) q = q.in('player_id', ids); return q.order('battle_start', { ascending: false }).order('mail_id').order('opponent_id'); };
+        let all = []; for (let p = 0; p < 40; p += 4) { const R4 = await Promise.all([0, 1, 2, 3].map(i => q0().range((p + i) * 1000, (p + i) * 1000 + 999))); let end = false; for (const r of R4) { if (r.error) throw r.error; all = all.concat(r.data || []); if ((r.data || []).length < 1000) end = true; } if (end) break; }
+        kbField = { key, win: need, rows: all, t: Date.now(), loading: false, err: '' }; }
+      catch (e) { kbField = { key, win: 0, rows: kbField.rows || [], t: Date.now(), loading: false, err: e?.message || String(e) }; }
       if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); })();
   }
   function hmFieldHtml(st, h, m) {
-    const win = [5, 10, 15, 30, 60].includes(+h.fw) ? +h.fw : 15, acc = hmAcc(h), code = hmKvkCode(h), ids = new Set();   // nur IDs mit derselben C-Nummer wie der gewählte Account
+    const win = KB_FW.some(x => x[0] === +h.fw) ? +h.fw : 60, winL = KB_FW.find(x => x[0] === win)[1], acc = hmAcc(h), code = hmKvkCode(h), ids = new Set();   // nur IDs mit derselben C-Nummer wie der gewählte Account
     if (acc) ids.add(String(acc));
     let kvkN = 0; if (code) { const i = hmWInfo[code]; if (!i) hmLoadWInfo(code); else if (!i.loading && i.ids) { i.ids.forEach(x => ids.add(String(x))); kvkN = i.ids.size; } }
-    if (h.fieldOpen !== false && ids.size) kbFieldLoad([...ids]);
+    if (h.fieldOpen !== false && ids.size) kbFieldLoad([...ids], false, win);
     const since = Date.now() - win * 6e4, rows = (kbField.rows || []).filter(r => r.is_pvp && +r.enemy_player_id > 0 && Date.parse(r.battle_start) >= since && ids.has(String(r.player_id)));
     const M = new Map(), P = new Set(), rep = new Set();
     rows.forEach(r => { const k = r.enemy_player_id + '|' + (r.enemy_hero1 || '') + '|' + (r.enemy_hero2 || ''), t = Date.parse(r.battle_start);
@@ -984,35 +1420,52 @@ window.RokMods.battles = (R) => {
       o.n++; o.by.add(String(r.player_id)); if (t > o.t) { o.t = t; o.x = r.pos_x; o.y = r.pos_y; } M.set(k, o); P.add(String(r.enemy_player_id)); rep.add(String(r.player_id)); });
     const L = [...M.values()].sort((a, b) => b.t - a.t), zoneOf = (o) => { if (o.x == null || o.y == null) return ''; const [u, v] = hmXY(o.x, o.y, h, m); const z = hmZoneAt(u, v, m, false, o.t); return z >= 0 ? hmBaseName(hmZName(h, m, z)) : ''; };
     const cnt = (f) => { const c = new Map(); L.forEach(o => { const k = f(o); if (k) c.set(k, (c.get(k) || 0) + 1); }); return [...c.entries()].sort((a, b) => b[1] - a[1]); };
-    const perP = cnt(o => o.pid), multi = perP.filter(x => x[1] >= 2).length;
+    const perP = cnt(o => o.pid), multi = perP.filter(x => x[1] >= 2).length, pM = new Map(perP), avgM = P.size ? L.length / P.size : 0;
     const chip = (t, n) => `<span class="inline-flex items-center gap-1 rounded-lg border border-ink-600 bg-ink-900 px-2 py-0.5 text-xs text-slate-200">${t} <b class="tabular-nums">${n}</b></span>`;
-    const ago = (t) => { const mi = Math.max(0, Math.round((Date.now() - t) / 6e4)); return mi < 1 ? '<span>gerade</span>' : `<span>vor</span> ${mi} min`; };
+    const ago = (t) => { const mi = Math.max(0, Math.round((Date.now() - t) / 6e4)); return mi < 1 ? '<span>gerade</span>' : mi < 120 ? `<span>vor</span> ${mi} min` : mi < 2880 ? `<span>vor</span> ${Math.round(mi / 60)} h` : hmWhen(t); };
     const tierOf = anaTierOf();
-    const body = !kbField.rows ? '<div class="text-xs text-slate-500 py-2">Lädt …</div>' : kbField.err ? `<div class="text-xs text-red-300 py-2">${esc(kbField.err)}</div>` : !L.length ? `<div class="text-xs text-slate-500 py-2">In den letzten ${win} min keine Kämpfe gegen Spieler.</div>` : `
+    const body = !kbField.rows ? '<div class="text-xs text-slate-500 py-2">Lädt …</div>' : kbField.err ? `<div class="text-xs text-red-300 py-2">${esc(kbField.err)}</div>` : !L.length ? `<div class="text-xs text-slate-500 py-2"><span>Im Zeitfenster</span> ${winL} <span>keine Kämpfe gegen Spieler.</span></div>` : `
       <div class="flex flex-wrap items-end gap-4 mb-2"><div><div class="text-4xl font-bold text-red-300 tabular-nums leading-none">${fmt(L.length)}</div><div class="text-[11px] text-slate-400">Gegner-Märsche</div></div>
         <div><div class="text-2xl font-bold text-slate-100 tabular-nums leading-none">${fmt(P.size)}</div><div class="text-[11px] text-slate-400">Spieler${multi ? ` · ${multi} <span>mit 2+ Märschen</span>` : ''}</div></div>
+        <div><div class="text-2xl font-bold text-sky-200 tabular-nums leading-none">${dec(avgM, 1)}</div><div class="text-[11px] text-slate-400"><span>Ø Märsche pro Spieler</span></div></div>
         <div class="text-[11px] text-slate-500 pb-0.5">👀 <span>gesehen von</span> <b class="text-slate-300">${fmt(rep.size)}</b> <span>eigenen Leuten</span>${code ? ` · KvK <span translate="no">${esc(code)}</span>: ${fmt(kvkN)} IDs` : ' · <span class="text-amber-300">C-Nummer setzen, damit alle aus deinem KvK mitzählen</span>'}</div></div>
       <div class="flex flex-wrap gap-1.5 mb-2">${cnt(o => o.tt).map(([t, n]) => chip(KB_TT[t][0] + ' <span>' + KB_TT[t][1] + '</span>', n)).join('')}${cnt(o => o.kd ? '#' + o.kd : '').slice(0, 6).map(([k, n]) => chip('👑 ' + k, n)).join('')}${cnt(zoneOf).slice(0, 6).map(([k, n]) => chip('📍 ' + esc(k), n)).join('')}</div>
       <div class="max-h-80 overflow-y-auto pr-1"><table class="w-full text-xs"><thead><tr class="text-slate-500"><th class="text-left py-1">Spieler</th><th class="text-left"><span>Kommandanten</span></th><th class="text-left"><span>Ort</span></th><th class="text-right"><span>Kämpfe</span></th><th class="text-right"><span>zuletzt</span></th></tr></thead><tbody>
-      ${L.slice(0, 60).map(o => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2"><div class="text-slate-100 truncate max-w-[11rem]" translate="no">${o.ally ? `<span class="text-slate-500">[${esc(o.ally)}]</span> ` : ''}${esc(o.name || o.pid)}</div><div class="text-[10px] text-slate-500">${o.kd ? '#' + o.kd : ''} ${anaTierChip(tierOf({ enemy_player_id: o.pid }))}</div></td>
+      ${L.slice(0, 200).map(o => `<tr class="border-t border-ink-800/60"><td class="py-1 pr-2"><div class="text-slate-100 truncate max-w-[11rem]" translate="no">${o.ally ? `<span class="text-slate-500">[${esc(o.ally)}]</span> ` : ''}${esc(o.name || o.pid)}${(pM.get(o.pid) || 0) > 1 ? ` <span class="text-[10px] text-sky-300" title="Märsche dieses Spielers im Zeitfenster">×${pM.get(o.pid)}</span>` : ''}</div><div class="text-[10px] text-slate-500">${o.kd ? '#' + o.kd : ''} ${anaTierChip(tierOf({ enemy_player_id: o.pid }))}</div></td>
         <td class="pr-2"><div class="flex items-center gap-1"><span class="flex gap-0.5">${hmHeroes(o.pair)}</span>${kbTTChip(o.tt)}</div></td><td class="pr-2 text-slate-300 whitespace-nowrap">${esc(zoneOf(o))}</td><td class="pr-2 text-right tabular-nums">${fmt(o.n)}${o.by.size > 1 ? ` <span class="text-[10px] text-sky-300" title="von mehreren eigenen Leuten gesehen">👀${o.by.size}</span>` : ''}</td><td class="text-right whitespace-nowrap text-slate-400">${ago(o.t)}</td></tr>`).join('')}</tbody></table></div>`;
     return `<details data-hmfield ${h.fieldOpen !== false ? 'open' : ''} class="mt-3 rounded-xl border border-red-500/50 bg-red-500/5"><summary class="cursor-pointer select-none px-3 py-2 text-sm font-semibold text-red-200 flex items-center gap-2">🔥 <span>Gegner-Märsche auf dem Feld</span>${L.length ? ` <span class="rounded-full bg-red-500/25 border border-red-400/60 px-2 text-xs tabular-nums">${L.length}</span>` : ''}
-        <span class="ml-auto flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700" onclick="event.stopPropagation()">${[5, 10, 15, 30, 60].map(v => `<button type="button" data-hmfw="${v}" aria-pressed="${win === v}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold">${v} min</button>`).join('')}</span>
+        <span class="ml-auto flex gap-0.5 p-0.5 rounded-lg bg-ink-950 border border-ink-700" onclick="event.stopPropagation()">${KB_FW.map(([v, l]) => `<button type="button" data-hmfw="${v}" aria-pressed="${win === v}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap">${l}</button>`).join('')}</span>
         <button type="button" data-hmfrel onclick="event.stopPropagation()" class="text-xs text-slate-400 hover:text-gold-300" title="Neu laden">↻</button></summary>
       <div class="px-3 pb-3"><div class="text-[10px] text-slate-500 mb-2">Gezählt aus den Kampfberichten: jeder Gegner mit eigenem Kommandanten-Paar = 1 Marsch. Je mehr Leute aus deinem KvK den Uploader nutzen, desto genauer. Mit „🔴 Live“ aktualisiert es sich jede Minute.</div>${body}</div></details>`;
   }
   // Main oder Farm? KP pro schwer verletzter/toter Einheit: T4 = 10, T5 = 20 (gemessen über alle Kämpfe gegen den Spieler)
-  var KB_TIER = { main: ['🐋', 'Main', 'meist T5'], mix: ['🔀', 'Gemischt', 'T4 + T5'], farm: ['🐟', 'Farm', 'meist T4'] };
+  var KB_TIER = { main: ['🐋', 'Main', 'wahrscheinlich Main-Account'], mix: ['❔', 'Unklar', 'nicht eindeutig'], farm: ['🐟', 'Farm', 'wahrscheinlich Farm / Filler'] };
   var anaTierCache = { src: null, f: null };
+  // Main oder Farm? Punkte aus mehreren Hinweisen (über alle Kämpfe gegen den Spieler):
+  //  Name (Farm, Filler, TP …) · Truppen-Stufe (KP pro Einheit: T4 = 10, T5 = 20) · Skill-Level der Kommandanten · alte Kommandanten · Marschgröße
+  var KB_FARM_RX = /farm|f[i1]ll|\btp\b|tele|bank|feeder|reinf|garri|storage|\brss\b|lager|\balt\b|^alt|\bacc\s?\d|^\d{5,}$/i;
+  var KB_OLD_HERO = new Set(['richard', 'sun', 'sunepic', 'mina', 'cc', 'cid', 'hermann', 'hermannepic', 'kuso', 'scipioepic', 'eulji', 'boudica', 'boudicaepic', 'pelagius', 'fred', 'caesar', 'joanepic', 'baibars', 'osman', 'mulan', 'lohar', 'const', 'beliepic', 'tomy', 'centurion', 'markswoman', 'citykeeper', 'dragonlancer', 'ysg']);   // Charles Martel & Co. gelten wieder als Standard
+  function anaSkillSum(x) { const a = String(x || '').split('/')[0].replace(/\D/g, '').slice(0, 4); return a.length === 4 ? [...a].reduce((s, c) => s + +c, 0) : null; }
   function anaTierOf() {
     if (anaTierCache.src === kbRows && anaTierCache.f) return anaTierCache.f;
-    const P = new Map(); (kbRows || []).forEach(r => { if (!kbIsPvp(r)) return; const n = (+r.enemy_severe || 0) + (+r.enemy_dead || 0), kp = +r.kill_points || 0; if (n < 20 || !kp) return;
-      const k = String(r.enemy_player_id || r.enemy_name || ''); if (!k) return; const o = P.get(k) || { kp: 0, n: 0 }; o.kp += kp; o.n += n; P.set(k, o); });
-    const T = new Map(); P.forEach((o, k) => { if (o.n < 100) return; const v = o.kp / o.n; T.set(k, { t: v >= 17 ? 'main' : v <= 12.5 ? 'farm' : 'mix', v }); });
+    const P = new Map(); (kbRows || []).forEach(r => { if (!kbIsPvp(r)) return; const k = String(r.enemy_player_id || r.enemy_name || ''); if (!k) return;
+      const o = P.get(k) || { kp: 0, n: 0, name: r.enemy_name || '', sk: null, sk2: null, h: new Map(), troops: 0, rows: 0 }; o.rows++;
+      const n = (+r.enemy_severe || 0) + (+r.enemy_dead || 0), kp = +r.kill_points || 0; if (n >= 20 && kp) { o.kp += kp; o.n += n; }
+      const ss = anaSkillSum(r.enemy_skills); if (ss != null) o.sk = Math.max(o.sk ?? 0, ss); const s2 = String(r.enemy_skills || '').split('/')[1]; if (s2) { const v = anaSkillSum(s2); if (v != null) o.sk2 = Math.max(o.sk2 ?? 0, v); }
+      const hid = hmIconId(r.enemy_hero1); if (hid) o.h.set(hid, (o.h.get(hid) || 0) + 1); o.troops = Math.max(o.troops, +r.enemy_troops_start || 0); P.set(k, o); });
+    const T = new Map(); P.forEach((o, k) => { let sc = 0; const why = [];
+      if (KB_FARM_RX.test(o.name)) { sc += 3; why.push('Name'); }
+      const v = o.n >= 100 ? o.kp / o.n : null; if (v != null) { if (v <= 12.5) { sc += 2; why.push('T4-Truppen'); } else if (v >= 17) { sc -= 1; why.push('T5-Truppen'); } }
+      if (o.sk != null) { if (o.sk <= 12) { sc += 2; why.push('Skills ' + o.sk + '/20'); } else if (o.sk >= 16) { sc -= 1; why.push('Skills ' + o.sk + '/20'); } if (o.sk2 != null && o.sk2 <= 6) { sc += 1; why.push('2. Kommandant kaum geskillt'); } }
+      const hs = [...o.h.entries()], tot = hs.reduce((a, x) => a + x[1], 0), old = hs.filter(([h]) => KB_OLD_HERO.has(h)).reduce((a, x) => a + x[1], 0);
+      if (tot >= 2 && old / tot >= .75) { sc += 2; why.push('alte Kommandanten'); } else if (tot && old / tot >= .4) { sc += 1; why.push('teils alte Kommandanten'); }
+      if (o.troops && o.troops < 250000) { sc += 1; why.push('kleiner Marsch'); }
+      const known = v != null || o.sk != null || why.length; if (!known) return;
+      T.set(k, { t: sc >= 3 ? 'farm' : sc <= 0 ? 'main' : 'mix', v: v ?? 0, sc, why }); });
     const f = (r) => T.get(String(r.enemy_player_id || r.enemy_name || '')) || null;
     anaTierCache = { src: kbRows, f }; return f;
   }
-  function anaTierChip(x) { if (!x) return ''; const t = KB_TIER[x.t]; return `<span class="inline-flex items-center gap-0.5 rounded border border-ink-600 px-1 text-[10px] text-slate-300" title="${t[2]} · ${dec(x.v, 1)} KP pro Einheit">${t[0]} <span>${t[1]}</span></span>`; }
+  function anaTierChip(x) { if (!x) return ''; const t = KB_TIER[x.t]; return `<span class="inline-flex items-center gap-0.5 rounded border border-ink-600 px-1 text-[10px] text-slate-300" title="${esc(t[2])} · ${esc(x.why.join(' · ') || '–')}${x.v ? ' · ' + dec(x.v, 1) + ' KP pro Einheit' : ''}">${t[0]} <span>${t[1]}</span></span>`; }
   // Online-Zeit aus dem Spiel-Log (Tabelle rok_play, Uploader v24) – nur PC-Client
   var kbPlay = { key: null, rows: null, loading: false, err: '' };
   function kbPlayLoad(ids) {
@@ -1054,28 +1507,35 @@ window.RokMods.battles = (R) => {
   function anaHtml(st, top) {
     const tierOf = anaTierOf(), rows0 = anaRows(st), tf = st.anaTier || '', rows = tf ? rows0.filter(r => (tierOf(r)?.t || 'unk') === tf) : rows0, tab = st.anaTab || 'nem', th = 'py-1.5 pr-3 text-[11px] font-medium text-slate-500', td = 'py-1.5 pr-3 tabular-nums';
     const kptC = (v) => v == null ? 'text-slate-400' : v >= 1 ? 'text-emerald-300' : 'text-red-300';
-    const tabs = [['nem', '🎯', 'Gegner'], ['ally', '👑', 'Königreiche'], ['time', '🕒', 'Aktive Zeiten'], ['match', '⚔️', 'Matchups'], ['troop', '🪖', 'Truppen'], ['perf', '📈', 'Leistung'], ['farm', '🪓', 'Farm']];
+    const tabs = [['nem', '🎯', 'Gegner'], ['ally', '👑', 'Königreiche'], ['time', '🕒', 'Aktive Zeiten'], ['match', '⚔️', 'Matchups'], ['troop', '🪖', 'Truppen'], ['perf', '🏆', 'Erfolge'], ['farm', '🪓', 'Farm']];
     let body = '';
     if (!rows.length && tab !== 'farm') body = '<div class="text-sm text-slate-500 py-6 text-center">Keine PvP-Kämpfe im Zeitraum.</div>';
     else if (tab === 'nem') {   // Nemesis, leichte Ziele, Finger weg
       const M = new Map(); rows.forEach(r => { const k = String(r.enemy_player_id || r.enemy_name); const o = M.get(k) || { name: r.enemy_name, ally: r.enemy_alliance, kd: anaKdOf()(r), tier: tierOf(r), rows: [] }; o.rows.push(r); M.set(k, o); });
-      const L = [...M.values()].map(o => ({ ...o, w: anaSum(o.rows) })).filter(o => o.name);
+      const mn = +st.anaMin || 5, L = [...M.values()].map(o => ({ ...o, w: anaSum(o.rows) })).filter(o => o.name && o.w.n >= mn);
+      const minSel = `<div class="flex flex-wrap items-center gap-1.5 mb-3 text-xs"><span class="text-slate-400">📏 <span>Gegner erst ab</span></span><div class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700">${[1, 3, 5, 10, 20, 50].map(v => `<button type="button" data-anamin="${v}" aria-pressed="${v === mn}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold">${v}</button>`).join('')}</div><span class="text-slate-400"><span>Kämpfen</span> · ${fmt(L.length)} <span>Gegner</span> · <span>weniger Kämpfe sagen wenig aus</span></span></div>`;
       const tbl = (title, sub, list, col) => `<div class="rounded-xl border ${col} bg-ink-950/60 p-3"><div class="font-semibold text-slate-100">${title}</div><div class="text-[11px] text-slate-500 mb-2">${sub}</div>
         <table class="w-full text-xs"><thead><tr><th class="${th} text-left">Gegner</th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">🏆 KP</th><th class="${th} text-right">🗡️ Gegner-KP</th><th class="${th} text-right">🔁 KP-Trade</th></tr></thead><tbody>
         ${list.slice(0, 10).map(o => `<tr class="border-t border-ink-800/60"><td class="py-1.5 pr-3"><span class="text-red-200" translate="no">${o.ally ? '[' + esc(o.ally) + '] ' : ''}${esc(o.name)}</span>${o.kd ? ` <span class="text-[10px] text-slate-500">${anaKd(o.kd)}</span>` : ''} ${anaTierChip(o.tier)}</td><td class="${td} text-right">${fmt(o.w.n)}</td><td class="${td} text-right text-gold-200">${short(o.w.kp)}</td><td class="${td} text-right text-red-200">${short(o.w.ekp)}</td><td class="${td} text-right ${kptC(o.w.kpt)}">${hmKptTxt(o.w.kpt)}</td></tr>`).join('') || '<tr><td class="py-2 text-slate-500" colspan="5">–</td></tr>'}</tbody></table></div>`;
-      const min = (o) => o.w.n >= 3;
-      body = `<div class="grid lg:grid-cols-3 gap-3">
+      const min = () => true;
+      body = minSel + `<div class="grid lg:grid-cols-3 gap-3">
         ${tbl('😈 Nemesis', 'Wer dir die meisten KP abgenommen hat', [...L].sort((a, b) => b.w.ekp - a.w.ekp), 'border-red-500/40')}
-        ${tbl('🍗 Leichte Ziele', 'Bester KP-Trade (ab 3 Kämpfen)', L.filter(min).sort((a, b) => (b.w.kpt === Infinity ? 1e9 : b.w.kpt || 0) - (a.w.kpt === Infinity ? 1e9 : a.w.kpt || 0)), 'border-emerald-500/40')}
-        ${tbl('⛔ Finger weg', 'Schlechtester KP-Trade (ab 3 Kämpfen)', L.filter(min).sort((a, b) => (a.w.kpt ?? 0) - (b.w.kpt ?? 0)), 'border-amber-500/40')}</div>`;
+        ${tbl('🍗 Leichte Ziele', 'Bester KP-Trade', L.filter(min).sort((a, b) => (b.w.kpt === Infinity ? 1e9 : b.w.kpt || 0) - (a.w.kpt === Infinity ? 1e9 : a.w.kpt || 0)), 'border-emerald-500/40')}
+        ${tbl('⛔ Finger weg', 'Schlechtester KP-Trade', L.filter(min).sort((a, b) => (a.w.kpt ?? 0) - (b.w.kpt ?? 0)), 'border-amber-500/40')}</div>`;
     } else if (tab === 'ally' || tab === 'time') {   // Königreiche (ohne unbekannte) · Aktive Zeiten gegenüber den Königreichen
       const kdOf = anaKdOf(), M = new Map(); rows.forEach(r => { const k = kdOf(r); if (!k) return; const o = M.get(k) || { kd: k, rows: [], pl: new Set(), pt: new Map() }; o.rows.push(r); const pk = r.enemy_player_id || r.enemy_name; o.pl.add(pk); o.pt.set(pk, tierOf(r)?.t || 'unk'); M.set(k, o); });
-      const L = [...M.values()].map(o => ({ ...o, w: anaSum(o.rows), mains: [...o.pt.values()].filter(x => x === 'main').length })).sort((a, b) => b.w.n - a.w.n), mx = Math.max(1, ...L.map(o => o.w.n));
-      if (!L.length) body = '<div class="text-sm text-slate-500 py-6 text-center">Keine Kämpfe mit bekanntem Königreich im Zeitraum.</div>';
+      const cf = +st.anaCampF || 0, L0 = [...M.values()].map(o => ({ ...o, w: anaSum(o.rows), camp: anaCampOf(o.kd), mains: [...o.pt.values()].filter(x => x === 'main').length })).sort((a, b) => b.w.n - a.w.n), L = cf ? L0.filter(o => o.camp.c === cf) : L0, mx = Math.max(1, ...L.map(o => o.w.n));
+      const campsUsed = [1, 2, 3, 4].filter(i => L0.some(o => o.camp.c === i)), cc = anaCalcCamps();
+      const campBar = `<div class="flex flex-wrap items-center gap-1.5 mb-3 text-xs"><span class="text-slate-400">🏕️ Camp</span><div class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700"><button type="button" data-anacampf="0" aria-pressed="${!cf}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold"><span>Alle</span></button>${[1, 2, 3, 4].map(i => `<button type="button" data-anacampf="${i}" aria-pressed="${cf === i}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold ${campsUsed.includes(i) ? '' : 'opacity-40'}" translate="no">${anaCampName(i)}</button>`).join('')}</div>
+        <span class="text-[11px] text-slate-500">${cc && cc.m.size ? '<span>Camps aus dem KvK-Rechner (Profil) – pro Königreich änderbar</span>' : '<span>Camp pro Königreich wählen – oder im Profil unter KvK → Karte → Camps eintragen</span>'}</span></div>`;
+      const campSel = (o) => `<select data-anacamp="${o.kd}" class="bg-ink-950 border ${o.camp.auto ? 'border-ink-700' : 'border-gold-500/50'} rounded-lg px-1 py-0.5 text-[11px] text-slate-200" title="${o.camp.auto ? 'aus dem Profil' : 'von Hand'}"><option value="auto">${o.camp.auto ? '↺ ' + anaCampName(o.camp.c) : '–'}</option>${[0, 1, 2, 3, 4].map(i => `<option value="${i}" ${!o.camp.auto && o.camp.c === i && (kbSt().kdCamp || {})[o.kd] != null ? 'selected' : ''}>${i ? anaCampName(i) : '✕ kein Camp'}</option>`).join('')}</select>`;
+      if (!L.length) body = (L0.length ? campBar : '') + '<div class="text-sm text-slate-500 py-6 text-center">Keine Kämpfe mit bekanntem Königreich im Zeitraum.</div>';
       else if (tab === 'ally') {
-        body = `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th class="${th} text-left">Königreich</th><th class="${th} text-right">Spieler</th><th class="${th} text-right" title="Main-Accounts (meist T5)">🐋 <span>davon Main</span></th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">🏆 KP</th><th class="${th} text-right">🗡️ Gegner-KP</th><th class="${th} text-right">🔁 KP-Trade</th><th class="${th} text-right">⚖️ Trade</th></tr></thead><tbody>
+        const campSum = campsUsed.length ? `<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-2 mb-3">${campsUsed.map(i => { const K = L0.filter(o => o.camp.c === i), w = anaSum(K.flatMap(o => o.rows)), C = ANA_CAMPS[i - 1];
+          return `<button type="button" data-anacampf="${cf === i ? 0 : i}" class="text-left rounded-xl border p-2.5" style="border-color:${C.c}66;background:${C.c}12"><div class="font-semibold text-sm" style="color:${C.c}" translate="no">${anaCampName(i)} ${cc && cc.my === i ? '<span class="text-[10px] text-gold-300">(<span>dein Camp</span>)</span>' : ''}</div><div class="text-[11px] text-slate-400">${fmt(K.length)} <span>Königreiche</span> · ${fmt(K.reduce((a, o) => a + o.pl.size, 0))} <span>Spieler</span> · ${fmt(w.n)} <span>Kämpfe</span></div><div class="text-xs mt-0.5"><span class="text-gold-200">🏆 ${short(w.kp)}</span> · <span class="${kptC(w.kpt)}">🔁 ${hmKptTxt(w.kpt)}</span></div></button>`; }).join('')}</div>` : '';
+        body = campBar + campSum + `<div class="overflow-x-auto"><table class="w-full text-sm"><thead><tr><th class="${th} text-left">Königreich</th><th class="${th} text-left">Camp</th><th class="${th} text-right">Spieler</th><th class="${th} text-right" title="wahrscheinlich Main-Accounts (Name, T5, Skills, Kommandanten)">🐋 <span>davon Main</span></th><th class="${th} text-right">Kämpfe</th><th class="${th} text-right">🏆 KP</th><th class="${th} text-right">🗡️ Gegner-KP</th><th class="${th} text-right">🔁 KP-Trade</th><th class="${th} text-right">⚖️ Trade</th></tr></thead><tbody>
         ${L.map(o => `<tr class="border-t border-ink-800/60"><td class="py-2 pr-3"><div class="font-bold text-red-200" translate="no">👑 #${o.kd}</div><div class="h-1 rounded bg-ink-800 mt-1 w-32"><div class="h-1 rounded bg-red-400/70" style="width:${o.w.n / mx * 100}%"></div></div></td>
-          <td class="${td} text-right">${fmt(o.pl.size)}</td><td class="${td} text-right text-sky-200 whitespace-nowrap">${fmt(o.mains)} <span class="text-[10px] text-slate-500">(${Math.round(o.mains / Math.max(1, o.pl.size) * 100)} %)</span></td><td class="${td} text-right">${fmt(o.w.n)}</td><td class="${td} text-right text-gold-200">${short(o.w.kp)}</td><td class="${td} text-right text-red-200">${short(o.w.ekp)}</td><td class="${td} text-right font-semibold ${kptC(o.w.kpt)}">${hmKptTxt(o.w.kpt)}</td><td class="${td} text-right ${kptC(o.w.trade)}">${hmTradeTxt(o.w.trade)}</td></tr>`).join('')}</tbody></table></div>`;
+          <td class="py-2 pr-2">${campSel(o)}</td><td class="${td} text-right">${fmt(o.pl.size)}</td><td class="${td} text-right text-sky-200 whitespace-nowrap">${fmt(o.mains)} <span class="text-[10px] text-slate-500">(${Math.round(o.mains / Math.max(1, o.pl.size) * 100)} %)</span></td><td class="${td} text-right">${fmt(o.w.n)}</td><td class="${td} text-right text-gold-200">${short(o.w.kp)}</td><td class="${td} text-right text-red-200">${short(o.w.ekp)}</td><td class="${td} text-right font-semibold ${kptC(o.w.kpt)}">${hmKptTxt(o.w.kpt)}</td><td class="${td} text-right ${kptC(o.w.trade)}">${hmTradeTxt(o.w.trade)}</td></tr>`).join('')}</tbody></table></div>`;
       } else {
         const mineAll = (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start));
         const hrs = (list) => { const h = new Array(24).fill(0); list.forEach(r => { const t = Date.parse(r.battle_start); if (t) h[new Date(t).getHours()]++; }); return h; };
@@ -1083,13 +1543,26 @@ window.RokMods.battles = (R) => {
         const BL = [[0, 6, '🌙', 'Nacht', '0–6'], [6, 12, '🌅', 'Morgen', '6–12'], [12, 18, '☀️', 'Mittag', '12–18'], [18, 24, '🌆', 'Abend', '18–24']];
         const strip = (h, rgb) => { const m = Math.max(1, ...h); return `<div class="flex gap-px">${h.map((v, i) => `<span title="${i}–${i + 1} Uhr: ${v}" class="w-3.5 h-6 rounded-sm" style="background:${v ? `rgba(${rgb},${.15 + v / m * .85})` : '#151b26'}"></span>`).join('')}</div>`; };
         const myH = hrs(mineAll);
-        const row = (label, list, rgb, isMe) => { const h = hrs(list), n = list.length;
-          return `<tr class="border-t border-ink-800/60 ${isMe ? 'bg-gold-500/5' : ''}"><td class="py-2 pr-3 font-bold whitespace-nowrap ${isMe ? 'text-gold-200' : 'text-red-200'}" translate="no">${label}</td><td class="py-2 pr-3">${strip(h, rgb)}</td><td class="${td} text-right whitespace-nowrap"><b>${peak(h)}</b> <span class="text-[10px] text-slate-500">Uhr</span></td>
-            ${BL.map(([a, b]) => { const L2 = list.filter(r => { const x = new Date(r.battle_start).getHours(); return x >= a && x < b; }), w = isMe ? null : anaSum(L2), pct = n ? Math.round(L2.length / n * 100) : 0;
-              return `<td class="py-2 px-1.5 text-center tabular-nums"><div class="text-xs ${pct >= 35 ? 'text-slate-100 font-bold' : 'text-slate-400'}">${pct} %</div>${w && w.n ? `<div class="text-[10px] ${kptC(w.kpt)}">🔁 ${hmKptTxt(w.kpt)}</div>` : ''}</td>`; }).join('')}</tr>`; };
-        body = `<div class="text-[11px] text-slate-500 mb-2">Wann gekämpft wird – deine Zeit (0–23 Uhr). Je heller das Kästchen, desto mehr Kämpfe in der Stunde. Rechts: Anteil der Kämpfe pro Tageszeit und dein KP-Trade gegen das Königreich zu dieser Zeit.</div>
-          <div class="overflow-x-auto"><table class="text-sm"><thead><tr><th class="${th} text-left">Königreich</th><th class="${th} text-left"><div class="flex gap-px">${myH.map((_, i) => `<span class="w-3.5 text-center text-[9px]">${i % 3 ? '' : i}</span>`).join('')}</div></th><th class="${th} text-right">Hauptzeit</th>${BL.map(x => `<th class="px-1.5 text-center text-[11px] font-medium text-slate-500 whitespace-nowrap">${x[2]} <span>${x[3]}</span><div class="text-[9px] text-slate-600">${x[4]}</div></th>`).join('')}</tr></thead>
-          <tbody>${row('🙋 Du', mineAll, '245,197,66', true)}${row('😈 Alle', L.flatMap(o => o.rows), '248,113,113')}${L.slice(0, 15).map(o => row('👑 #' + o.kd, o.rows, '248,113,113')).join('')}</tbody></table></div>${anaOnline(st, mineAll)}`;
+        const by = st.anaBy === 'kd' || !campsUsed.length ? 'kd' : 'camp', n0 = mineAll.length;
+        const groups = by === 'camp' ? campsUsed.map(i => ({ l: anaCampName(i), rows: L0.filter(o => o.camp.c === i).flatMap(o => o.rows), rgb: ANA_CAMPS[i - 1].rgb, c: ANA_CAMPS[i - 1].c, sub: L0.filter(o => o.camp.c === i).map(o => '#' + o.kd).join(' ') }))
+          : L.slice(0, 15).map(o => ({ l: '👑 #' + o.kd, rows: o.rows, rgb: o.camp.c ? ANA_CAMPS[o.camp.c - 1].rgb : '248,113,113', c: o.camp.c ? ANA_CAMPS[o.camp.c - 1].c : '#f87171', sub: o.camp.c ? anaCampName(o.camp.c) : '' }));
+        const row = (g, isMe) => { const h = hrs(g.rows), n = g.rows.length;
+          return `<tr class="border-t border-ink-800/60 ${isMe ? 'bg-gold-500/5' : ''}"><td class="py-2 pr-3 whitespace-nowrap"><div class="font-bold" style="color:${isMe ? '#fde68a' : g.c}" translate="no">${g.l}</div>${g.sub ? `<div class="text-[10px] text-slate-500 max-w-[11rem] truncate" translate="no">${esc(g.sub)}</div>` : ''}</td><td class="py-2 pr-3">${strip(h, isMe ? '245,197,66' : g.rgb)}</td><td class="${td} text-right whitespace-nowrap"><b>${peak(h)}</b> <span class="text-[10px] text-slate-500">Uhr</span></td>
+            ${BL.map(([a, b]) => { const c = g.rows.filter(r => { const x = new Date(r.battle_start).getHours(); return x >= a && x < b; }).length, pct = n ? Math.round(c / n * 100) : 0;
+              return `<td class="py-2 px-1.5 text-center tabular-nums"><div class="text-xs ${pct >= 35 ? 'text-slate-100 font-bold' : 'text-slate-400'}">${pct} %</div></td>`; }).join('')}<td class="${td} text-right text-slate-400">${fmt(n)}</td></tr>`; };
+        // 📅 Verlauf: Kämpfe pro Tag, gestapelt nach Camp/Königreich – darunter du
+        const dayK = (r) => (r.battle_start || '').slice(0, 10), DS = [...new Set([...mineAll, ...groups.flatMap(g => g.rows)].map(dayK).filter(Boolean))].sort().slice(-31);
+        const per = groups.map(g => { const m = new Map(); g.rows.forEach(r => { const d = dayK(r); m.set(d, (m.get(d) || 0) + 1); }); return m; }), myD = new Map(); mineAll.forEach(r => { const d = dayK(r); myD.set(d, (myD.get(d) || 0) + 1); });
+        const dMax = Math.max(1, ...DS.map(d => per.reduce((a, m) => a + (m.get(d) || 0), 0))), mMax = Math.max(1, ...DS.map(d => myD.get(d) || 0));
+        const tl = DS.length ? `<h4 class="font-semibold text-slate-100 mt-5 mb-1 text-base">📅 <span>Verlauf</span> <span class="text-[11px] text-slate-500 font-normal">– <span>Kämpfe pro Tag gegen</span> ${by === 'camp' ? '<span>die Camps</span>' : '<span>die Königreiche</span>'} · <span>gelb = deine Kämpfe</span></span></h4>
+          <div class="flex items-end gap-1 h-36 border-b border-ink-700">${DS.map(d => `<div class="flex-1 flex flex-col justify-end h-full" title="${d}: ${groups.map((g, i) => g.l.replace(/<[^>]+>/g, '') + ' ' + (per[i].get(d) || 0)).join(' · ')}">${groups.map((g, i) => { const v = per[i].get(d) || 0; return v ? `<div style="height:${v / dMax * 100}%;background:${g.c};opacity:.75"></div>` : ''; }).join('')}</div>`).join('')}</div>
+          <div class="flex items-start gap-1 h-8 mt-0.5">${DS.map(d => `<div class="flex-1"><div class="rounded-b bg-gold-400/80" style="height:${(myD.get(d) || 0) / mMax * 28}px"></div></div>`).join('')}</div>
+          <div class="flex gap-1">${DS.map((d, i) => `<span class="flex-1 text-center text-[9px] text-slate-600">${i % Math.ceil(DS.length / 12) ? '' : d.slice(8, 10) + '.' + d.slice(5, 7)}</span>`).join('')}</div>
+          <div class="flex flex-wrap gap-3 mt-1 text-[11px]">${groups.map(g => `<span class="inline-flex items-center gap-1" translate="no"><span class="w-2.5 h-2.5 rounded-sm" style="background:${g.c}"></span>${g.l}</span>`).join('')}</div>` : '';
+        body = `${campBar}<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><div class="flex gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700"><button type="button" data-anaby="camp" aria-pressed="${by === 'camp'}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold ${campsUsed.length ? '' : 'opacity-40'}">🏕️ <span>Nach Camp</span></button><button type="button" data-anaby="kd" aria-pressed="${by === 'kd'}" class="seg-btn rounded-lg px-2 py-0.5 font-semibold">👑 <span>Nach Königreich</span></button></div>
+          <span class="text-[11px] text-slate-500">Wann gekämpft wird – deine Zeit (0–23 Uhr). Je heller das Kästchen, desto mehr Kämpfe in der Stunde.</span></div>
+          <div class="overflow-x-auto"><table class="text-sm"><thead><tr><th class="${th} text-left">${by === 'camp' ? 'Camp' : 'Königreich'}</th><th class="${th} text-left"><div class="flex gap-px">${myH.map((_, i) => `<span class="w-3.5 text-center text-[9px]">${i % 3 ? '' : i}</span>`).join('')}</div></th><th class="${th} text-right">Hauptzeit</th>${BL.map(x => `<th class="px-1.5 text-center text-[11px] font-medium text-slate-500 whitespace-nowrap">${x[2]} <span>${x[3]}</span><div class="text-[9px] text-slate-600">${x[4]}</div></th>`).join('')}<th class="${th} text-right">Kämpfe</th></tr></thead>
+          <tbody>${row({ l: '🙋 Du', rows: mineAll }, true)}${groups.map(g => row(g)).join('')}</tbody></table></div>${tl}${anaOnline(st, mineAll)}`;
       }
     } else if (tab === 'match') {   // dein Marsch gegen ihre Paare + Gegner-Meta
       const mine = [...new Set(rows.map(kbMarchOf))].map(k => [k, rows.filter(r => kbMarchOf(r) === k).length]).sort((a, b) => b[1] - a[1]).slice(0, 8).map(x => x[0]);
@@ -1128,7 +1601,7 @@ window.RokMods.battles = (R) => {
         <div class="overflow-x-auto"><table class="text-xs border-separate border-spacing-1"><thead><tr><th></th>${T4.map(t => `<th class="px-2 text-slate-300 font-medium">${KB_TT[t][0]} <span>${KB_TT[t][1]}</span></th>`).join('')}</tr></thead>
         <tbody>${T4.map(a => `<tr><th class="pr-2 text-left text-slate-300 font-medium whitespace-nowrap">${KB_TT[a][0]} <span>${KB_TT[a][1]}</span></th>${T4.map(b => cell(a, b)).join('')}</tr>`).join('')}</tbody></table></div>`;
     } else if (tab === 'perf') {   // Müdigkeitskurve, Hochrechnung, Rekorde, Abzeichen
-      const R = rows.slice().sort((a, b) => Date.parse(a.battle_start) - Date.parse(b.battle_start)), T = R.map(r => Date.parse(r.battle_start));
+      const R = rows.filter(r => !kbPilotRow(r)).sort((a, b) => Date.parse(a.battle_start) - Date.parse(b.battle_start)), T = R.map(r => Date.parse(r.battle_start));   // ohne Pilot-Kämpfe
       const B = [[0, 15, '0–15 min'], [15, 30, '15–30 min'], [30, 60, '30–60 min'], [60, 120, '1–2 h'], [120, 1e9, '> 2 h']].map(b => ({ b, rows: [] }));
       let s0 = null, last = -1e15; R.forEach((r, i) => { const t = T[i]; if (t - last > 45 * 6e4) s0 = t; last = t; const m = (t - s0) / 6e4; B.find(x => m >= x.b[0] && m < x.b[1]).rows.push(r); });
       const fat = B.map(x => ({ l: x.b[2], w: anaSum(x.rows) }));
@@ -1141,9 +1614,15 @@ window.RokMods.battles = (R) => {
       const tot = anaSum(R);
       const hcfg = hmCfg(st), ks = hmStart(hcfg), kA = ks ? Date.parse(ks + 'T00:00:00Z') : null, dEl = kA ? Math.max(1, (Date.now() - kA) / 864e5) : null, kvkKp = kA ? R.filter((r, i) => T[i] >= kA).reduce((a, r) => a + (+r.kill_points || 0), 0) : 0, proj = dEl && dEl < 50 ? kvkKp / dEl * 50 : null;
       const rec = (i, l, v, sub) => `<div class="rounded-xl border border-gold-500/30 bg-ink-950/60 p-3"><div class="text-[11px] text-slate-400">${i} ${l}</div><div class="text-xl font-bold text-gold-200 tabular-nums">${v}</div><div class="text-[10px] text-slate-500">${sub || ''}</div></div>`;
-      const MR = (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kbIsPvp(r) && !kbIsAoo(r) && kxInRange(r.battle_start));   // inkl. Rally/Garnison
+      const MR = (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kbIsPvp(r) && !kbIsAoo(r) && !kbPilotRow(r) && kxInRange(r.battle_start));   // inkl. Rally/Garnison, ohne Pilot
       const mKp = MR.reduce((a, r) => a + (+r.kill_points || 0), 0), mAc = MR.reduce((a, r) => a + (+r.acclaim || 0), 0), mN = MR.length;
-      const accSteps = Array.from({ length: Math.max(8, Math.floor(mAc / 5e5) + 4) }, (_, i) => (i + 1) * 5e5);
+      const accSteps = [1e6, 2e6, 5e6, ...Array.from({ length: Math.max(8, Math.floor(mAc / 5e6) + 4) }, (_, i) => (i + 2) * 5e6)];
+      const kpSteps = [5e7, ...Array.from({ length: Math.max(12, Math.floor(mKp / 1e8) + 4) }, (_, i) => (i + 1) * 1e8)];
+      const ALLr = (kbRows || []).filter(r => kbMine(r.player_id) && (!st.acc || String(r.player_id) === st.acc) && kxInRange(r.battle_start)), BADGES = kbBadges(R, MR, ALLr);
+      const badgeHtml = BADGES.map(b => { const { ic, d, v, steps, f, lv, t } = b, nx = steps[lv], top = steps[steps.length - 1];
+        return [b.cat, `<div class="rounded-xl border p-3 ${t ? '' : 'border-ink-700 opacity-70'}" style="${t ? `border-color:${t[2]}99;background:${t[2]}14` : ''}"><div class="flex items-center gap-2"><span class="text-2xl ${t ? '' : 'grayscale'}">${ic}</span><div class="min-w-0"><div class="font-semibold text-sm text-slate-100"><span>${b.title}</span> ${t ? `<span class="text-xs" style="color:${t[2]}">${t[0]} <span>${t[1]}</span></span>` : ''}</div><div class="text-[10px] text-slate-500"><span>${d}</span></div></div><div class="ml-auto text-right text-sm font-bold tabular-nums" style="color:${t ? t[2] : '#64748b'}">${f(v)}</div></div>
+          ${b.one ? '' : `<div class="flex gap-1 mt-2">${steps.map((x, i) => `<span class="flex-1 rounded-md border px-1 py-0.5 text-center text-[10px] tabular-nums" style="${i < lv ? `border-color:${KB_TIER5[i][2]};color:${KB_TIER5[i][2]};background:${KB_TIER5[i][2]}1f` : 'border-color:#334155;color:#64748b'}">${KB_TIER5[i][0]} ${f(x)}</span>`).join('')}</div>`}
+          ${b.one ? '' : nx != null ? `<div class="mt-1.5 h-1.5 rounded-full bg-ink-800 overflow-hidden"><div class="h-1.5 rounded-full" style="width:${Math.min(100, Math.max(2, (v - (steps[lv - 1] || 0)) / (nx - (steps[lv - 1] || 0)) * 100))}%;background:${KB_TIER5[lv][2]}"></div></div><div class="text-[10px] text-slate-500 mt-1"><span>Nächste Stufe</span>: ${f(nx)} · <span>noch</span> ${f(Math.max(0, nx - v)).replace('<span>Felder</span>', '')}</div>` : `<div class="text-[10px] text-cyan-300 mt-1">💎 <span>Höchste Stufe!</span> <span class="text-slate-400">· <span>Zähler läuft weiter</span>: +${f(v - top).replace('<span>Felder</span>', '')} <span>darüber</span></span></div>`}</div>`]; });
       const track = (icon, title, sub, val, steps, f, col) => { const done = steps.filter(x => x <= val), nx = steps.find(x => x > val), prev = done.length ? done[done.length - 1] : 0, pct = nx ? Math.max(2, (val - prev) / (nx - prev) * 100) : 100;
         const lo = Math.max(0, done.length - 3), win = steps.slice(lo, lo + 7);
         return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-3"><div class="flex items-start justify-between gap-2"><div><div class="font-semibold text-slate-100">${icon} <span>${title}</span></div><div class="text-[10px] text-slate-500">${sub}</div></div>
@@ -1152,18 +1631,17 @@ window.RokMods.battles = (R) => {
           <div class="text-[10px] text-slate-400 mt-1">${nx ? `<span>Nächstes Ziel</span> <b class="text-slate-200">${f(nx)}</b> · <span>noch</span> ${f(nx - val)}` : '🏆 <span>Alle geschafft!</span>'}</div>
           <div class="flex flex-wrap gap-1 mt-2">${win.map(x => { const ok = x <= val, nxt = x === nx; return `<span class="rounded-md border px-1.5 py-0.5 text-[10px] tabular-nums ${ok ? 'border-gold-400/70 bg-gold-500/15 text-gold-100' : nxt ? 'border-sky-400/70 text-sky-200' : 'border-ink-700 text-slate-600'}">${ok ? '✓ ' : nxt ? '▶ ' : ''}${f(x)}</span>`; }).join('')}</div></div>`; };
       const sec = (t, sub) => `<h4 class="font-semibold text-slate-100 mt-5 mb-1 text-base">${t} <span class="text-[11px] text-slate-500 font-normal">${sub || ''}</span></h4>`;
-      const badges = [[bigS >= 1e7, '💥', 'Flex-König', 'Battle Streak ab 10 Mio.'], [best10 >= 5e6, '⚡', 'Blitzkrieg', '5 Mio. KP in 10 min'], [(tot.kpt || 0) >= 2, '🔁', 'Trader', 'KP-Trade ab 2 : 1']];
       body = `${sec('📊 <span>Überblick</span>', '– Zeitraum oben')}
         <div class="grid sm:grid-cols-3 gap-2">${rec('🏆', 'KP im Zeitraum', short(tot.kp), fmt(tot.n) + ' <span>Kämpfe</span>')}${rec('🔁', 'KP-Trade im Zeitraum', hmKptTxt(tot.kpt))}${rec('🔮', 'Hochrechnung KvK-Ende', proj ? '~' + short(proj) : '–', proj ? `<span>bei</span> ${short(kvkKp)} <span>nach</span> ${Math.floor(dEl)} <span>von 50 Tagen</span>` : '<span>KvK-Start in der Heatmap setzen</span>')}</div>
         ${sec('🏁 <span>Meilensteine</span>', '– alle PvP-Kämpfe im Zeitraum oben inkl. Rally/Garnison (für alles: Zeitraum „Alles“)')}
-        <div class="grid lg:grid-cols-3 gap-2">${track('🏆', 'Kill Points', '100 M · 300 M · 500 M · 700 M · 1 Mrd …', mKp, [1e8, 3e8, 5e8, 7e8, 1e9, 1.5e9, 2e9, 2.5e9, 3e9, 4e9, 5e9, 7.5e9, 1e10], short, '#f5c542')}
-          ${track('🎖️', 'Verdienst', '<span>alle</span> 500 K', mAc, accSteps, short, '#7dd3fc')}
+        <div class="grid lg:grid-cols-3 gap-2">${track('🏆', 'Kill Points', '50 M · 100 M · <span>dann alle</span> 100 M', mKp, kpSteps, short, '#f5c542')}
+          ${track('🎖️', 'Verdienst', '1 M · 2 M · 5 M · 10 M · <span>dann alle</span> 5 M', mAc, accSteps, short, '#7dd3fc')}
           ${track('⚔️', 'Kämpfe', '1 K · 10 K · 50 K · 100 K …', mN, [1e3, 1e4, 5e4, 1e5, 2.5e5, 5e5], short, '#f87171')}</div>
         ${sec('🏅 <span>Rekorde</span>')}
         <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">${rec('💥', 'Größter Battle Streak', short(bigS) + ' KP')}${rec('⚡', 'Meiste KP in 10 min', short(best10), bi ? hmWhen(bi) : '')}
           ${rec('🏁', 'Schnellste 10 Mio.', fast ? Math.round(fast.d / 6e4) + ' min' : '–', fast ? hmWhen(fast.t) : '')}${rec('📅', 'Bester Tag', bestDay ? short(bestDay[1]) : '–', bestDay ? bestDay[0] : '')}</div>
-        ${sec('🎖️ <span>Abzeichen</span>')}
-        <div class="flex flex-wrap gap-2">${badges.map(([ok, i, n, d]) => `<span class="inline-flex items-center gap-2 rounded-xl border px-3 py-2 ${ok ? 'border-gold-400 bg-gold-500/15 text-gold-100' : 'border-ink-700 text-slate-600 grayscale opacity-60'}" title="${esc(d)}"><span class="text-xl">${i}</span><span><b class="text-xs">${n}</b><br><span class="text-[10px] opacity-80">${d}</span></span></span>`).join('')}</div>
+        ${sec('🎖️ <span>Abzeichen &amp; Ziele</span>', '– 🥉 Bronze · 🥈 Silber · 🥇 Gold · 🏅 Platin · 💎 Diamant · ✅ Einzel-Erfolge · ohne Pilot-Kämpfe')}
+        ${[['fight', '⚔️ Kampf'], ['pve', '🪓 PvE & Stadt'], ['cmd', '🎯 Kommandanten'], ['meta', '🏆 Meta']].map(([c, l]) => { const H = badgeHtml.filter(x => x[0] === c).map(x => x[1]).join(''); return H ? `<div class="text-xs font-semibold text-slate-300 mt-3 mb-1.5">${l}</div><div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">${H}</div>` : ''; }).join('')}
         <div class="mt-5"></div>
         <h4 class="font-semibold text-slate-100 mb-1 text-base">😮‍💨 Müdigkeitskurve <span class="text-[11px] text-slate-500 font-normal">– wie lange du schon in der Schlacht bist (Pause über 45 min = neue Schlacht)</span></h4>
         <div class="grid grid-cols-5 gap-2">${fat.map(x => { const v = x.w.kpt === Infinity ? 3 : x.w.kpt || 0; return `<div class="rounded-xl border border-ink-700 bg-ink-950/60 p-2 text-center"><div class="text-[11px] text-slate-400">${x.l}</div><div class="text-lg font-bold ${kptC(x.w.kpt)}">${x.w.n ? hmKptTxt(x.w.kpt) : '–'}</div><div class="h-1.5 rounded bg-ink-800 mt-1"><div class="h-1.5 rounded ${v >= 1 ? 'bg-emerald-400' : 'bg-red-400'}" style="width:${Math.min(100, v / 3 * 100)}%"></div></div><div class="text-[10px] text-slate-500 mt-1">${fmt(x.w.n)} <span>Kämpfe</span> · ${hmTradeTxt(x.w.trade)}</div></div>`; }).join('')}</div>`;
@@ -1182,9 +1660,9 @@ window.RokMods.battles = (R) => {
     }
     return `<section class="panel rounded-2xl p-4 sm:p-5 mt-4"><h2 class="font-display text-lg text-gold-300 mb-2">📊 <span>Analyse</span></h2>${top}
       <div class="flex flex-wrap gap-1 p-1 rounded-xl bg-ink-950 border border-ink-700 my-3">${tabs.map(([k, i, l]) => `<button type="button" data-anatab="${k}" aria-pressed="${tab === k}" class="seg-btn rounded-lg px-3 py-1.5 text-sm font-semibold">${i} <span>${l}</span></button>`).join('')}</div>
-      ${tab !== 'farm' ? `<div class="flex flex-wrap items-center gap-1.5 mb-3"><span class="text-[11px] text-slate-500">Gegner:</span>${[['', '🌍', 'Alle'], ['main', '🐋', 'Mains'], ['mix', '🔀', 'Gemischt'], ['farm', '🐟', 'Farms']].map(([k, i, l]) => { const n = k ? rows0.filter(r => (tierOf(r)?.t || 'unk') === k).length : rows0.length;
+      ${tab !== 'farm' ? `<div class="flex flex-wrap items-center gap-1.5 mb-3"><span class="text-[11px] text-slate-500">Gegner:</span>${[['', '🌍', 'Alle'], ['main', '🐋', 'Mains'], ['mix', '❔', 'Unklar'], ['farm', '🐟', 'Farms']].map(([k, i, l]) => { const n = k ? rows0.filter(r => (tierOf(r)?.t || 'unk') === k).length : rows0.length;
         return `<button type="button" data-anatier="${k}" aria-pressed="${tf === k}" class="seg-btn rounded-lg px-2.5 py-1 text-xs font-semibold">${i} <span>${l}</span> <span class="text-slate-500 tabular-nums">${fmt(n)}</span></button>`; }).join('')}
-        <span class="text-[10px] text-slate-500">🐋 = meist T5 (20 KP pro Einheit) · 🐟 = meist T4 (10 KP) · ab 100 schwer verletzten/toten Einheiten</span></div>` : ''}${body}</section>`;
+        <span class="text-[10px] text-slate-500">🐋 Main / 🐟 Farm aus: Name (Farm, Filler, TP …) · T4/T5 · Skill-Level · alte Kommandanten · Marschgröße – Maus auf das Symbol zeigt die Gründe</span></div>` : ''}${body}</section>`;
   }
   // ================= Heatmap: wo du kämpfst (Testversion) =================
   // Kampfort aus dem Bericht (Attacks[].Pos) – unabhängig davon, wo deine Stadt gerade steht. Nur die KvK-Weltkarte (Role „gsmp“),
@@ -1236,9 +1714,10 @@ window.RokMods.battles = (R) => {
   function hmSid(h) { return null; }   // nicht mehr nach Karten-Nummer filtern – die wird von mehreren KvKs benutzt; Zeitraum kommt vom KvK-Start   // gefiltert wird über die Karten-Nummer, die beim Eintragen der C-Nummer aktuell war
   function hmIsProf(h) { return hmAcc(h) === kbProfileId(); }
   function hmStart(h) { const sp = hmSpect(), a = hmAk(h), wi = sp ? hmWInfoCur(h) : null; if (!sp && a.start) return a.start; if (wi?.start) return String(wi.start).slice(0, 10);
+    const pk = !sp && a.kvk ? kbKvkOf(a.kvk) : null; if (pk) return pk.from;
     const c = hmCalc(); if (c?.start) return c.start;   // sonst KvK-Rechner im Profil
     const lim = new Date(Date.now() - 50 * 864e5).toISOString(); let t = ''; hmAccRows(hmAcc(h)).forEach(r => { if (r.battle_start && r.battle_start >= lim && (!t || r.battle_start < t)) t = r.battle_start; }); return t ? t.slice(0, 10) : ''; }
-  function hmEnd(h) { const s = hmStart(h); return s ? Date.parse(s + 'T00:00:00Z') + 50 * 864e5 : null; }   // KvK = 50 Tage
+  function hmEnd(h) { const a = hmSpect() ? null : hmAk(h), pk = a?.kvk ? kbKvkOf(a.kvk) : null; if (pk && !pk.live) return Date.parse(pk.to + 'T23:59:59'); const s = hmStart(h); return s ? Date.parse(s + 'T00:00:00Z') + 50 * 864e5 : null; }   // KvK = 50 Tage
   function hmUnit(h, ax) { const m = hmMap(h), v = ax === 'x' ? +h.ux : +h.uy; return v > 0 ? v : (m.unit || 1); }
   function hmTile(v, ax) { return v == null ? null : +v / hmUnit(hmCfg(kbSt()), ax || 'x'); }
   function hmIn(x, y, role) { const z = hmMap(hmCfg(kbSt())).size; if (role && role !== 'gsmp') return false; const a = hmTile(x, 'x'), b = hmTile(y, 'y'); return a != null && b != null && a >= 0 && b >= 0 && a <= z && b <= z; }
@@ -1357,9 +1836,9 @@ window.RokMods.battles = (R) => {
     } catch {}
     hmMates = [...out.values()].sort((a, b) => (a.kind > b.kind ? 1 : -1) || a.name.localeCompare(b.name)); hmMatesLoading = false; if (R.view === 'battles' && kbSt().page === 'heat') renderKampf();
   }
-  async function hmLoadShare() { if (hmShare != null) return; hmShare = false;
+  async function hmLoadShare() { if (hmShare != null) return; hmShare = false; let was = false;
     try { const db = RokAuth?.db?.(), me = RokAuth?.userId?.(); if (!db || !me) return; const q = await db.from('leaderboard').select('heat_share').eq('user_id', me).maybeSingle(); if (q.error) { hmShareCol = false; return; } hmShare = !!q.data?.heat_share; } catch {}
-    finally { if (R.view === 'battles' && kbSt().page === 'heat') renderKampf(); } }
+    finally { if (hmShare !== was && R.view === 'battles' && kbSt().page === 'heat') renderKampf(); else { const b = document.querySelector('[data-hmshare]'); if (b) b.innerHTML = hmShare ? '👁️ <span>Für Freunde &amp; Königreich sichtbar</span>' : '🔒 <span>Privat</span>'; } } }
   async function hmSetShare(v) { try { const db = RokAuth?.db?.(), me = RokAuth?.userId?.(); if (!db || !me) return; const q = await db.from('leaderboard').update({ heat_share: v }).eq('user_id', me);
       if (q.error) { hmAsk('Sichtbarkeit', '', null, 'Konnte nicht gespeichert werden – fehlt das neue SQL (heat_share)?'); return; } hmShare = v; } catch {} renderKampf(); }
   function hmCity(gid) { const h = hmCfg(kbSt()), sid = gid ? null : hmSid(h), me = hmAcc(h);
@@ -1624,7 +2103,8 @@ window.RokMods.battles = (R) => {
         ${!h.fight && h.t === 'custom' ? `<div class="flex flex-wrap items-center gap-2 mb-2 text-xs"><span class="text-slate-400">Von</span><input type="datetime-local" data-hmfrom value="${esc(h.from || (start ? start + 'T00:00' : ''))}" class="${sel}"><span class="text-slate-400">bis</span><input type="datetime-local" data-hmto value="${esc(h.to || '')}" class="${sel}"></div>` : ''}
         <div class="pl-20">${hmDays(h, S)}</div>
         <div class="flex flex-wrap items-center gap-2 py-1.5 border-t border-ink-800/70 first:border-0"><span class="w-20 shrink-0 text-[11px] font-semibold text-slate-400">📍 <span>Wo</span></span>${zoneSel(false)}${marches.length > 1 ? marchSel.replace("text-sm py-1.5", "") : ""}</div>
-        <div class="flex flex-wrap items-center gap-2 py-1.5 border-t border-ink-800/70 first:border-0"><span class="w-20 shrink-0 text-[11px] font-semibold text-slate-400">👁️ <span>Anzeige</span></span><label class="flex items-center gap-1 text-slate-400" title="Alle Teleports deiner Stadt als Linie"><input type="checkbox" data-hmcpath ${h.cpath ? 'checked' : ''} class="accent-emerald-400"> <span>🏙️ Stadt-Weg</span></label>
+        <div class="flex flex-wrap items-center gap-2 py-1.5 border-t border-ink-800/70 first:border-0"><span class="w-20 shrink-0 text-[11px] font-semibold text-slate-400">👁️ <span>Anzeige</span></span><label class="flex items-center gap-1 text-slate-400" title="Blau = deine Garnison in Flagge/Pass · Rot = gegnerische Garnison, die du angegriffen/geralliert hast"><input type="checkbox" data-hmgfl ${h.gflags !== false ? 'checked' : ''} class="accent-sky-400"> <span>🚩 Garnisonen</span></label><label class="flex items-center gap-1 text-slate-400" title="Alle Teleports deiner Stadt als Linie"><input type="checkbox" data-hmcpath ${h.cpath ? 'checked' : ''} class="accent-emerald-400"> <span>🏙️ Stadt-Weg</span></label>${h.cpath ? `<label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmtpl ${h.tpLines !== false ? 'checked' : ''} class="accent-emerald-400"> <span>Linien</span></label>
+          <label class="flex items-center gap-1 text-slate-400" title="Kleine Teleports (nur Stadt verschoben) zusammenfassen"><span>TP ab</span><select data-hmtpmin class="bg-ink-950 border border-ink-600 rounded px-1 py-0.5 text-[11px]">${[2, 10, 25, 50, 100].map(v => `<option value="${v}" ${(+h.tpMin || 10) === v ? 'selected' : ''}>${v} <span>Feldern</span></option>`).join('')}</select></label>${(h.tpHide || []).length ? `<button type="button" data-hmtpreset class="text-[11px] text-slate-400 hover:text-gold-300">↺ ${h.tpHide.length} <span>ausgeblendete TPs zeigen</span></button>` : ''}` : ''}
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmzm ${h.zm ? 'checked' : ''} class="accent-amber-400"> <span>Zonen-Marker</span></label>
         <label class="flex items-center gap-1 text-slate-400" title="Eigene Flaggen + geschätztes Gebiet aus den Allianz-Mails"><input type="checkbox" data-hmflagsx ${h.flags ? 'checked' : ''} class="accent-sky-400"> <span>🚩 Flaggen</span></label>
         <label class="flex items-center gap-1 text-slate-400"><input type="checkbox" data-hmfr ${h.fr ? 'checked' : ''} class="accent-amber-400"> <span>👥 Freunde &amp; Königreich</span></label><label class="flex items-center gap-1 text-slate-400"><span>Glühen</span> <input type="range" min="1" max="8" value="${h.rad}" data-hmrad class="accent-amber-400 w-20"></label><span class="ml-auto flex flex-wrap items-center gap-1"><span class="flex gap-1 p-0.5 rounded-lg bg-ink-950 border border-ink-700">${HM_MAPS.map(x => `<button type="button" data-hmmap="${x.k}" aria-pressed="${h.map === x.k}" class="seg-btn rounded-md px-2 py-0.5 text-[11px] font-semibold" translate="no">🗺️ ${esc(x.n)}</button>`).join('')}</span>
@@ -1633,7 +2113,7 @@ window.RokMods.battles = (R) => {
       </div>
       ${hmActiveFilters(h, S)}
       ${matesBar}
-      <div class="grid lg:grid-cols-[minmax(0,1fr)_19rem] xl:grid-cols-[9.5rem_minmax(0,1fr)_19rem] gap-3 items-start mt-2">${hmQuickHtml(st, h)}<div id="hmWrap" class="bg-ink-950 rounded-xl">
+      <div class="grid lg:grid-cols-[minmax(0,1fr)_19rem] ${hmSpect() ? '' : 'xl:grid-cols-[9.5rem_minmax(0,1fr)_19rem]'} gap-3 items-start mt-2">${hmQuickHtml(st, h)}<div id="hmWrap" class="bg-ink-950 rounded-xl">
         <div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950 ${hmCalMode ? 'cursor-crosshair' : 'cursor-grab'} touch-none select-none">
           <div id="hmStage" class="absolute inset-0 origin-top-left">
             <img src="${esc(m.img)}" alt="" class="absolute inset-0 w-full h-full select-none pointer-events-none" draggable="false" decoding="async" onerror="this.style.display='none';document.getElementById('hmNoImg')?.classList.remove('hidden')">
@@ -1745,34 +2225,39 @@ window.RokMods.battles = (R) => {
     return `<div class="flex flex-wrap items-center gap-1 mb-2"><span class="text-[11px] text-slate-500 mr-1">KvK-Tag:</span>${rowHtml}</div>`;
   }
   // ---------- Zeichnen ----------
+  var hmHeatC = { sig: '', c: null };
   function hmHeat(S) {
     if (hmLast && hmLast.S === S && hmLast.heat) return hmLast.heat;
     const { h, dotsM } = S, mine = dotsM.filter(p => p.mine && (h.src !== 'all' || p.k === 'pvp')), N = 300, grid = new Float32Array(N * N);
+    const hsig = [h.src, h.rad, mine.length, mine[0]?.t, mine[mine.length - 1]?.t, mine.reduce((a, p) => a + p.u + p.v, 0).toFixed(4)].join('|'); if (hmHeatC.sig === hsig) return hmHeatC.c;
     mine.forEach(p => { const gx = Math.floor(p.u * N), gy = Math.floor(p.v * N); if (gx >= 0 && gy >= 0 && gx < N && gy < N) grid[gy * N + gx] += h.src === 'pvp' ? Math.max(1, (p.kp ?? hmKP(p.r)) / 1e4) : 1; });
     const sig = h.rad * 1.2, Rr = Math.ceil(sig * 3), ker = []; for (let i = -Rr; i <= Rr; i++) ker.push(Math.exp(-(i * i) / (2 * sig * sig)));
     const tmp = new Float32Array(N * N), out = new Float32Array(N * N); let max = 0;
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -Rr; k <= Rr; k++) { const xx = x + k; if (xx >= 0 && xx < N) a += grid[y * N + xx] * ker[k + Rr]; } tmp[y * N + x] = a; }
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { let a = 0; for (let k = -Rr; k <= Rr; k++) { const yy = y + k; if (yy >= 0 && yy < N) a += tmp[yy * N + x] * ker[k + Rr]; } out[y * N + x] = a; if (a > max) max = a; }
-    if (!max) return null;
+    if (!max) { hmHeatC = { sig: hsig, c: null }; return null; }
     const pal = h.src === 'barb' ? [[0, [147, 197, 253]], [.5, [59, 130, 246]], [1, [30, 64, 175]]] : h.src === 'fort' ? [[0, [233, 213, 255]], [.5, [168, 85, 247]], [1, [107, 33, 168]]] : [[0, [253, 224, 71]], [.35, [251, 146, 60]], [.7, [239, 68, 68]], [1, [185, 28, 28]]];
     const img = new ImageData(N, N);
     for (let i = 0; i < N * N; i++) { const t = Math.pow(out[i] / max, .45); if (t < .05) continue; let j = 1; while (j < pal.length - 1 && t > pal[j][0]) j++;
       const [a0, c0] = pal[j - 1], [a1, c1] = pal[j], f = Math.min(1, Math.max(0, (t - a0) / (a1 - a0)));
       img.data[i * 4] = c0[0] + (c1[0] - c0[0]) * f; img.data[i * 4 + 1] = c0[1] + (c1[1] - c0[1]) * f; img.data[i * 4 + 2] = c0[2] + (c1[2] - c0[2]) * f; img.data[i * 4 + 3] = Math.min(215, t * 260); }
-    const off = document.createElement('canvas'); off.width = off.height = N; off.getContext('2d').putImageData(img, 0, 0); return off;
+    const off = document.createElement('canvas'); off.width = off.height = N; off.getContext('2d').putImageData(img, 0, 0); hmHeatC = { sig: hsig, c: off }; return off;
   }
   function hmMask(h, m) { if (h.iso == null) return null; const key = m.k + ':' + h.iso; if (hmMaskC && hmMaskC.key === key) return hmMaskC.c;
     const d = m.zones, c = document.createElement('canvas'); c.width = c.height = d.w; const g = c.getContext('2d'), im = g.createImageData(d.w, d.w);
     for (let i = 0; i < d.w * d.w; i++) if (d.d.charCodeAt(i) - 97 !== h.iso) { im.data[i * 4] = 7; im.data[i * 4 + 1] = 9; im.data[i * 4 + 2] = 15; im.data[i * 4 + 3] = 242; }
     g.putImageData(im, 0, 0); hmMaskC = { key, c }; return c; }
   // Punkte + Städte: scharf, in Bildschirm-Auflösung (nicht mitvergrößert)
+  var hmTpPts = [];
   function hmPaintDots(ctx, W, S, map) {   // map(u, v) → [x, y] in Pixeln
     const { h, m, dotsM: dots } = S, col = HM_SRC.find(x => x[0] === h.src)[2], dpr = W / 1000 * 1.6;
     if (h.cpath) {   // Stadt-Weg: jede neue Stadt-Position (Teleport) als Station
       const pts = [], own = (S.allA || S.all || []).filter(p => p.mine && p.r.city_x != null && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)).sort((a, b) => a.t - b.t);
-      own.forEach(p => { const l = pts[pts.length - 1]; if (!l || Math.hypot(+p.r.city_x - l.x, +p.r.city_y - l.y) > 12) pts.push({ x: +p.r.city_x, y: +p.r.city_y, t: p.t }); });
-      if (pts.length > 1) { ctx.save(); ctx.setLineDash([6 * dpr, 4 * dpr]); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = 'rgba(52,211,153,.85)'; ctx.beginPath();
-        pts.forEach((q, i) => { const [u, v] = hmXY(q.x, q.y, h, m), [x, y] = map(u, v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); ctx.setLineDash([]);
+      const tpMin = (+h.tpMin || 10) * 6, hid = new Set(h.tpHide || []);   // TP erst ab x Feldern · von Hand ausgeblendete Stationen
+      own.forEach(p => { const l = pts[pts.length - 1], k = Math.round(+p.r.city_x / 6) + ':' + Math.round(+p.r.city_y / 6); if (hid.has(k)) return; if (!l || Math.hypot(+p.r.city_x - l.x, +p.r.city_y - l.y) > tpMin) pts.push({ x: +p.r.city_x, y: +p.r.city_y, t: p.t, k }); });
+      hmTpPts = pts.map(q => { const [u, v] = hmXY(q.x, q.y, h, m); return { ...q, u, v }; });
+      if (pts.length > 1) { ctx.save(); if (h.tpLines !== false) { ctx.setLineDash([6 * dpr, 4 * dpr]); ctx.lineWidth = 2 * dpr; ctx.strokeStyle = 'rgba(52,211,153,.85)'; ctx.beginPath();
+        pts.forEach((q, i) => { const [u, v] = hmXY(q.x, q.y, h, m), [x, y] = map(u, v); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke(); ctx.setLineDash([]); }
         ctx.font = `bold ${Math.round(9 * dpr)}px system-ui,sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         pts.forEach((q, i) => { const [u, v] = hmXY(q.x, q.y, h, m), [x, y] = map(u, v); ctx.beginPath(); ctx.arc(x, y, 7 * dpr, 0, 7); ctx.fillStyle = '#064e3b'; ctx.fill(); ctx.lineWidth = 1.5 * dpr; ctx.strokeStyle = '#34d399'; ctx.stroke(); ctx.fillStyle = '#d1fae5'; ctx.fillText(String(i + 1), x, y + .5); });
         ctx.restore(); }
@@ -1785,14 +2270,27 @@ window.RokMods.battles = (R) => {
           const [u, v] = hmXY(o.x, o.y, h, m), [x, y] = map(u, v); ctx.fillStyle = o.bt === 'fort' ? '#1d4ed8' : '#3b82f6'; ctx.fillRect(x - 4 * dpr, y - 4 * dpr, 8 * dpr, 8 * dpr); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5 * dpr; ctx.strokeRect(x - 4 * dpr, y - 4 * dpr, 8 * dpr, 8 * dpr); });
         FM.L.filter(o => o.end === 'lost' && o.b <= t && o.b >= (S.t0 || 0)).forEach(o => { const [u, v] = hmXY(o.x, o.y, h, m), [x, y] = map(u, v), q = 4 * dpr; ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 2 * dpr; ctx.beginPath(); ctx.moveTo(x - q, y - q); ctx.lineTo(x + q, y + q); ctx.moveTo(x + q, y - q); ctx.lineTo(x - q, y + q); ctx.stroke(); });
       ctx.restore(); }
+    if (h.gflags !== false) {   // 🚩 Garnisonen: blau = deine (Flagge/Pass verteidigt), rot = gegnerische, die du angegriffen hast
+      const F = new Map(); (S.allA || S.all || []).forEach(p => { if (!p.mine) return; const r = p.r, sg = /"ct":(5|7)[,}]/.exec(r.self_gear || ''), eg = /"ct":(5|7)[,}]/.exec(r.enemy_gear || ''); if (!sg && !eg) return;
+        const k = Math.round(p.u * 400) + ',' + Math.round(p.v * 400) + (sg ? 'b' : 'r'); const o = F.get(k); if (o) o.n++; else F.set(k, { u: p.u, v: p.v, own: !!sg, pass: (sg || eg)[1] === '5', n: 1 }); });
+      ctx.save(); F.forEach(f => { const [x, y] = map(f.u, f.v), sz = (f.pass ? 8 : 6.5) * dpr, c = f.own ? '#3b82f6' : '#ef4444';
+        ctx.strokeStyle = '#0b0f17'; ctx.lineWidth = 3 * dpr; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - sz * 1.9); ctx.stroke(); ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1.2 * dpr; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - sz * 1.9); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y - sz * 1.9); ctx.lineTo(x + sz * 1.4, y - sz * 1.45); ctx.lineTo(x, y - sz); ctx.closePath(); ctx.fillStyle = c; ctx.fill(); ctx.lineWidth = 1 * dpr; ctx.strokeStyle = '#0b0f17'; ctx.stroke(); }); ctx.restore(); }
     if (h.src === 'barb' || h.src === 'fort') { dot(hmCity(), '#22c55e', 6); if (h.fr && hmMates) hmMates.forEach((f, i) => dot(hmCity(f.gid), HM_COL[i % HM_COL.length], 4.5)); }
     (S.live || []).forEach(({ p }) => { if (p.r.city_x != null && hmIn(p.r.city_x, p.r.city_y, p.r.map_role)) dot(p.r, p.mine ? '#22c55e' : HM_COL[p.fi % HM_COL.length], p.mine ? 6 : 4.5); });   // Stadt zuerst zeichnen – Kämpfe direkt an der Stadt liegen darüber und bleiben sichtbar
-    const selZ = h.pop;
-    dots.forEach(p => { const [x, y] = map(p.u, p.v); if (x < -10 || y < -10 || x > W + 10 || y > W + 10) return; const fresh = S.cur != null && S.cur - p.t < 5 * 6e4;
-      if (h.src === 'rally') { ctx.font = `${Math.round(13 * dpr)}px system-ui,"Segoe UI Emoji",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.city ? '🏯' : p.joined ? '🛡️' : '🚩', x, y); return; }   // Rally/Garnison als Symbol
+    const selZ = h.pop, seen = new Set(), G = new Map(), kc = {};   // schnell: Punkte am selben Pixel nur einmal, gleiche Farbe in einem Rutsch zeichnen
+    const clu = h.src !== 'rally' && dots.length > 1500, cell = (dots.length > 6000 ? 9 : 6) * dpr, CL = clu ? new Map() : null;   // viele Punkte → nahe Kämpfe zu einem Punkt bündeln (Größe = Anzahl)
+    for (let i = dots.length - 1; i >= 0; i--) { const p = dots[i], [x, y] = map(p.u, p.v); if (x < -10 || y < -10 || x > W + 10 || y > W + 10) continue; const fresh = S.cur != null && S.cur - p.t < 5 * 6e4;
+      if (clu && !fresh) { const ck = Math.floor(x / cell) + ',' + Math.floor(y / cell) + (p.mine ? 'm' : 'o') + (selZ != null && p.k === 'pvp' && p.z !== selZ ? 'x' : ''), c = CL.get(ck); if (c) { c.n++; c.x += x; c.y += y; } else CL.set(ck, { n: 1, x, y, p }); continue; }
+      if (h.src === 'rally') { ctx.font = `${Math.round(13 * dpr)}px system-ui,"Segoe UI Emoji",sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(p.city ? '🏯' : p.joined ? '🛡️' : '🚩', x, y); continue; }   // Rally/Garnison als Symbol
       const other = selZ != null && p.k === 'pvp' && p.z !== selZ;   // Zone ausgewählt → andere Kampfpunkte orange
-      ctx.beginPath(); ctx.arc(x, y, (p.mine ? 3.2 : 2.8) * dpr, 0, 7); ctx.fillStyle = other ? '#f97316' : p.mine ? (HM_SRC.find(x => x[0] === p.k)?.[2] || col) : HM_COL[p.fi % HM_COL.length]; ctx.fill();
-      ctx.lineWidth = (fresh ? 2 : 1) * dpr; ctx.strokeStyle = fresh ? '#fde047' : 'rgba(0,0,0,.7)'; ctx.stroke(); });
+      const fill = other ? '#f97316' : p.mine ? (kc[p.k] = kc[p.k] || HM_SRC.find(x => x[0] === p.k)?.[2] || col) : HM_COL[p.fi % HM_COL.length], key = Math.round(x * 2) + ',' + Math.round(y * 2) + fill;
+      if (!fresh) { if (seen.has(key)) continue; seen.add(key); }
+      const r = (p.mine ? 3.2 : 2.8) * dpr, gk = fill + '|' + (fresh ? 1 : 0) + '|' + r; let g = G.get(gk); if (!g) G.set(gk, g = { fill, fresh, path: new Path2D() });
+      g.path.moveTo(x + r, y); g.path.arc(x, y, r, 0, 7); }
+    if (CL) CL.forEach(c => { const p = c.p, x = c.x / c.n, y = c.y / c.n, other = selZ != null && p.k === 'pvp' && p.z !== selZ, fill = other ? '#f97316' : p.mine ? (kc[p.k] = kc[p.k] || HM_SRC.find(z => z[0] === p.k)?.[2] || col) : HM_COL[p.fi % HM_COL.length];
+      const r = Math.min(10, (p.mine ? 3 : 2.6) + Math.sqrt(c.n - 1) * .55) * dpr, gk = fill + '|0|' + r.toFixed(1); let g = G.get(gk); if (!g) G.set(gk, g = { fill, fresh: false, path: new Path2D() }); g.path.moveTo(x + r, y); g.path.arc(x, y, r, 0, 7); });
+    [...G.values()].sort((a, b) => a.fresh - b.fresh).forEach(g => { ctx.fillStyle = g.fill; ctx.fill(g.path); ctx.lineWidth = (g.fresh ? 2 : 1) * dpr; ctx.strokeStyle = g.fresh ? '#fde047' : 'rgba(0,0,0,.7)'; ctx.stroke(g.path); });
   }
   function hmApplyView() {
     const st = $('hmStage'), box = $('hmBox'); if (!st || !box) return; const W = box.clientWidth;
@@ -1891,7 +2389,7 @@ window.RokMods.battles = (R) => {
     el.querySelector('[data-hmbuff]')?.addEventListener('toggle', (ev) => { h.buffOpen = ev.target.open; savePassive(); });
     el.querySelectorAll('[data-hmbuffx]').forEach(b => b.onclick = () => { h.buffs = (h.buffs || []).filter((_, i) => i !== +b.dataset.hmbuffx); re(); });
     el.querySelectorAll('[data-hmfw]').forEach(b => b.onclick = (e) => { e.preventDefault(); h.fw = +b.dataset.hmfw; re(); });
-    el.querySelectorAll('[data-hmfrel]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbField.t = 0; kbFieldLoad(kbField.key ? kbField.key.split(',') : [], true); });
+    el.querySelectorAll('[data-hmfrel]').forEach(b => b.onclick = (e) => { e.preventDefault(); kbField.t = 0; kbFieldLoad(kbField.key ? kbField.key.split(',') : [], true, h.fw); });
     el.querySelectorAll('[data-hmflags]').forEach(d => d.ontoggle = () => { if (!!h.flOpen !== d.open) { h.flOpen = d.open; savePassive(); renderKampf(); } });
     el.querySelector('[data-hmflagsx]')?.addEventListener('change', (ev) => { h.flags = ev.target.checked; re(); });
     el.querySelector('[data-hmflr]')?.addEventListener('change', (ev) => { h.flR = +ev.target.value; re(); });
@@ -1909,7 +2407,11 @@ window.RokMods.battles = (R) => {
           scales: { x: { ticks: { color: '#64748b', maxTicksLimit: 12 }, grid: { display: false } }, kp: { position: 'right', ticks: { color: '#64748b', callback: (v) => short(v) }, grid: { display: false } },
             tr: { position: 'left', ticks: { color: '#34d399', callback: (v) => v + ' %' }, grid: { color: 'rgba(148,163,184,.08)' } }, kt: { display: false } } } });
     }
-    el.querySelector('[data-hmcpath]')?.addEventListener('change', (ev) => { h.cpath = ev.target.checked; savePassive(); hmDraw(st); });
+    el.querySelector('[data-hmcpath]')?.addEventListener('change', (ev) => { h.cpath = ev.target.checked; savePassive(); renderKampf(); });
+    el.querySelector('[data-hmgfl]')?.addEventListener('change', (ev) => { h.gflags = ev.target.checked; savePassive(); hmDraw(st); });
+    el.querySelector('[data-hmtpl]')?.addEventListener('change', (ev) => { h.tpLines = ev.target.checked; savePassive(); hmDraw(st); });
+    el.querySelector('[data-hmtpmin]')?.addEventListener('change', (ev) => { h.tpMin = +ev.target.value; savePassive(); hmDraw(st); });
+    el.querySelector('[data-hmtpreset]')?.addEventListener('click', () => { h.tpHide = []; savePassive(); renderKampf(); });
     el.querySelectorAll('[data-hmmode]').forEach(b => b.onclick = () => { h.mode = b.dataset.hmmode; h.fight = null; h.tl = null; h.pop = null; h.iso = null; h.march = ''; hmView = { s: 1, x: 0, y: 0 }; re(); });
     el.querySelector('[data-hmwkvk]')?.addEventListener('change', (ev) => { const v = ev.target.value.trim().toUpperCase().replace(/\s/g, '');
       if (v && !/^C\d{5}$/.test(v)) { hmAsk('KvK', '', null, 'Format: C + 5 Ziffern, z. B. C13340'); ev.target.value = h.wkvk || ''; return; } h.wkvk = v || ''; h.watch = ''; h.fight = null; h.tl = null; h.pop = null; delete hmWInfo[v]; re(); });
@@ -1975,7 +2477,10 @@ window.RokMods.battles = (R) => {
     box.addEventListener('pointerup', (ev) => { const d = drag; drag = null; box.style.cursor = '';
       if (d && !d.moved && hmCalMode) { const c = hmCity(), bb = box.getBoundingClientRect(), u = (ev.clientX - bb.left - hmView.x) / (bb.width * hmView.s), v = (ev.clientY - bb.top - hmView.y) / (bb.height * hmView.s), p = (m.pad || 0) / 100;
         const tx = (u - p) / (1 - 2 * p) * m.size, ty = (1 - (v - p) / (1 - 2 * p)) * m.size; if (c && tx > 5 && ty > 5) { h.ux = +(+c.city_x / tx).toFixed(4); h.uy = +(+c.city_y / ty).toFixed(4); }
-        hmCalMode = false; re(); } });
+        hmCalMode = false; re(); }
+      else if (d && !d.moved && h.cpath && hmTpPts.length) { const bb = box.getBoundingClientRect(), u = (ev.clientX - bb.left - hmView.x) / (bb.width * hmView.s), v = (ev.clientY - bb.top - hmView.y) / (bb.height * hmView.s);   // TP-Station antippen → ausblenden
+        const q = hmTpPts.map((p, i) => ({ p, i, d: Math.hypot(p.u - u, p.v - v) })).sort((a, b) => a.d - b.d)[0];
+        if (q && q.d < .012 / hmView.s && confirm(`Teleport ${q.i + 1} (${q.p.k}) ausblenden?`)) { h.tpHide = [...new Set([...(h.tpHide || []), q.p.k])]; savePassive(); renderKampf(); } } });
     el.querySelectorAll('[data-hmz]').forEach(b => b.onclick = async () => { const k = b.dataset.hmz, W = box.clientWidth;
       if (k === 'in' || k === 'out') { const s0 = hmView.s, s1 = Math.min(10, Math.max(1, s0 * (k === 'in' ? 1.5 : 1 / 1.5))); hmView.x = W / 2 - (W / 2 - hmView.x) * s1 / s0; hmView.y = W / 2 - (W / 2 - hmView.y) * s1 / s0; hmView.s = s1; hmApplyView(); }
       else if (k === 'reset') { hmView = { s: 1, x: 0, y: 0 }; hmApplyView(); }
