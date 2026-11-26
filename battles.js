@@ -62,9 +62,9 @@ window.RokMods.battles = (R) => {
   var kbCache = new Map(), kbAllRows = null, kbCurKey = null, kbTotal = 0;
   function kbScopeIds() {   // welche IDs die aktuelle Seite braucht (null = alles, was du sehen darfst)
     const st = kbSt(), h = st.heat || {};
-    if (st.page === 'heat' && hmSpect()) { const ws = h.wkvk ? hmWatchSet(hmCfg(st)) : null; return ws ? [...ws].map(String) : null; }
+    if (st.page === 'heat' && hmSpect()) { const ws = h.wkvk ? hmWatchSet(hmCfg(st)) : null; return ws ? [...ws].map(String) : []; }   // Zuschauer: erst laden, wenn ein KvK gewählt ist
     const base = st.acc ? [String(st.acc)] : [...kbMyIds()];
-    if (!base.length) return null;
+    if (!base.length) return [];   // kein eigener Account (z. B. Test-/Admin-Account): nichts laden, bis jemand ausgewählt ist
     if (st.page === 'heat' && (h.fr || h.cmpOpen)) { if (!hmMates && !hmMatesLoading) hmLoadMates(); (hmMates || []).forEach(m => base.push(String(m.gid))); }
     return [...new Set(base)];
   }
@@ -184,7 +184,7 @@ window.RokMods.battles = (R) => {
   var kbAppIds = null;
   async function kbLoadAppIds() { if (kbAppIds) return; kbAppIds = new Set();
     try { const db = RokAuth?.db?.(); if (!db || !RokAuth?.userId?.()) { kbAppIds = null; return; }
-      const q = await db.from('governor_links').select('governor_id,kind,status').eq('status', 'ok');
+      const q = await db.from('governor_links').select('governor_id,kind,status').eq('status', 'ok').eq('user_id', RokAuth.userId());   // nur eigene Verknüpfungen (Admin darf sonst alle lesen)
       (q.data || []).filter(x => x.kind !== 'pilot').forEach(x => kbAppIds.add(String(x.governor_id))); } catch {}
     if (kbAppIds.size && R.view === 'battles') renderKampf(); }
   var kbSiteNames = null;   // Governor-ID → Name auf der Website (leaderboard)
@@ -1353,7 +1353,7 @@ window.RokMods.battles = (R) => {
   // ===== 🛡️ Gegner-Gear: nur bei Garnison (Pass/Heiligtum, Allianz-Flagge) und Rallys – nur der Hauptkommandant (Spalte enemy_gear, Uploader v29) =====
   var kbGearCols = true, kbSelfGear = true, kbGearIdx = [];
   var kbGear = { key: '', rows: null, loading: false, err: '' };
-  function kbGearLoad(ids) { const key = ids.slice().sort().join(',') + '|' + (kbNeedFrom() || 'all'); if (!kbGearCols || kbGear.loading || kbGear.key === key) return; kbGear.loading = true; kbGear.key = key;
+  function kbGearLoad(ids) { if (!ids.length) { kbGear.rows = []; return; } const key = ids.slice().sort().join(',') + '|' + (kbNeedFrom() || 'all'); if (!kbGearCols || kbGear.loading || kbGear.key === key) return; kbGear.loading = true; kbGear.key = key;
     (async () => { try { const db = RokAuth.db?.(); let q = db.from('rok_battles').select('player_id,self_name,self_hero1,battle_start,enemy_player_id,enemy_name,enemy_alliance,enemy_kingdom,enemy_hero1,enemy_hero2,enemy_gear,kill_points,group_size,pos_x,pos_y' + (kbSelfGear ? ',self_gear' : '')).not('enemy_gear', 'is', null);
         if (ids.length) q = q.in('player_id', ids); const nf = kbNeedFrom(); if (nf) q = q.gte('battle_start', nf);
         const r = await q.order('battle_start', { ascending: false }).limit(2000); if (r.error) throw r.error; kbGear.rows = r.data || []; kbGear.err = ''; }
@@ -1497,6 +1497,7 @@ window.RokMods.battles = (R) => {
   var kbField = { key: '', rows: null, t: 0, loading: false, err: '' };
   var KB_FW = [[15, '15 min'], [60, '1 h'], [180, '3 h'], [1440, '24 h'], [10080, '1 Woche'], [20160, '2 Wochen'], [40320, '4 Wochen']];
   function kbFieldLoad(ids, force, win) {
+    if (!ids || !ids.length) return;   // ohne Account nichts laden
     win = +win || 60; const key = ids.slice().sort().join(','), need = Math.max(65, win + 5); if (kbField.loading || (!force && kbField.key === key && (kbField.win || 0) >= need && Date.now() - kbField.t < (win > 180 ? 5 * 6e4 : 55e3))) return;
     kbField.loading = true;
     (async () => { try { const db = RokAuth.db?.(); if (!db) throw new Error('offline'); const since = new Date(Date.now() - need * 6e4).toISOString();
@@ -2229,6 +2230,9 @@ window.RokMods.battles = (R) => {
       ${hmActiveFilters(h, S)}
       ${matesBar}
       <div class="grid lg:grid-cols-[minmax(0,1fr)_19rem] ${hmSpect() ? '' : 'xl:grid-cols-[9.5rem_minmax(0,1fr)_19rem]'} gap-3 items-start mt-2">${hmQuickHtml(st, h)}<div id="hmWrap" class="bg-ink-950 rounded-xl">
+        <div class="flex flex-wrap justify-end gap-1 mb-1.5">
+            ${[['in', '＋', 'Hineinzoomen'], ['out', '－', 'Herauszoomen'], ['fit', '🎯', 'Auf Kämpfe zoomen'], ['reset', '⤢', 'Ganze Karte'], ['full', '⛶', 'Vollbild'], ['png', '📷', 'Als Bild speichern'], ['vid', '🎬', 'Replay als Video speichern']].map(([k, i, t]) => `<button type="button" data-hmz="${k}" title="${t}" class="w-8 h-8 rounded-lg bg-ink-900 border border-ink-600 hover:border-gold-500/60 text-base">${i}</button>`).join('')}
+          </div>
         <div id="hmBox" class="relative w-full aspect-square rounded-xl overflow-hidden border border-ink-700 bg-ink-950 ${hmCalMode ? 'cursor-crosshair' : 'cursor-grab'} touch-none select-none">
           <div id="hmStage" class="absolute inset-0 origin-top-left">
             <img src="${esc(m.img)}" alt="" class="absolute inset-0 w-full h-full select-none pointer-events-none" draggable="false" decoding="async" onerror="this.style.display='none';document.getElementById('hmNoImg')?.classList.remove('hidden')">
@@ -2237,9 +2241,6 @@ window.RokMods.battles = (R) => {
           <canvas id="hmDots" class="absolute inset-0 w-full h-full pointer-events-none"></canvas>
           <div id="hmMarks" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
           <div id="hmNoImg" class="hidden absolute inset-0 grid place-items-center text-sm text-slate-500 p-6 text-center">${esc(m.img)}</div>
-          <div class="absolute top-2 right-2 flex flex-col gap-1 z-40">
-            ${[['in', '＋', 'Hineinzoomen'], ['out', '－', 'Herauszoomen'], ['fit', '🎯', 'Auf Kämpfe zoomen'], ['reset', '⤢', 'Ganze Karte'], ['full', '⛶', 'Vollbild'], ['png', '📷', 'Als Bild speichern'], ['vid', '🎬', 'Replay als Video speichern']].map(([k, i, t]) => `<button type="button" data-hmz="${k}" title="${t}" class="w-9 h-9 rounded-lg bg-ink-950/85 border border-ink-600 hover:border-gold-500/60 text-base">${i}</button>`).join('')}
-          </div>
           <div id="hmTip" class="hidden absolute z-50 pointer-events-none rounded-lg border border-ink-600 bg-ink-950/95 px-2 py-1 text-[11px] text-slate-200 whitespace-nowrap"></div>
         </div>
         <div class="mt-2 rounded-xl border border-ink-700 bg-ink-950/70 p-2">
@@ -2413,7 +2414,7 @@ window.RokMods.battles = (R) => {
     const map = (u, v) => [hmView.x + u * W * hmView.s, hmView.y + v * W * hmView.s];
     document.querySelectorAll('#hmMarks [data-hmcity]').forEach(e => { const [x, y] = map(+e.dataset.u, +e.dataset.v); e.style.left = x + 'px'; e.style.top = y + 'px'; });
     document.querySelectorAll('#hmMarks [data-hmmark]').forEach(e => { const [x, y] = map(+e.dataset.u, +e.dataset.v); if (x < 0 || y < 0 || x > W || y > W) { e.style.display = 'none'; return; } e.style.display = '';
-      const w = e.offsetWidth, hh = e.offsetHeight, left = x + 14 + w > W - 48 && x - 14 - w >= 0, L = left ? x - 14 - w : x + 14, T = Math.max(4, Math.min(W - hh - 4, y - hh / 2)), ar = e.querySelector('[data-ar]');   // Karte bleibt immer im Bild
+      const w = e.offsetWidth, hh = e.offsetHeight, left = x + 14 + w > W - 4 && x - 14 - w >= 0, L = left ? x - 14 - w : x + 14, T = Math.max(4, Math.min(W - hh - 4, y - hh / 2)), ar = e.querySelector('[data-ar]');   // Karte bleibt immer im Bild
       e.style.left = L + 'px'; e.style.top = T + 'px'; if (ar) { ar.style.top = Math.max(4, Math.min(hh - 12, y - T - 4)) + 'px'; ar.style.left = left ? (w - 2) + 'px' : '-6px'; } });
     const dc = $('hmDots'); if (dc && hmLast?.S) { const dpr = window.devicePixelRatio || 1, px = Math.round(W * dpr); if (dc.width !== px) { dc.width = dc.height = px; }
       const ctx = dc.getContext('2d'); ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, W, W); try { hmPaintDots(ctx, W, hmLast.S, map); } catch (e) { console.error(e); const b = $('hmBox'); if (b && !b.querySelector('#hmErr')) { const x = document.createElement('div'); x.id = 'hmErr'; x.className = 'absolute bottom-2 left-2 z-50 max-w-[90%] rounded-lg bg-red-900/90 border border-red-400 px-2 py-1 text-[11px] text-red-100'; x.textContent = '⚠️ Punkte: ' + (e?.message || e); b.appendChild(x); } } }
