@@ -26,6 +26,7 @@ window.RokMods.showcase = (R) => {
     { id: 'boudica', r: 'legendary', name: 'Boudica', ex: 1 },
     { id: 'cc', r: 'legendary', name: 'Cao Cao', ex: 1 },
     { id: 'chandra', r: 'legendary', name: 'Chandragupta Maurya', ex: 1 },
+    { id: 'choey', r: 'legendary', name: 'Choe Yeong', nb: 1, ex: 1 },
     { id: 'cj', r: 'legendary', name: 'Cheok Jun-gyeong', ex: 1 },
     { id: 'cy', r: 'legendary', name: 'Cy', ex: 1 },
     { id: 'david', r: 'legendary', name: 'David IV.', ex: 1 },
@@ -3002,7 +3003,9 @@ window.RokMods.showcase = (R) => {
 
   // ---- Kommandanten-Fenster ----
   let cm = { exp: true, slot: 0, rar: 'all', q: '', sel: null, level: 60, skills: [5, 5, 5, 5], awakened: false };
-  const openModal = () => { R.$('cmdModal').classList.remove('hidden'); document.body.style.overflow = 'hidden'; };
+  const openModal = () => {                                 // Fenster direkt an <body> hängen – sonst bleibt es im Bereich „Showcases“ unsichtbar (liegt im ausgeblendeten Profil) und die Seite hängt
+    const m = R.$('cmdModal'); if (m.parentElement !== document.body) document.body.appendChild(m);
+    m.classList.remove('hidden'); document.body.style.overflow = 'hidden'; };
   const closeModal = () => { R.$('cmdModal').classList.add('hidden'); document.body.style.overflow = ''; };
   function openCmd(i) {
     const cur = scSet().cmd[i];
